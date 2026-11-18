@@ -21,7 +21,9 @@ export function pidStep(
   if (loop.mode === 'manual') {
     // Back-calculate the integral so switching to auto holds the current output.
     const error = loop.setpoint - measured;
-    const integral = gains.ki > 0 ? (loop.output - gains.kp * error) / gains.ki : 0;
+    // The first auto step adds error*dtS before computing, so back-calculate against that.
+    const integral =
+      gains.ki > 0 ? (loop.output - gains.kp * error) / gains.ki - error * dtS : 0;
     return { ...loop, integral, prevError: error };
   }
   if (loop.fault?.kind === 'stuck') return loop;

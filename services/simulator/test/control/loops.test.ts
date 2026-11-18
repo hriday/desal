@@ -56,7 +56,12 @@ describe('pidStep', () => {
   it('manual -> auto is bumpless (<5% jump)', () => {
     const manual = run(mk({ mode: 'manual', output: 60 }), 30, 100);
     const { us } = run({ ...manual.loop, mode: 'auto' }, manual.y, 1);
-    expect(Math.abs(us[0]! - 60)).toBeLessThan(5);
+    expect(Math.abs(us[0]! - 60)).toBeLessThan(0.5);
+  });
+  it.each([1, 40])('manual -> auto does not bump at dtS=%i with nonzero error', (dt) => {
+    const manual = pidStep(mk({ mode: 'manual', output: 60 }), 30, G, 0, 100, dt);
+    const auto = pidStep({ ...manual, mode: 'auto' }, 30, G, 0, 100, dt);
+    expect(Math.abs(auto.output - 60)).toBeLessThan(0.5);
   });
 });
 
