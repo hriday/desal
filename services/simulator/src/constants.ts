@@ -31,3 +31,30 @@ export const LOOP_RANGES = {
 export const LOOP_DRIFT_PER_TICK = 0.05;
 /** Gain multiplier applied to an oscillating loop. */
 export const LOOP_OSC_GAIN_MULT = 4;
+
+/** Rated flow of one clean, new intake pump (m3/h). */
+export const PUMP_RATED_M3H = 3500;
+/** Flow loss at full pump wear (fraction). */
+export const PUMP_WEAR_FLOW_LOSS = 0.5;
+/** Required intake flow at seawater <= 30 C (m3/h). */
+export const INTAKE_REQUIRED_BASE_M3H = 5500;
+/** Fractional extra required flow per degC of seawater above 30 C. */
+export const INTAKE_REQUIRED_PER_C = 0.03;
+/** Biofouling growth per tick per ug/L chlorophyll. */
+export const BIO_GROWTH_PER_CHL = 0.000625;
+/** Biofouling kill per tick per mg/L chlorine per unit biofouling. */
+export const BIO_KILL_PER_CHLORINE = 0.01;
+/** Fraction of the biofouling-to-screen gap closed per tick. */
+export const SCREEN_LAG_PER_TICK = 0.02;
+/** Screen fouling above which pumps can cavitate. */
+export const CAVITATION_SCREEN_THRESHOLD = 0.5;
+/** Pump speed (percent) above which pumps can cavitate. */
+export const CAVITATION_SPEED_PCT = 80;
+/** Cavitation rise per tick at full screen fouling. */
+export const CAVITATION_RISE_PER_TICK = 0.04;
+/** Cavitation decay per tick when conditions are not met. */
+export const CAVITATION_DECAY_PER_TICK = 0.01;
+/** Baseline pump wear per tick (thousands of plant hours to wear out). */
+export const PUMP_WEAR_BASE_PER_TICK = 2.2e-6;
+/** Extra pump wear per tick at full cavitation. */
+export const PUMP_WEAR_CAVITATION_PER_TICK = 3e-5;

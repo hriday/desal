@@ -93,6 +93,7 @@ const NOMINAL = {
   tbtC: 108,
   recircM3h: 4180,
   intakeM3h: 5500,
+  intakePumpPct: 90,
   blowdownM3h: 1000,
   vacuumQuality: 0.95,
   levelM: 0.3,
@@ -128,7 +129,7 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
     acidCleanRemainingTicks: 0,
     loops: {
       tbt: loop(NOMINAL.tbtC, NOMINAL.firingPct),
-      intakeFlow: loop(NOMINAL.intakeM3h),
+      intakeFlow: loop(NOMINAL.intakeM3h, NOMINAL.intakePumpPct),
       recirc: loop(NOMINAL.recircM3h),
       blowdown: loop(NOMINAL.blowdownM3h),
       vacuum: loop(NOMINAL.vacuumQuality),
