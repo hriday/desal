@@ -36,10 +36,10 @@ A later phase adds a reverse osmosis (RO) unit.
 
 ### 3.1 Structure: shifts with targets
 - One session is one **shift**: 8 hours of plant time played in about 12 real minutes. *(My call: 1 Hz simulation tick, 1 real second = 40 plant seconds. Tune during playtesting.)*
-- Each shift has a **target**: product volume (m³), maximum salinity (ppm), and a fuel budget.
-- Each shift has a **scenario**: starting conditions plus scheduled and random events (algal bloom onset, seawater temperature rise, pump bearing wear, fuel delivery delay, demand change mid-shift). Scenarios get harder over the career.
+- Each shift has a **target**: product volume (m³), maximum salinity (ppm), and a **fuel cost budget** in money (fuel prices move, so the budget is in $, not tonnes).
+- Each shift has a **scenario**: starting conditions plus scheduled and random events (algal bloom onset, seawater temperature rise, pump bearing wear, gas supply curtailment, gas price spike, backup-fuel delivery delay, demand change mid-shift). Scenarios get harder over the career.
 - At the end of the shift, the player gets a **score and debrief**.
-- **Continuity:** it is one plant across a career. The next shift starts from the exact state the last one ended in: scale thickness, pump wear, fuel level, equipment that is down. *(My call: a single career save. "New career" resets the plant. There is no game over; a badly damaged plant simply makes later shifts harder. Repair options are in §3.4.)*
+- **Continuity:** it is one plant across a career. The next shift starts from the exact state the last one ended in: scale thickness, pump wear, backup fuel tank level, equipment that is down. *(My call: a single career save. "New career" resets the plant. There is no game over; a badly damaged plant simply makes later shifts harder. Repair options are in §3.4.)*
 - **Shift handover report:** shown at the start of each shift, like a real operator's handover log. It covers equipment condition, trips and incidents last shift, open alarms, and this shift's target and conditions. Flink generates it from the previous shift's events.
 - Pause is allowed (single-player).
 - **Quitting mid-shift** (my call): the career resumes exactly where it was left. The simulator snapshots to `plant.state` every 30 real seconds as well as at shift end. A snapshot includes scenario progress, pending events (for example, fuel deliveries in transit), and the RNG state. Flink jobs use checkpointing so per-shift state (running score, alarm timers, report inputs) survives restarts. Shift IDs are a monotonically increasing number; `shift.start` and `shift.end` events bracket each shift.
@@ -53,7 +53,11 @@ The units, in flow order:
 5. **Brine recirculation and blowdown:** recirculation pump, blowdown to the sea, make-up feed.
 6. **Vacuum system:** ejectors holding stage pressures.
 7. **Product water:** product tank, salinity, delivery.
-8. **Fuel:** tank level, consumption, deliveries.
+8. **Fuel** (the user's direction, details my call):
+   - **Natural gas** by pipeline is the normal fuel. It has no on-site storage: the constraints are available supply (a flow cap) and a **price that can change mid-shift**.
+   - **Geopolitical or supply events** can curtail gas (lower the cap or cut it entirely) or spike its price. The scenario announces these as events, sometimes with warning ("supplier notice: curtailment in 2 plant-hours").
+   - A **backup liquid fuel** (diesel or fuel oil) is stored in an on-site tank, delivered by truck after a delay, and priced differently. Sometimes the only delivery on offer is an off-grade fuel, with a lower heating value and more burner fouling.
+   - **Switching fuel** is an operator action (burner changeover). It causes a brief dip in firing and, in Manual mode, has to be done carefully or it risks a flame-out trip. Liquid fuel wears the burner faster. Running out of every available fuel trips the plant.
 
 **Core relationships the simulation must honour** (simplified, not solved from first principles):
 - Higher TBT gives more distillate and better efficiency (gained output ratio, GOR) but a sharply higher scaling rate above about 110 to 112 °C. Antiscalant dosing reduces the scaling rate.
@@ -83,7 +87,7 @@ Each control is a setpoint in Auto and a direct output in Manual.
 - Brine: blowdown rate, make-up flow.
 - Vacuum: ejector steam.
 - Product: divert off-spec water to drain.
-- Fuel: order a delivery (it arrives after a delay).
+- Fuel: choose the active fuel (gas or backup; changeover per §3.2), order a backup-fuel delivery (arrives after a delay; sometimes only off-grade fuel is available).
 - Plant: manual trip, and restart after a trip (see §3.3).
 
 ### 3.5 Trips, damage, recovery
@@ -93,7 +97,7 @@ Each control is a setpoint in Auto and a direct output in Manual.
 - **Recovery** (my call): acid cleaning, which takes the plant offline for part of a shift and removes hard scale, and a pump swap to standby. Both are operator actions with a production cost. A between-shifts maintenance choice is left for later.
 
 ### 3.6 Scoring
-Per shift: production against target, time off-spec on salinity, fuel against budget, trips, and damage added. The score is a weighted sum; weights are the builder's call and tunable. Flink computes the running score live and the final score at shift end.
+Per shift: production against target, time off-spec on salinity, fuel cost against budget, trips, and damage added. The score is a weighted sum; weights are the builder's call and tunable. Flink computes the running score live and the final score at shift end.
 
 ## 4. UI: the control room
 
@@ -104,7 +108,7 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
 - **Click a monitor to expand** it to full size. The expanded view shows detail (for stages: each chamber with demister, brine level, temperature, and scale thickness; condenser tubes; distillate trough), trends, and the **controls** for that system. Escape returns to the wall.
 - **Style: flat industrial schematic** (SCADA-like): dark background, line-art equipment, and colour reserved for status (green ok, amber warning, red alarm). *(My call; a shaded semi-3D style may come later as polish.)*
 - **Alarms stay visible while zoomed** (my call): each monitor's border and status light reflect its alarm state, and the expanded view has a slim alarm strip along the top.
-- The **Fuel & Power** monitor is renamed **Fuel**. It shows tank level, burn rate, runtime remaining, and a cost per m³ derived from fuel. Electrical power is not modelled in phase 1 (my call); it becomes relevant with RO in phase 2.
+- The **Fuel & Power** monitor is renamed **Fuel**. It shows the gas supply (available cap, current price, any curtailment notice), the backup fuel tank level and grade, the active fuel, burn rate, runtime remaining on backup, and cost per m³. Electrical power is not modelled in phase 1 (my call); it becomes relevant with RO in phase 2.
 - Screens: handover report (shift start), control room (in shift), debrief (shift end).
 
 ## 5. Approaches considered
@@ -142,7 +146,7 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
 - **Flink jobs (Java):**
   - *Alarm job:* threshold alarms plus rate-of-change and persistence alarms ("S2 temperature drop sustained for 10 plant-minutes"), using keyed state per sensor. Raise and clear semantics.
   - *Scaling and trend job:* windowed trend per stage (fouling rate, heat transfer degradation), feeding "HI scaling rate" alarms and the debrief.
-  - *KPI and score job:* windowed aggregates (production, GOR, fuel per m³, off-spec time) and the running shift score.
+  - *KPI and score job:* windowed aggregates (production, GOR, fuel cost per m³, off-spec time) and the running shift score.
   - *Shift report job:* on shift-end events, builds the debrief and the next shift's handover report.
   - Flink uses **event time = plant time** (each record carries its plant timestamp), with watermarks. This matters because the game can pause and time is compressed.
 - **Kafka:** a single broker in KRaft mode. Topics are listed below; keys are chosen so per-unit and per-sensor ordering holds.
