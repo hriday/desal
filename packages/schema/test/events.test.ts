@@ -13,11 +13,11 @@ const events: PlantEvent[] = [
   { ...base, type: 'restartProgress', step: 'vacuum', ok: false, reason: 'low vacuum' },
   { ...base, type: 'restartProgress', step: 'ramp', ok: true },
   { ...base, type: 'online' },
-  { ...base, type: 'scenario', kind: 'gasCurtailment', message: 'gas cut' },
+  { ...base, type: 'scenario', kind: 'gasCurtailNotice', message: 'gas cut' },
   { ...base, type: 'fuelChangeover', from: 'gas', to: 'backup', phase: 'flameOut' },
-  { ...base, type: 'deliveryArrived', tonnes: 20, grade: 'A' },
+  { ...base, type: 'deliveryArrived', tonnes: 20, grade: 'offgrade' },
   { ...base, type: 'commandRejected', commandId: 'c1', reason: 'tripped', shiftId: null },
-  { ...base, type: 'damage', component: 'P-101', value: 0.5 },
+  { ...base, type: 'damage', component: 'pump', value: 0.5 },
 ];
 
 test.each(events.map((e) => [e.type, e] as const))('round-trips %s through JSON', (_t, ev) => {

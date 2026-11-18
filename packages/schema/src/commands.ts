@@ -22,8 +22,11 @@ export type RestartStep = z.infer<typeof RestartStepSchema>;
 export const LoopModeSchema = z.enum(['auto', 'manual']);
 export type LoopMode = z.infer<typeof LoopModeSchema>;
 
-export const FuelSchema = z.enum(['gas', 'backup']);
-export type Fuel = z.infer<typeof FuelSchema>;
+export const FuelKindSchema = z.enum(['gas', 'backup']);
+export type FuelKind = z.infer<typeof FuelKindSchema>;
+
+export const FuelGradeSchema = z.enum(['standard', 'offgrade']);
+export type FuelGrade = z.infer<typeof FuelGradeSchema>;
 
 export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('startShift'), mode: LoopModeSchema }),
@@ -34,7 +37,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('setDose'), chemical: z.enum(['chlorine', 'antiscalant']), mgL: num }),
   z.object({ type: z.literal('ballCleaning'), on: z.boolean() }),
   z.object({ type: z.literal('divertToDrain'), on: z.boolean() }),
-  z.object({ type: z.literal('selectFuel'), fuel: FuelSchema }),
+  z.object({ type: z.literal('selectFuel'), fuel: FuelKindSchema }),
   z.object({ type: z.literal('orderFuel'), tonnes: num }),
   z.object({ type: z.literal('manualTrip') }),
   z.object({ type: z.literal('restart') }),

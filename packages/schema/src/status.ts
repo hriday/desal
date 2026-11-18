@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FuelSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
+import { FuelGradeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
 
 const num = z.number().finite();
 
@@ -14,22 +14,27 @@ export const TripCauseSchema = z.enum([
 ]);
 export type TripCause = z.infer<typeof TripCauseSchema>;
 
-// phase/status/backupGrade values are owned by the simulator; the contract only requires strings for now.
+export const PhaseSchema = z.enum(['handover', 'running', 'paused']);
+export type Phase = z.infer<typeof PhaseSchema>;
+
+export const PlantStatusKindSchema = z.enum(['online', 'tripped', 'restarting', 'acidCleaning']);
+export type PlantStatusKind = z.infer<typeof PlantStatusKindSchema>;
+
 export const PlantStatusSchema = z.object({
   tick: num,
   plantTime: num,
   shiftId: num.nullable(),
-  phase: z.string(),
-  status: z.string(),
+  phase: PhaseSchema,
+  status: PlantStatusKindSchema,
   controlMode: LoopModeSchema,
   tripCause: TripCauseSchema.nullable(),
   restartStep: RestartStepSchema.nullable(),
   loops: z.record(LoopIdSchema, z.object({ mode: LoopModeSchema, setpoint: num, output: num })),
   pumps: z.record(PumpIdSchema, z.object({ running: z.boolean() })),
   fuel: z.object({
-    active: FuelSchema,
-    changeoverTo: FuelSchema.nullable(),
-    backupGrade: z.string(),
+    active: FuelKindSchema,
+    changeoverTo: FuelKindSchema.nullable(),
+    backupGrade: FuelGradeSchema,
     gasCurtailmentNotice: z.string().nullable(),
   }),
   ballCleaning: z.boolean(),

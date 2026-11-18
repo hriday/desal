@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FuelSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
+import { FuelGradeSchema, FuelKindSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
 import { TripCauseSchema } from './status.js';
 
 const num = z.number().finite();
@@ -19,6 +19,22 @@ export const ShiftSummarySchema = z.object({
 });
 export type ShiftSummary = z.infer<typeof ShiftSummarySchema>;
 
+export const ScenarioKindSchema = z.enum([
+  'bloom',
+  'seawaterTemp',
+  'pumpBearing',
+  'gasCurtailNotice',
+  'gasPriceSpike',
+  'offgradeOnly',
+  'deliveryDelay',
+  'demandChange',
+  'controllerFault',
+]);
+export type ScenarioKind = z.infer<typeof ScenarioKindSchema>;
+
+export const DamageComponentSchema = z.enum(['stageScale', 'pump', 'burner']);
+export type DamageComponent = z.infer<typeof DamageComponentSchema>;
+
 // shiftId is null outside a shift (e.g. a commandRejected during handover).
 const base = { tick: num, plantTime: num, shiftId: num.nullable() };
 
@@ -28,10 +44,10 @@ export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('trip'), cause: TripCauseSchema }),
   z.object({ ...base, type: z.literal('restartProgress'), step: RestartStepSchema, ok: z.boolean(), reason: z.string().optional() }),
   z.object({ ...base, type: z.literal('online') }),
-  z.object({ ...base, type: z.literal('scenario'), kind: z.string(), message: z.string() }),
-  z.object({ ...base, type: z.literal('fuelChangeover'), from: FuelSchema, to: FuelSchema, phase: z.enum(['started', 'done', 'flameOut']) }),
-  z.object({ ...base, type: z.literal('deliveryArrived'), tonnes: num, grade: z.string() }),
+  z.object({ ...base, type: z.literal('scenario'), kind: ScenarioKindSchema, message: z.string() }),
+  z.object({ ...base, type: z.literal('fuelChangeover'), from: FuelKindSchema, to: FuelKindSchema, phase: z.enum(['started', 'done', 'flameOut']) }),
+  z.object({ ...base, type: z.literal('deliveryArrived'), tonnes: num, grade: FuelGradeSchema }),
   z.object({ ...base, type: z.literal('commandRejected'), commandId: z.string(), reason: z.string() }),
-  z.object({ ...base, type: z.literal('damage'), component: z.string(), value: num }),
+  z.object({ ...base, type: z.literal('damage'), component: DamageComponentSchema, value: num }),
 ]);
 export type PlantEvent = z.infer<typeof PlantEventSchema>;
