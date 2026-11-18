@@ -58,3 +58,18 @@ export const CAVITATION_DECAY_PER_TICK = 0.01;
 export const PUMP_WEAR_BASE_PER_TICK = 2.2e-6;
 /** Extra pump wear per tick at full cavitation. */
 export const PUMP_WEAR_CAVITATION_PER_TICK = 3e-5;
+
+/** Maximum burner thermal output (MW). */
+export const BURNER_MAX_MW = 60;
+/** Off-grade backup fuel limits the burner to this fraction of BURNER_MAX_MW. */
+export const OFFGRADE_CAP_FRACTION = 0.85;
+/** Burner output cap during a fuel changeover, as a fraction of BURNER_MAX_MW. */
+export const CHANGEOVER_CAP_FRACTION = 0.5;
+/** Ticks a fuel changeover lasts. */
+export const CHANGEOVER_TICKS = 8;
+/** Manual-mode firing (percent) above which a changeover flames out the burner. */
+export const FLAMEOUT_FIRING_PCT = 60;
+/** Lower heating value of standard backup fuel (MJ/kg). */
+export const LHV_STANDARD_MJkg = 42.5;
+/** Lower heating value of off-grade backup fuel (MJ/kg). */
+export const LHV_OFFGRADE_MJkg = 38;
