@@ -147,6 +147,41 @@ describe('quitGame', () => {
     expect(r.telemetry).toEqual([]);
   });
 
+  it('quitting mid-shift 2 scores the in-progress water, but not the shift as completed', () => {
+    let s = createInitialState(1, T0, GAME_ID);
+    s = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]).state;
+    for (let i = 0; i < SHIFT_TICKS && s.phase === 'running'; i++) s = tick(s, []).state;
+    expect(s.phase).toBe('handover');
+    const shift1M3 = s.run.totalProductM3;
+    expect(shift1M3).toBeGreaterThan(0);
+    s = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]).state;
+    for (let i = 0; i < 200; i++) s = tick(s, []).state;
+    const inProgressM3 = s.shift!.acc.productM3;
+    expect(s.shift!.id).toBe(2);
+    expect(inProgressM3).toBeGreaterThan(0);
+
+    const end = gameEnds(tick(s, [env(s, { type: 'quitGame' })]).events)[0]!;
+    expect(end).toMatchObject({ type: 'gameEnd', reason: 'quit' });
+    if (end.type !== 'gameEnd') throw new Error('unreachable');
+    expect(end.score.shiftsCompleted).toBe(1);
+    expect(end.score.totalProductM3).toBeCloseTo(shift1M3 + inProgressM3, 6);
+
+    // Paused counts the same way; in handover there is no shift in progress to add.
+    const paused: PlantState = { ...s, phase: 'paused' };
+    const pausedEnd = gameEnds(tick(paused, [env(paused, { type: 'quitGame' })]).events)[0]!;
+    if (pausedEnd.type !== 'gameEnd') throw new Error('unreachable');
+    expect(pausedEnd.score.totalProductM3).toBeCloseTo(shift1M3 + inProgressM3, 6);
+  });
+
+  it('quitting in handover scores only the completed shifts (the last shift is already counted)', () => {
+    let s = createInitialState(1, T0, GAME_ID);
+    s = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]).state;
+    for (let i = 0; i < SHIFT_TICKS && s.phase === 'running'; i++) s = tick(s, []).state;
+    const end = gameEnds(tick(s, [env(s, { type: 'quitGame' }, null)]).events)[0]!;
+    if (end.type !== 'gameEnd') throw new Error('unreachable');
+    expect(end.score).toMatchObject({ shiftsCompleted: 1, totalProductM3: s.run.totalProductM3 });
+  });
+
   it('is allowed in handover and paused', () => {
     const h = createInitialState(1, T0, GAME_ID);
     expect(gameEnds(tick(h, [env(h, { type: 'quitGame' }, null)]).events)).toHaveLength(1);

@@ -33,6 +33,8 @@ export const GameEndReasonSchema = z.enum(['bankrupt', 'outOfFuel', 'burnerFaile
 export type GameEndReason = z.infer<typeof GameEndReasonSchema>;
 
 // Ranked by totalProductM3 (in-spec water), then shiftsCompleted; balanceUsd is informational.
+// totalProductM3 includes the water of a shift still in progress when the game ended; that shift
+// does not count in shiftsCompleted.
 export const GameScoreSchema = z.object({ shiftsCompleted: num, totalProductM3: num, balanceUsd: num });
 export type GameScore = z.infer<typeof GameScoreSchema>;
 

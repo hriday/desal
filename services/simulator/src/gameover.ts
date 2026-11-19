@@ -37,9 +37,15 @@ export function checkGameOver(s: PlantState, atShiftEnd: boolean): GameEndReason
 /**
  * End the game: record the reason, move to phase 'over' and emit the final gameEnd with the score.
  * Shared by game-over checks, quitGame and the host's abandoned/error endings.
+ *
+ * A shift still in progress (running or paused) adds its in-spec water to the total, since that
+ * water was delivered, but does not count as completed. In handover the last shift's water was
+ * already added by endShift.
  */
 export function endGame(s: PlantState, reason: GameEndReason): { state: PlantState; events: SimEvent[] } {
-  const state: PlantState = { ...s, phase: 'over', run: { ...s.run, over: { reason, atTick: s.tick } } };
+  const inProgressM3 = s.shift && (s.phase === 'running' || s.phase === 'paused') ? s.shift.acc.productM3 : 0;
+  const run = { ...s.run, totalProductM3: s.run.totalProductM3 + inProgressM3, over: { reason, atTick: s.tick } };
+  const state: PlantState = { ...s, phase: 'over', run };
   return {
     state,
     events: [
