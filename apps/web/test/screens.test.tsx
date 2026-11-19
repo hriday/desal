@@ -53,6 +53,48 @@ describe('Handover', () => {
     expect(t).toContain(`≈ ${nextTargetEstimateM3(2).toLocaleString('en-US')} m³`);
     expect(getByRole('button', { name: 'Start shift 2' })).toBeTruthy();
   });
+  it('shows the pending orders: target, limit, budget, supervisor notes and the shift 1 briefing', () => {
+    const orders = {
+      targetM3: 4100, maxSalinityPpm: 22, budgetUsd: 13000,
+      lines: ['Watch the vacuum pump.', 'Gas is dear today.'],
+      briefing: ['Welcome to the plant.', 'Keep the product in spec.', 'Send the crew when a fault stays.'],
+    };
+    const status = demoStatus({ phase: 'handover', shiftNumber: 0, shiftTarget: null, orders });
+    const { container, getByRole } = render(<Handover {...base} status={status} events={[]} />);
+    const t = container.textContent!;
+    expect(t).toContain('4,100 m³');
+    expect(t).toContain('22 ppm');
+    expect(t).toContain('$13,000');
+    expect(t).not.toContain('≈');
+    const notes = getByRole('list', { name: "Supervisor's notes" });
+    expect(notes.querySelectorAll('li')).toHaveLength(2);
+    expect(notes.textContent).toContain('Watch the vacuum pump.');
+    const brief = getByRole('list', { name: 'Briefing' });
+    expect(brief.querySelectorAll('li')).toHaveLength(3);
+  });
+  it('lists the last shift events with a HELL SHIFT tag', () => {
+    const s = (shiftEnd as unknown as { summary: object }).summary;
+    const ev = { ...shiftEnd, summary: { ...s, hell: true, events: [
+      { eventId: 1, kind: 'pumpTrip', atMinute: 130.7, cleared: true, how: 'player' },
+      { eventId: 2, kind: 'tubeLeak', atMinute: 340, cleared: true, how: 'crew' },
+      { eventId: 3, kind: 'gasPriceSpike', atMinute: 10, cleared: true, how: 'noted' },
+      { eventId: 4, kind: 'vacuumLoss', atMinute: 400, cleared: false, how: null },
+      { eventId: 5, kind: 'storm', atMinute: 60, cleared: true, how: 'expired' },
+    ] } } as unknown as PlantEvent;
+    const { container } = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null })} events={[ev]} />);
+    const t = container.textContent!;
+    expect(t).toContain('HELL SHIFT');
+    expect(t).toContain('02:10 Pump trip — cleared by you');
+    expect(t).toContain('05:40 Tube leak — fixed by crew');
+    expect(t).toContain('Gas price spike — noted');
+    expect(t).not.toContain('00:10 Gas price spike');
+    expect(t).toContain('06:40 Vacuum loss — not cleared');
+    expect(t).toContain('01:00 Storm — passed');
+  });
+  it('shows no HELL SHIFT tag on a normal shift', () => {
+    const { container } = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null })} events={[shiftEnd]} />);
+    expect(container.textContent).not.toContain('HELL SHIFT');
+  });
   it('before the first shift (shiftNumber 0) offers shift 1 at about 3,900 m³; after shift 2 offers shift 3', () => {
     const first = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 0, shiftTarget: null })} events={[]} />);
     expect(first.getByRole('button', { name: 'Start shift 1' })).toBeTruthy();

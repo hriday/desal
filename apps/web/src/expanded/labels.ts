@@ -21,5 +21,15 @@ export const END_TEXT: Record<string, string> = {
 };
 
 export const CAUSE_TEXT: Record<string, string> = {
-  allocation: 'the shift allocation', fuel: 'gas', delivery: 'a backup fuel delivery', acidClean: 'an acid clean', overhaul: 'a pump overhaul',
+  allocation: 'the shift allocation', fuel: 'gas', delivery: 'a backup fuel delivery', acidClean: 'an acid clean', overhaul: 'a pump overhaul', crew: 'a crew job',
 };
+
+export const KIND_TEXT: Record<string, string> = {
+  bloom: 'Algal bloom', seawaterTemp: 'Seawater temperature change', pumpBearing: 'Pump bearing wear', gasCurtailNotice: 'Gas curtailment notice',
+  gasPriceSpike: 'Gas price spike', offgradeOnly: 'Off-grade fuel only', deliveryDelay: 'Fuel delivery delay', demandChange: 'Demand change',
+  controllerFault: 'Controller fault', pumpTrip: 'Pump trip', tubeLeak: 'Tube leak', vacuumLoss: 'Vacuum loss', powerDip: 'Power dip',
+  storm: 'Storm', sensorFailure: 'Instrument failure',
+};
+
+/** How an event ended, as the debrief and the event log say it. */
+export const HOW_TEXT: Record<string, string> = { player: 'cleared by you', crew: 'fixed by crew', expired: 'passed', noted: 'noted' };

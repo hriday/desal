@@ -470,3 +470,37 @@ describe('pending and rejection', () => {
     expect(container.textContent).toContain('reported 112.0 °C');
   });
 });
+
+describe('crew buttons', () => {
+  const BUTTONS: [string, ComponentType<ExpandedProps>, string, string][] = [
+    ['ProductView', ProductView, 'plugTubes', 'Send crew: plug tubes — $3,000, 60 min'],
+    ['StagesView', StagesView, 'repairEjector', 'Send crew: repair ejector — $4,000, 45 min'],
+    ['IntakeView', IntakeView, 'cleanScreens', 'Send crew: clean screens — $1,000, 30 min'],
+    ['ShiftView', ShiftView, 'replaceSensor', 'Send crew: replace instrument — $1,500, 30 min'],
+  ];
+  it.each(BUTTONS)('%s sends the crew job on click, whatever the fault state', (_n, View, job, text) => {
+    const { container, sent } = withSend(View, demoStatus());
+    fireEvent.click(within(container).getByRole('button', { name: text }));
+    expect(sent).toEqual([{ type: 'dispatchCrew', job }]);
+  });
+  it.each(BUTTONS)('%s disables the button while the crew is busy', (_n, View, _job, text) => {
+    const { container, sent } = withSend(View, demoStatus({ crew: { job: 'cleanScreens', remainingTicks: 10 } }));
+    const b = within(container).getByRole('button', { name: text }) as HTMLButtonElement;
+    expect(b.disabled).toBe(true);
+    expect(container.textContent).toContain('Crew busy: cleaning screens');
+    fireEvent.click(b);
+    expect(sent).toEqual([]);
+  });
+  it('is disabled outside a running shift and while the dispatch is pending', () => {
+    const paused = withSend(ProductView, demoStatus({ phase: 'paused' }));
+    expect((within(paused.container).getByRole('button', { name: /send crew/i }) as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    const pending = new Map([['dispatchCrew', { command: { type: 'dispatchCrew', job: 'plugTubes' }, tick: 0 }]]);
+    const p = withSend(ProductView, demoStatus(), { pending: pending as unknown as ExpandedProps['pending'] });
+    expect((within(p.container).getByRole('button', { name: /send crew/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it('the shift view shows the crew job and minutes left', () => {
+    const { container } = withSend(ShiftView, demoStatus({ crew: { job: 'replaceSensor', remainingTicks: 0.1 } }));
+    expect(container.textContent).toContain('Replacing sensor, 1 min left');
+  });
+});

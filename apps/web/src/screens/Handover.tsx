@@ -1,6 +1,7 @@
 import type { LoopMode, PlantEvent, PlantStatus, ShiftSummary } from '@desal/schema';
 import { useState } from 'react';
-import { fmt, get, num, stageKey, usd } from '../equipment/format';
+import { fmt, get, label, num, stageKey, usd } from '../equipment/format';
+import { HOW_TEXT, KIND_TEXT } from '../expanded/labels';
 import { nextTargetEstimateM3 } from '../limits';
 import { STAGE_COUNT } from '../plantConstants';
 import './screens.css';
@@ -26,10 +27,19 @@ export function lastSummary(events: readonly PlantEvent[]): ShiftSummary | null 
 const PUMPS = ['P-101', 'P-102', 'P-103'] as const;
 const pct = (v: number | undefined) => (num(v) ? `${Math.round(v * 100)} %` : fmt(undefined));
 
+/** "02:10 Pump trip — cleared by you". A noted (informational) event has no time; an uncleared one says so. */
+export function debriefLine(e: ShiftSummary['events'][number]): string {
+  const kind = label(KIND_TEXT, e.kind) ?? 'Plant event';
+  if (e.how === 'noted') return `${kind} — noted`;
+  const m = Number.isFinite(e.atMinute) ? Math.max(0, Math.floor(e.atMinute)) : 0;
+  const at = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  return `${at} ${kind} — ${(e.how && label(HOW_TEXT, e.how)) || 'not cleared'}`;
+}
+
 function Summary({ s }: { s: ShiftSummary }) {
   return (
     <section aria-label="Last shift">
-      <h2>Last shift</h2>
+      <h2>Last shift{s.hell && <> <span className="tone--bad" data-hell>HELL SHIFT</span></>}</h2>
       <dl>
         <dt>In-spec water</dt><dd>{fmt(s.productM3)} / {fmt(s.targetM3)} m³</dd>
         <dt>Off-spec water</dt><dd>{fmt(s.offSpecM3)} m³ ({fmt(s.offSpecMinutes)} min)</dd>
@@ -38,6 +48,11 @@ function Summary({ s }: { s: ShiftSummary }) {
         <dt>Trips</dt><dd>{fmt(s.trips)}</dd>
         <dt>Balance</dt><dd>{usd(s.balanceUsd)}</dd>
       </dl>
+      {s.events.length > 0 && (
+        <ul aria-label="Shift events">
+          {s.events.map((e) => <li key={e.eventId}>{debriefLine(e)}</li>)}
+        </ul>
+      )}
     </section>
   );
 }
@@ -74,7 +89,10 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
   // status.shiftNumber is the last STARTED shift (0 before the first), so the shift about to start is one more.
   const n = (status?.shiftNumber ?? 0) + 1;
   // status.shiftTarget is null outside a shift, so before it starts we show the estimate.
-  const target = status?.shiftTarget ? fmt(status.shiftTarget.productM3, 0, 'm³') : `≈ ${fmt(nextTargetEstimateM3(n))} m³`;
+  const orders = status?.orders ?? null;
+  const target = orders
+    ? fmt(orders.targetM3, 0, 'm³')
+    : status?.shiftTarget ? fmt(status.shiftTarget.productM3, 0, 'm³') : `≈ ${fmt(nextTargetEstimateM3(n))} m³`;
   return (
     <main className="screen" data-screen="handover">
       <h1>Shift {n} handover</h1>
@@ -84,8 +102,22 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
         <h2>Next shift</h2>
         <dl>
           <dt>Water target</dt><dd>{target}</dd>
+          {orders && <><dt>Salinity limit</dt><dd>{fmt(orders.maxSalinityPpm, 0, 'ppm')}</dd></>}
+          {orders && <><dt>Budget</dt><dd>{usd(orders.budgetUsd)}</dd></>}
           <dt>Balance</dt><dd>{usd(status?.balanceUsd)}</dd>
         </dl>
+        {orders && orders.briefing.length > 0 && (
+          <>
+            <h3>Briefing</h3>
+            <ul aria-label="Briefing">{orders.briefing.map((l, i) => <li key={i}>{l}</li>)}</ul>
+          </>
+        )}
+        {orders && orders.lines.length > 0 && (
+          <>
+            <h3>Supervisor's notes</h3>
+            <ul aria-label="Supervisor's notes">{orders.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+          </>
+        )}
         <fieldset>
           <legend>Control mode</legend>
           <label>

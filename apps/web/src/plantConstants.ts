@@ -12,3 +12,14 @@ export const TICK_PLANT_S = 40;
 export const STAGE_COUNT = 20;
 /** DESIGN_PRODUCT_M3H: design product flow (m3/h). Mirrors the simulator's NOMINAL.productM3h at 93.5 C TBT (services/simulator/src/state.ts). */
 export const DESIGN_PRODUCT_M3H = 531.9;
+
+/**
+ * The crew's jobs: cost (USD) and duration (plant minutes). Mirrors the simulator's CREW_JOBS in
+ * services/simulator/src/constants.ts (spec 4.6); keep in sync. `plain` names the job on a button, `doing` the work under way.
+ */
+export const CREW_JOBS = {
+  plugTubes: { costUsd: 3000, minutes: 60, plain: 'plug tubes', doing: 'Plugging tubes' },
+  repairEjector: { costUsd: 4000, minutes: 45, plain: 'repair ejector', doing: 'Repairing ejector' },
+  replaceSensor: { costUsd: 1500, minutes: 30, plain: 'replace instrument', doing: 'Replacing sensor' },
+  cleanScreens: { costUsd: 1000, minutes: 30, plain: 'clean screens', doing: 'Cleaning screens' },
+} as const;

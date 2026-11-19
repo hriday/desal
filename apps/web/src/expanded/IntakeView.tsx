@@ -3,6 +3,7 @@ import { requiredIntakeM3h } from '../alarms/rules';
 import { dose, overhaul, pump } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
 import { canSend, pendingCommand, type ControlCtx } from '../controls/ctx';
+import { CrewButton } from '../controls/CrewButton';
 import { LoopSetpoint, Setpoint } from '../controls/Setpoint';
 import { LoopModeToggle, Toggle } from '../controls/Toggle';
 import { Trend } from '../controls/Trend';
@@ -137,6 +138,7 @@ export function IntakeView(props: ExpandedProps) {
           {status?.controlMode === 'auto' && <LoopModeToggle loop="intakeFlow" name="Intake flow" {...ctl} />}
           {PUMPS.map((id) => <PumpControl key={id} id={id} {...ctl} />)}
           <DoseControls {...ctl} />
+          <CrewButton job="cleanScreens" {...ctl} />
         </>
       }
     />

@@ -2,9 +2,12 @@ import type { PlantEvent, PlantStatus, RestartStep } from '@desal/schema';
 import { manualTrip, pause, quit, restart, restartStep, resume } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
 import { canSend, pendingCommand, type ControlCtx } from '../controls/ctx';
+import { CrewButton } from '../controls/CrewButton';
 import { Trend } from '../controls/Trend';
 import { DASH, clamp01, fmt, get, label, num, ticksToHm, usd } from '../equipment/format';
 import { ShiftAccount } from '../equipment/ShiftAccount';
+import { CREW_JOBS } from '../plantConstants';
+import { crewMinutesLeft } from '../screens/quota';
 import { clock, eventText } from './eventText';
 import { MODE_TEXT, PLANT_TEXT, STEP_TEXT, TRIP_TEXT } from './labels';
 import { Detail, Row, ViewLayout } from './Layout';
@@ -60,6 +63,15 @@ function ShiftControls(ctl: ControlCtx) {
           />
         </div>
       )}
+      <div className="ctl">
+        <span className="ctl__label">Crew</span>
+        <CrewButton job="replaceSensor" {...ctl} />
+        {st?.crew && (
+          <span className="ctl__meta">
+            {CREW_JOBS[st.crew.job]?.doing ?? st.crew.job}, {crewMinutesLeft(st.crew.remainingTicks)} min left
+          </span>
+        )}
+      </div>
       <div className="ctl">
         <span className="ctl__label">Plant</span>
         <span className="ctl__row">

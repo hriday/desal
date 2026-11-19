@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { acidClean, ballCleaning, setpoint } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
 import { canSend, pendingCommand, type ControlCtx } from '../controls/ctx';
+import { CrewButton } from '../controls/CrewButton';
 import { LoopSetpoint, Setpoint } from '../controls/Setpoint';
 import { LoopModeToggle, Toggle } from '../controls/Toggle';
 import { Trend } from '../controls/Trend';
@@ -139,6 +140,7 @@ export function StagesView(props: ExpandedProps) {
               onAction={() => props.send?.(acidClean())}
             />
           )}
+          <CrewButton job="repairEjector" {...ctl} />
           {cleaning && (
             <span className="ctl__meta">
               Acid cleaning, {fmt(num(status.acidCleanRemainingTicks) ? (status.acidCleanRemainingTicks * TICK_PLANT_S) / 60 : undefined, 0, 'min')} left

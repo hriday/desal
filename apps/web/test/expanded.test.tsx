@@ -163,6 +163,16 @@ describe('eventText', () => {
     expect(s).not.toMatch(/NaN|undefined|null|\[object|[a-z][A-Z]/); // no camelCase ids leak through
   });
 
+  it('eventCleared names the kind and how it ended', () => {
+    expect(eventText({ ...SAMPLES.eventCleared, kind: 'pumpTrip', how: 'crew' })).toBe('Pump trip cleared: fixed by crew');
+    expect(eventText({ ...SAMPLES.eventCleared, kind: 'tubeLeak', how: 'player' })).toBe('Tube leak cleared: cleared by you');
+    expect(eventText({ ...SAMPLES.eventCleared, kind: 'storm', how: 'expired' })).toBe('Storm cleared: passed');
+    expect(eventText({ ...SAMPLES.eventCleared, kind: 'sensorFailure', how: 'noted' })).toContain('Instrument failure');
+  });
+  it('an account change by the crew reads naturally', () => {
+    expect(eventText({ ...SAMPLES.accountChange, cause: 'crew' })).toBe('Paid $8,000 for a crew job; balance $4,450');
+  });
+
   it('reads the way an operator would say it', () => {
     expect(eventText(SAMPLES.scenario)).toBe('Algal bloom in the intake water: chlorophyll rising toward 8 µg/L.');
     expect(eventText(SAMPLES.trip)).toBe('Plant tripped: loss of vacuum');
