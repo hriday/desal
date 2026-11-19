@@ -154,3 +154,41 @@ export const CF_SALINITY_KNEE = 1.5;
 export const CF_SALINITY_PPM = 10;
 /** Product salinity limit when no shift target applies (ppm). */
 export const DEFAULT_MAX_SALINITY_PPM = 25;
+
+/** TBT high-high trip (degC). */
+export const TBT_HH_C = 118;
+/** Stage level at or above which the stage-flood interlock trips (m). */
+export const LEVEL_FLOOD_M = 0.8;
+/** Vacuum quality below which the loss-of-vacuum interlock trips. */
+export const VACUUM_TRIP = 0.6;
+/** Intake flow, as a fraction of required, below which the no-intake-flow interlock trips. */
+export const INTAKE_TRIP_FRACTION = 0.2;
+/** Hard scale added to each of the hottest stages by a trip's thermal cycle (mm). */
+export const TRIP_SCALE_MM = 0.02;
+/** Number of hottest stages (1..N) that take thermal-cycling scale on a trip. */
+export const TRIP_SCALE_STAGES = 5;
+/** Burner condition lost to a trip's thermal cycle. */
+export const TRIP_BURNER_DAMAGE = 0.01;
+
+/** Vacuum quality the restart's vacuum step must reach before recirc may start. */
+export const RESTART_VACUUM_MIN = 0.85;
+/** Recirc flow, as a fraction of its setpoint, the recirc step must reach before ignition. */
+export const RESTART_RECIRC_FRACTION = 0.8;
+/** Burner firing (percent) set at ignition. */
+export const IGNITION_FIRING_PCT = 15;
+/** TBT ramp rate the Auto restart aims for (degC per plant minute). */
+export const AUTO_RAMP_C_PER_MIN = 1.5;
+/** Auto ramp firing correction per tick per degC/min of ramp-rate error (percent). */
+export const AUTO_RAMP_FIRING_GAIN = 10;
+/** Manual ramp rate above which the burner wears and the hot stages scale (degC per plant minute). */
+export const RAMP_WARN_C_PER_MIN = 2;
+/** Manual ramp rate above which the burner flames out and the plant re-trips (degC per plant minute). */
+export const RAMP_TRIP_C_PER_MIN = 4;
+/** Burner condition lost per tick of an over-fast manual ramp. */
+export const RAMP_BURNER_WEAR = 0.002;
+/** Hard scale added per tick of an over-fast manual ramp to each of the hottest stages (mm). */
+export const RAMP_SCALE_MM = 0.005;
+/** The plant is back online once TBT is within this margin of its setpoint (degC). */
+export const ONLINE_MARGIN_C = 2;
+/** Acid clean duration (ticks): 2 plant hours. */
+export const ACID_CLEAN_TICKS = 180;

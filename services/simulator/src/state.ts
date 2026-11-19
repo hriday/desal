@@ -74,7 +74,8 @@ export interface PlantState {
   controlMode: 'auto' | 'manual';
   status: PlantStatusKind;
   trip: { cause: TripCause; atTick: number } | null;
-  restart: { step: RestartStep; stepStartedTick: number; auto: boolean } | null;
+  /** prevTbtC: TBT seen at the previous restart step, used to measure the ramp rate. */
+  restart: { step: RestartStep; stepStartedTick: number; auto: boolean; prevTbtC: number } | null;
   acidCleanRemainingTicks: number;
   loops: Record<'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum', Loop> & { levels: Loop[] };
   seawater: { tempC: number; salinityGL: number; chlorophyllUgL: number };
@@ -113,7 +114,7 @@ const NOMINAL = {
 };
 
 // Actuator outputs (percent) that hold the nominal plant at equilibrium with no PID action.
-const BALANCE = {
+export const BALANCE = {
   recircPct: (100 * NOMINAL.recircM3h) / RECIRC_PUMP_MAX_M3H,
   vacuumPct: (100 * (NOMINAL.vacuumQuality - VACUUM_QUALITY_MIN)) / (1 - VACUUM_QUALITY_MIN),
   blowdownPct: (100 * (CF_MAX - NOMINAL.concentrationFactor)) / (CF_MAX - CF_MIN),
