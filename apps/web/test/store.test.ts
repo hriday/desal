@@ -285,4 +285,14 @@ describe('store reducer', () => {
     expect(commandKey({ type: 'pump', pumpId: 'P-101', action: 'start' })).toBe('pump:P-101');
     expect(commandKey({ type: 'setDose', chemical: 'chlorine', mgL: 1 })).toBe('setDose:chlorine');
   });
+
+  it('alarmsSeen marks alarm ids seen; alarmsActive forgets cleared ones so a recurrence alerts again', () => {
+    let s = reducer(initialState(), { type: 'alarmsSeen', ids: ['a', 'b'] });
+    expect([...s.seenAlarms].sort()).toEqual(['a', 'b']);
+    const same = reducer(s, { type: 'alarmsActive', ids: ['a', 'b', 'c'] });
+    expect(same).toBe(s);
+    s = reducer(s, { type: 'alarmsActive', ids: ['a'] });
+    expect([...s.seenAlarms]).toEqual(['a']);
+    expect(reducer(s, { type: 'startClicked' }).seenAlarms.size).toBe(0);
+  });
 });

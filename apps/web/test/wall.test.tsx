@@ -7,6 +7,7 @@ import { BrineHeater } from '../src/equipment/BrineHeater';
 import { FlashStages } from '../src/equipment/FlashStages';
 import { Fuel } from '../src/equipment/Fuel';
 import { Intake } from '../src/equipment/Intake';
+import { Pipe } from '../src/equipment/Pipe';
 import { ProductWater } from '../src/equipment/ProductWater';
 import { ShiftAccount } from '../src/equipment/ShiftAccount';
 import type { EquipmentProps } from '../src/equipment/types';
@@ -165,6 +166,77 @@ describe('Monitor', () => {
     const { getByRole } = render(<Monitor id="fuel" {...props} alarms={[]} onOpen={onOpen} />);
     fireEvent.click(getByRole('button', { name: /fuel/i }));
     expect(onOpen).toHaveBeenCalledWith('fuel');
+  });
+});
+
+describe('living wall (Task 11)', () => {
+  const props = { readings: demoReadings(), target: demoTarget };
+  const pumpStatus = (running: boolean) => {
+    const st = demoStatus();
+    return { ...st, pumps: { ...st.pumps, 'P-101': { ...st.pumps['P-101'], running } } };
+  };
+
+  it('a running pump has class is-running; a stopped one does not', () => {
+    const cls = (running: boolean) => {
+      const { container, unmount } = render(<Intake status={pumpStatus(running)} {...props} />);
+      const c = container.querySelector('[data-pump="P-101"]')!.getAttribute('class') ?? '';
+      unmount();
+      return c;
+    };
+    expect(cls(true)).toMatch(/\bis-running\b/);
+    expect(cls(false)).not.toMatch(/\bis-running\b/);
+  });
+
+  it('a pipe with zero flow is not flowing; with flow it is, and its speed follows the flow', () => {
+    const pipe = (flow: number | undefined) => {
+      const { container, unmount } = render(<svg><Pipe d="M0 0 H10" stroke="red" width={2} flow={flow} /></svg>);
+      const el = container.querySelector('[data-flowing]')!;
+      const out = { flowing: el.getAttribute('data-flowing'), speed: (el as SVGElement).style.getPropertyValue('--flow-speed') };
+      unmount();
+      return out;
+    };
+    expect(pipe(0).flowing).toBe('false');
+    expect(pipe(undefined).flowing).toBe('false');
+    expect(pipe(1).flowing).toBe('true');
+    expect(parseFloat(pipe(1).speed)).toBeLessThan(parseFloat(pipe(0.3).speed));
+    expect(pipe(0).speed).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('the intake header stops flowing at zero intake flow', () => {
+    const { container } = render(<Intake status={demoStatus()} readings={demoReadings({ 'intake.flowM3h': 0 })} target={null} />);
+    expect(container.querySelector('[data-pipe="header"]')!.getAttribute('data-flowing')).toBe('false');
+  });
+
+  it('a Monitor with an unseen high alarm has data-alert="high"; once seen it is gone', () => {
+    const alarms = [alarm('heater', 'bad', 'tbt-high')];
+    const onOpen = vi.fn();
+    const { getByRole, rerender } = render(<Monitor id="heater" status={demoStatus()} {...props} alarms={alarms} seen={new Set()} onOpen={onOpen} />);
+    expect(getByRole('button').getAttribute('data-alert')).toBe('high');
+    fireEvent.click(getByRole('button'));
+    expect(onOpen).toHaveBeenCalledWith('heater');
+    rerender(<Monitor id="heater" status={demoStatus()} {...props} alarms={alarms} seen={new Set(['tbt-high:bad'])} onOpen={onOpen} />);
+    expect(getByRole('button').hasAttribute('data-alert')).toBe(false);
+  });
+
+  it('a seen warning that escalates to high pulses again', () => {
+    const { getByRole } = render(<Monitor id="heater" status={demoStatus()} {...props} alarms={[alarm('heater', 'bad', 'tbt')]} seen={new Set(['tbt:warn'])} onOpen={() => {}} />);
+    expect(getByRole('button').getAttribute('data-alert')).toBe('high');
+  });
+
+  it('a warn alarm alone does not make the frame pulse as high', () => {
+    const { getByRole } = render(<Monitor id="heater" status={demoStatus()} {...props} alarms={[alarm('heater', 'warn')]} seen={new Set()} onOpen={() => {}} />);
+    expect(getByRole('button').getAttribute('data-alert')).not.toBe('high');
+  });
+
+  it('a Monitor is down (data-down="true") while the plant is tripped, not while online', () => {
+    const down = (status: 'tripped' | 'online') => {
+      const { getByRole, unmount } = render(<Monitor id="intake" status={demoStatus({ status })} {...props} alarms={[]} onOpen={() => {}} />);
+      const v = getByRole('button').getAttribute('data-down');
+      unmount();
+      return v;
+    };
+    expect(down('tripped')).toBe('true');
+    expect(down('online')).not.toBe('true');
   });
 });
 

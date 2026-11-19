@@ -12,6 +12,8 @@ export const TICK_PLANT_S = 40;
 export const STAGE_COUNT = 20;
 /** DESIGN_PRODUCT_M3H: design product flow (m3/h). Mirrors the simulator's NOMINAL.productM3h at 93.5 C TBT (services/simulator/src/state.ts). */
 export const DESIGN_PRODUCT_M3H = 531.9;
+/** RECIRC_NOMINAL_M3H: nominal brine recirculation (m3/h). Source: services/simulator/src/constants.ts. */
+export const RECIRC_NOMINAL_M3H = 5350;
 
 /**
  * The crew's jobs: cost (USD) and duration (plant minutes). Mirrors the simulator's CREW_JOBS in

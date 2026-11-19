@@ -129,6 +129,9 @@ export function alarmContext(
   return { target: liveTarget ?? target, faults };
 }
 
+/** What "seen" tracks: the alarm at its level, so a warning escalating to high alerts afresh. */
+export const seenKey = (a: Alarm): string => `${a.id}:${a.level}`;
+
 /** Alarms worst first (bad before warn), otherwise in their original order. */
 export function byWorst(alarms: readonly Alarm[]): Alarm[] {
   return [...alarms].sort((a, b) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1));

@@ -1,4 +1,14 @@
-.room { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; min-height: 100%; }
+.room {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  min-height: 100%;
+  /* A dim room behind the wall: a soft light from above. */
+  background: radial-gradient(120% 70% at 50% 0%, #111c28 0%, var(--bg) 70%);
+}
+/* ?demo has no top bar; give the strip some air. */
+.room--demo { padding-top: 12px; }
 
 .topbar {
   display: flex;

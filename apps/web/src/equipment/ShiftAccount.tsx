@@ -16,7 +16,7 @@ export function ShiftAccount({ status, readings, target, alarms = [] }: Equipmen
   const plantColor = plant === DASH ? C.muted : status?.status === 'tripped' ? C.bad : status?.status === 'online' ? C.ok : C.warn;
   const top = byWorst(alarms).slice(0, 2);
   return (
-    <svg viewBox="0 0 200 104" role="img" aria-label="Shift and account">
+    <svg viewBox="0 0 200 104" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Shift and account">
       <text x={4} y={14} fill={C.text} fontSize={10} fontWeight={700}>Shift {fmt(status?.shiftNumber)}</text>
       <text x={196} y={14} fill={C.muted} fontSize={8} textAnchor="end">{ticksToHm(status?.shiftTicksRemaining)} left</text>
       <text x={4} y={30} fill={C.muted} fontSize={7}>In-spec water</text>

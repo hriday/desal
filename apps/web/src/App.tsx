@@ -1,10 +1,11 @@
 import { Component, useCallback, useState, type ErrorInfo, type ReactNode, type SyntheticEvent } from 'react';
-import { alarmsFor, MONITORS, type MonitorId } from './alarms/rules';
+import { alarmsFor, MONITORS, seenKey, type MonitorId } from './alarms/rules';
 import { demoEvents, demoReadings, demoStatus, demoTarget, demoTrends } from './demo';
 import { ExpandedView } from './expanded/ExpandedView';
 import { AlarmStrip } from './wall/AlarmStrip';
 import { quit, startShift } from './commands';
 import { ControlRoom } from './screens/ControlRoom';
+import './screens/room.css';
 import { GameOver } from './screens/GameOver';
 import { Handover } from './screens/Handover';
 import { Start } from './screens/Start';
@@ -29,13 +30,18 @@ function Demo({ open }: { open: MonitorId | null }) {
     const readings = demoReadings();
     return { status, readings, trends: demoTrends(), events: demoEvents(), alarms: alarmsFor(status, readings, { target: demoTarget }) };
   });
+  // Opening a monitor marks its alarms seen, as in the room (the demo has no store).
+  const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
+  const openMonitor = useCallback((id: MonitorId) => {
+    setSeen((s) => new Set([...s, ...data.alarms.filter((a) => a.monitor === id).map(seenKey)]));
+    setOpened(id);
+  }, [data.alarms]);
   return (
-    <main style={{ padding: 12 }}>
-      <AlarmStrip alarms={data.alarms} onOpen={setOpened} />
-      <div style={{ height: 8 }} />
+    <main className="room room--demo">
+      <AlarmStrip alarms={data.alarms} onOpen={openMonitor} />
       {opened
         ? <ExpandedView id={opened} {...data} target={demoTarget} onClose={close} send={demoSend} />
-        : <Wall status={data.status} readings={data.readings} target={demoTarget} alarms={data.alarms} onOpen={setOpened} />}
+        : <Wall status={data.status} readings={data.readings} target={demoTarget} alarms={data.alarms} seen={seen} onOpen={openMonitor} />}
     </main>
   );
 }

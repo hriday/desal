@@ -91,6 +91,17 @@ describe('ControlRoom', () => {
     expect(container.querySelector('[data-monitor="product"]')!.className).toContain('monitor--bad');
   });
 
+  it('an unseen high alarm pulses its monitor until the monitor is opened', () => {
+    const { container, ws } = mount(running({ shiftTarget: { productM3: 3900, maxSalinityPpm: 15, fuelBudgetUsd: 12000 } }));
+    ws.push({ t: 'frame', tick: 2, plantTime: 0, readings: { 'product.salinityPpm': 18 } });
+    const product = () => container.querySelector('[data-monitor="product"]')!;
+    expect(product().getAttribute('data-alert')).toBe('high');
+    fireEvent.click(product());
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(product().hasAttribute('data-alert')).toBe(false);
+    expect(product().className).toContain('monitor--bad');
+  });
+
   it('a gameEnd switches to game over at once, even with a monitor expanded', () => {
     const { container, ws } = mount(running());
     fireEvent.click(container.querySelector('[data-monitor="fuel"]')!);

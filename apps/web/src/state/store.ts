@@ -41,6 +41,8 @@ export interface State {
   radio: RadioState;
   /** plantTime of the session's first status: radio ignores scenario events older than this (a resume's replay). */
   sessionStartPlantTime: number | null;
+  /** Alarms the player has seen by opening their monitor (alarms/rules seenKey); a seen high alarm stops pulsing. */
+  seenAlarms: ReadonlySet<string>;
 }
 
 export type Action =
@@ -54,6 +56,10 @@ export type Action =
   | { type: 'sent'; command: Command; commandId?: string }
   | { type: 'dismissToast' }
   | { type: 'radioExpire' }
+  // The player opened a monitor: its active alarms (seenKeys) count as seen.
+  | { type: 'alarmsSeen'; ids: readonly string[] }
+  // The alarms active now (seenKeys): seen ones that have cleared are forgotten, so a recurrence alerts again.
+  | { type: 'alarmsActive'; ids: readonly string[] }
   // No gameStart answer within the start timeout.
   | { type: 'startTimeout' }
   // No status within the watchdog window while connected.
@@ -73,7 +79,7 @@ export function initialState(resuming = false): State {
   return {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
     pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
-    epoch: 0, telemetryLost: false, radio: initialRadio, sessionStartPlantTime: null,
+    epoch: 0, telemetryLost: false, radio: initialRadio, sessionStartPlantTime: null, seenAlarms: new Set(),
   };
 }
 
@@ -220,6 +226,15 @@ export function reducer(s: State, a: Action): State {
       const commandKeys = new Map(s.commandKeys);
       if (a.commandId) commandKeys.set(a.commandId, key);
       return { ...s, pending: new Map(s.pending).set(key, { command: a.command, age: 0 }), commandKeys };
+    }
+    case 'alarmsSeen': {
+      if (a.ids.every((id) => s.seenAlarms.has(id))) return s;
+      return { ...s, seenAlarms: new Set([...s.seenAlarms, ...a.ids]) };
+    }
+    case 'alarmsActive': {
+      const active = new Set(a.ids);
+      if ([...s.seenAlarms].every((id) => active.has(id))) return s;
+      return { ...s, seenAlarms: new Set([...s.seenAlarms].filter((id) => active.has(id))) };
     }
     case 'radioExpire': return { ...s, radio: radioReducer(s.radio, { type: 'expire' }) };
     case 'dismissToast': return { ...s, toast: null };
