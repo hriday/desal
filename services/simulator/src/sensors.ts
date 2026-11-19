@@ -4,6 +4,9 @@ import type { LoopSensorId, PlantState } from './state.js';
 
 const LOOP_SALT: Record<LoopSensorId, number> = { tbt: 1, intakeFlow: 2, recirc: 3, blowdown: 4, vacuum: 5 };
 
+/** True for the loop ids that have a loop-feeding sensor (own keys only). */
+export const isLoopSensor = (x: string): x is LoopSensorId => Object.hasOwn(LOOP_SALT, x);
+
 /** The process value a loop controls, as the plant really has it. */
 export function trueLoopValue(s: PlantState, loop: LoopSensorId): number {
   switch (loop) {

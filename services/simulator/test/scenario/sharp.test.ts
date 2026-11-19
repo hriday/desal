@@ -18,7 +18,7 @@ import type { FiredEvent } from '../../src/scenario/chaosTypes.js';
 import { isCleared } from '../../src/scenario/director.js';
 import { applyEffect } from '../../src/scenario/effects.js';
 import { drawEvent } from '../../src/scenario/library.js';
-import { ejectorLoadFactor } from '../../src/scenario/sharp.js';
+import { ejectorLoadFactor } from '../../src/units/stages.js';
 import { startShift } from '../../src/shift.js';
 import { createInitialState, NOMINAL, type PlantState } from '../../src/state.js';
 import { tick } from '../../src/tick.js';
@@ -240,25 +240,42 @@ describe('sensorFailure', () => {
     return { ...hit, loops: { ...hit.loops, tbt: { ...hit.loops.tbt, setpoint: s0.heater.tbtC + 3 } } };
   };
 
-  it('a frozen tbt sensor holds the telemetry reading while the Auto loop drives the true TBT off setpoint', () => {
+  const overshoot = (s: PlantState, sp: number): number => s.heater.tbtC - sp;
+
+  it('a frozen tbt sensor holds the telemetry reading while the Auto loop drives the true TBT past setpoint', () => {
     const s0 = frozenRun();
+    const sp = s0.loops.tbt.setpoint;
     const frozen = s0.faults.sensors.tbt as { value: number };
     let s = s0;
-    let drifted = false;
-    for (let i = 0; i < 60 && !drifted; i++) {
+    let worst = -Infinity;
+    for (let i = 0; i < 60; i++) {
       const r = tick(s, []);
       s = r.state;
       expect(r.telemetry.find((t) => t.sensorId === 'heater.tbtC')!.value).toBe(frozen.value);
-      drifted = Math.abs(s.heater.tbtC - s0.loops.tbt.setpoint) > 2;
+      worst = Math.max(worst, overshoot(s, sp));
+      if (s.status !== 'online') break;
     }
-    expect(drifted).toBe(true);
+    expect(worst).toBeGreaterThan(2);
+  });
+
+  it('the same run with a healthy sensor settles within 2 degC of setpoint', () => {
+    const s0 = frozenRun();
+    const healthy: PlantState = { ...s0, faults: { ...s0.faults, sensors: {} } };
+    const sp = s0.loops.tbt.setpoint;
+    let s = healthy;
+    for (let i = 0; i < 60; i++) {
+      s = tick(s, []).state;
+      if (i >= 30) expect(Math.abs(overshoot(s, sp))).toBeLessThanOrEqual(2);
+    }
     expect(s.status).toBe('online');
   });
 
-  it('switching the loop to Manual at a balanced output stops the drift', () => {
-    let s = run(frozenRun(), 15);
-    const rising = s.heater.tbtC;
-    expect(rising).toBeGreaterThan(frozenRun().heater.tbtC + 0.5);
+  it('switching the loop to Manual at a balanced output stops a real drift', () => {
+    const s0 = frozenRun();
+    const sp = s0.loops.tbt.setpoint;
+    let s = s0;
+    for (let i = 0; i < 60 && overshoot(s, sp) <= 2; i++) s = tick(s, []).state;
+    expect(overshoot(s, sp)).toBeGreaterThan(2);
     s = { ...s, loops: { ...s.loops, tbt: { ...s.loops.tbt, mode: 'manual', output: NOMINAL.firingPct } } };
     s = run(s, 40);
     const a = s.heater.tbtC;

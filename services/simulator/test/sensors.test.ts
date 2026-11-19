@@ -40,4 +40,16 @@ describe('measured', () => {
     for (const v of a) expect(Math.abs(v - 100)).toBeLessThanOrEqual(SENSOR_NOISE_AMPLITUDE * span + 1e-9);
     expect(new Set(a).size).toBeGreaterThan(10);
   });
+
+  it('noise reaches the PID: the loop output differs from the noise-free run on the same seed', () => {
+    const clean = base(7);
+    const noisy = withFault(base(7), { tbt: { kind: 'noise', amplitude: SENSOR_NOISE_AMPLITUDE } });
+    let a = clean;
+    let b = noisy;
+    for (let i = 0; i < 10; i++) {
+      a = tick(a, []).state;
+      b = tick(b, []).state;
+    }
+    expect(b.loops.tbt.output).not.toBe(a.loops.tbt.output);
+  });
 });

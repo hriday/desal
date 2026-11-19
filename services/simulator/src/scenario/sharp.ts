@@ -1,8 +1,5 @@
 import type { PumpId, ScenarioKind } from '@desal/schema';
 import {
-  EJECTOR_HALVE_FIRING_FRAC,
-  EJECTOR_HALVE_TBT_C,
-  EJECTOR_MIN_LOAD_FACTOR,
   POWER_DIP_RECIRC_FACTOR,
   PUMP_TRIP_WEAR,
   SENSOR_NOISE_AMPLITUDE,
@@ -11,13 +8,11 @@ import {
   TUBE_LEAK_GROWTH_PPM_PER_MIN,
 } from '../constants.js';
 import { nextRandom } from '../rng.js';
-import { trueLoopValue } from '../sensors.js';
-import { NOMINAL, type LoopSensorId, type PlantState } from '../state.js';
+import { isLoopSensor, trueLoopValue } from '../sensors.js';
+import type { LoopSensorId, PlantState } from '../state.js';
 
 /** The sharp kinds (SHARP_KINDS) as a type, for exhaustive dispatch. */
 export type SharpKind = Extract<ScenarioKind, 'pumpTrip' | 'tubeLeak' | 'vacuumLoss' | 'powerDip' | 'storm' | 'sensorFailure'>;
-
-const SENSOR_LOOPS: Record<LoopSensorId, true> = { tbt: true, intakeFlow: true, recirc: true, blowdown: true, vacuum: true };
 
 type Params = Record<string, number | string>;
 
@@ -39,18 +34,6 @@ function addStormFouling(s: PlantState, amount: number): PlantState {
     intake: { ...s.intake, screenFouling: s.intake.screenFouling + added },
     faults: { ...s.faults, stormFouling: s.faults.stormFouling + added },
   };
-}
-
-/**
- * How much of a failed ejector's vacuum loss a load leaves: 1 at or above nominal, falling linearly to
- * a half at EJECTOR_HALVE_TBT_C below nominal TBT or EJECTOR_HALVE_FIRING_FRAC below nominal firing
- * (whichever cut is deeper), and never below EJECTOR_MIN_LOAD_FACTOR.
- */
-export function ejectorLoadFactor(tbtC: number, firingPct: number): number {
-  const tbtCut = (NOMINAL.tbtC - tbtC) / EJECTOR_HALVE_TBT_C;
-  const firingCut = (NOMINAL.firingPct - firingPct) / (NOMINAL.firingPct * EJECTOR_HALVE_FIRING_FRAC);
-  const cut = Math.max(0, tbtCut, firingCut);
-  return Math.max(EJECTOR_MIN_LOAD_FACTOR, 1 - 0.5 * cut);
 }
 
 /** Apply a sharp event's effect to the plant. */
@@ -84,7 +67,7 @@ export function applySharpEffect(s: PlantState, kind: SharpKind, p: Params): Pla
       return { ...s, faults: { ...s.faults, ejectorFailed: true, ejectorRatePerMin: Number(p.ratePerMin) } };
     case 'sensorFailure': {
       const loop = p.loop as LoopSensorId;
-      if (!(loop in SENSOR_LOOPS)) return s;
+      if (!isLoopSensor(loop)) return s;
       const fault =
         p.mode === 'freeze'
           ? ({ kind: 'freeze', value: trueLoopValue(s, loop) } as const)

@@ -12,6 +12,9 @@ import {
   CF_TAU_S,
   CP_BRINE,
   DISTILLATE_DENSITY,
+  EJECTOR_HALVE_FIRING_FRAC,
+  EJECTOR_HALVE_TBT_C,
+  EJECTOR_MIN_LOAD_FACTOR,
   HEATER_DT0_C,
   K_LEVEL,
   LATENT_J_kg,
@@ -27,14 +30,25 @@ import {
   VACUUM_QUALITY_MIN,
   VACUUM_TAU_S,
 } from '../constants.js';
-import { ejectorLoadFactor } from '../scenario/sharp.js';
-import type { PlantState, Stage } from '../state.js';
+import { NOMINAL, type PlantState, type Stage } from '../state.js';
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 const pct = (output: number): number => clamp(output, 0, 100) / 100;
 /** Exact first-order lag of x toward target over dtS with time constant tauS. */
 const lag = (x: number, target: number, dtS: number, tauS: number): number =>
   x + (target - x) * (1 - Math.exp(-dtS / tauS));
+
+/**
+ * How much of a failed ejector's vacuum loss a load leaves: 1 at or above nominal, falling linearly to
+ * a half at EJECTOR_HALVE_TBT_C below nominal TBT or EJECTOR_HALVE_FIRING_FRAC below nominal firing
+ * (whichever cut is deeper), and never below EJECTOR_MIN_LOAD_FACTOR.
+ */
+export function ejectorLoadFactor(tbtC: number, firingPct: number): number {
+  const tbtCut = (NOMINAL.tbtC - tbtC) / EJECTOR_HALVE_TBT_C;
+  const firingCut = (NOMINAL.firingPct - firingPct) / (NOMINAL.firingPct * EJECTOR_HALVE_FIRING_FRAC);
+  const cut = Math.max(0, tbtCut, firingCut);
+  return Math.max(EJECTOR_MIN_LOAD_FACTOR, 1 - 0.5 * cut);
+}
 
 /** Heat-transfer effectiveness of a stage's tubes: 1 when clean, falling with total scale. */
 export function stageEffectiveness(stage: Stage): number {
