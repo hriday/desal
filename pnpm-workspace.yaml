@@ -4,3 +4,5 @@ packages:
 # Native librdkafka binding: allow its install script (downloads a prebuilt binary).
 allowBuilds:
   "@confluentinc/kafka-javascript": true
+  # tsx runs TypeScript via esbuild, whose install script fetches its platform binary.
+  esbuild: true
