@@ -271,3 +271,7 @@ export const EJECTOR_HALVE_FIRING_FRAC = 0.2;
 export const EJECTOR_MIN_LOAD_FACTOR = 0.25;
 /** Reading noise a noise-mode sensor failure adds, as a fraction of the loop's setpoint span (peak). */
 export const SENSOR_NOISE_AMPLITUDE = 0.1;
+/** Vacuum quality per plant minute a failed ejector loses in shift 1 at nominal load: trips in about 29 min. */
+export const EJECTOR_RATE_BASE_PER_MIN = 0.012;
+/** Fastest vacuum loss the draw may make, however hard the shift. */
+export const EJECTOR_RATE_MAX_PER_MIN = 0.015;

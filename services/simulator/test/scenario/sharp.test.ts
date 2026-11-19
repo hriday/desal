@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BASE_SALINITY_PPM,
   EJECTOR_MIN_LOAD_FACTOR,
+  EJECTOR_RATE_BASE_PER_MIN,
+  EJECTOR_RATE_MAX_PER_MIN,
   POWER_DIP_MAX_MINUTES,
   PUMP_TRIP_WEAR,
   RECIRC_PUMP_MAX_M3H,
@@ -183,6 +185,19 @@ describe('vacuumLoss', () => {
     expect(Math.abs(t! - expected)).toBeLessThanOrEqual(2);
     expect(t!).toBeGreaterThanOrEqual(30);
     expect(t!).toBeLessThanOrEqual(45);
+  });
+
+  it('the shift 1 draw with no action trips lossOfVacuum in 30-45 ticks', () => {
+    const [e] = drawEvent('vacuumLoss', 0, 1, 1);
+    expect(e.params.ratePerMin).toBe(EJECTOR_RATE_BASE_PER_MIN);
+    const t = tripTick(applyEffect(settle(), 'vacuumLoss', e.params), 60);
+    expect(t).not.toBeNull();
+    expect(t!).toBeGreaterThanOrEqual(30);
+    expect(t!).toBeLessThanOrEqual(45);
+  });
+
+  it('the draw rate rises with the shift number up to the cap', () => {
+    expect(drawEvent('vacuumLoss', 0, 1, 400)[0].params.ratePerMin).toBe(EJECTOR_RATE_MAX_PER_MIN);
   });
 
   it('cutting firing by 25 % at the fault stops the trip within 45 ticks', () => {

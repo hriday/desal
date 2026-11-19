@@ -2,6 +2,8 @@ import type { ScenarioKind } from '@desal/schema';
 import {
   BASE_FUEL_BUDGET_USD,
   BASE_TARGET_M3,
+  EJECTOR_RATE_BASE_PER_MIN,
+  EJECTOR_RATE_MAX_PER_MIN,
   POWER_DIP_MAX_MINUTES,
   STAGE_COUNT,
   TARGET_GROWTH_PER_SHIFT,
@@ -135,7 +137,7 @@ export function drawEvent(
       break;
     }
     case 'vacuumLoss':
-      params = { ratePerMin: tidy(Math.min(0.012, 0.004 * d)) };
+      params = { ratePerMin: tidy(Math.min(EJECTOR_RATE_MAX_PER_MIN, EJECTOR_RATE_BASE_PER_MIN * d)) };
       break;
     case 'powerDip': {
       let pumpId: string, minutes: number;
