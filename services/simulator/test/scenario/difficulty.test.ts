@@ -54,4 +54,12 @@ describe('escalating difficulty', () => {
     expect(['freeze', 'noise']).toContain(sf.mode);
     expect(['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum']).toContain(sf.loop);
   });
+
+  it("shift 1's gentle sensor failure always freezes, on a loop where it shows (spec 4.10)", () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const p = drawEvent('sensorFailure', 0, seed, 1)[0].params;
+      expect(p.mode, `seed ${seed}`).toBe('freeze');
+      expect(['tbt', 'intakeFlow', 'recirc'], `seed ${seed}`).toContain(p.loop);
+    }
+  });
 });

@@ -20,7 +20,11 @@ describe('buildOrders', () => {
   it('gives shift 1 a three-line briefing that names the target', () => {
     const [p] = drawChaosPlan({ shiftNumber: 1, seed: 1, lastWasHell: false, state });
     expect(p.orders.briefing).toHaveLength(3);
-    expect(p.orders.briefing[0]).toContain(String(p.targetM3));
+    expect(p.orders.briefing).toEqual([
+      'Deliver 3,900 m³ of in-spec water this shift.',
+      "Keep product salt under 25 ppm — diverted or off-spec water doesn't count.",
+      'Click a monitor to act on it, and watch the fuel budget ($12,000).',
+    ]);
     expect(buildOrders(plan({ shiftNumber: 2 }), state, 12000).briefing).toEqual([]);
   });
 
@@ -44,8 +48,7 @@ describe('buildOrders', () => {
   it('quotes the initial seawater from the plan draw, not the live state', () => {
     const [p] = drawChaosPlan({ shiftNumber: 3, seed: 7, lastWasHell: false, state, initial: { seawaterTempC: 32.5, chlorophyllUgL: 1.7 } });
     expect(p.initial).toEqual({ seawaterTempC: 32.5, chlorophyllUgL: 1.7 });
-    expect(p.orders.lines[0]).toContain('32.5 C');
-    expect(p.orders.lines[0]).toContain('1.7 ug/L');
+    expect(p.orders.lines[0]).toBe('Seawater is 32.5 °C with chlorophyll at 1.7 µg/L.');
   });
 
   it('gives an unwarned hell shift the same lines as a normal one', () => {

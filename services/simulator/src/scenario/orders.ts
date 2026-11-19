@@ -55,7 +55,7 @@ function hintLines(plan: Omit<ChaosPlan, 'orders'>): string[] {
 /** The shift supervisor's orders card for `plan`. Shift 1 also carries the three-line briefing. */
 export function buildOrders(plan: Omit<ChaosPlan, 'orders'>, state: PlantState, budgetUsd: number): ShiftOrders {
   const lines = [
-    `Seawater is ${state.seawater.tempC.toFixed(1)} C with chlorophyll at ${state.seawater.chlorophyllUgL.toFixed(1)} ug/L.`,
+    `Seawater is ${state.seawater.tempC.toFixed(1)} °C with chlorophyll at ${state.seawater.chlorophyllUgL.toFixed(1)} µg/L.`,
   ];
   for (const [id, pump] of Object.entries(state.intake.pumps)) {
     if (pump.wear >= ROUGH_WEAR) lines.push(`${id} is running rough.`);
@@ -67,9 +67,9 @@ export function buildOrders(plan: Omit<ChaosPlan, 'orders'>, state: PlantState, 
   const briefing =
     plan.shiftNumber === 1
       ? [
-          `Deliver ${plan.targetM3} m3 of in-spec water this shift.`,
+          `Deliver ${plan.targetM3.toLocaleString('en-US')} m³ of in-spec water this shift.`,
           `Keep product salt under ${MAX_SALINITY_PPM} ppm — diverted or off-spec water doesn't count.`,
-          `Click a monitor to act on it, and watch the budget ($${budgetUsd.toLocaleString('en-US')}).`,
+          `Click a monitor to act on it, and watch the fuel budget ($${budgetUsd.toLocaleString('en-US')}).`,
         ]
       : [];
   return { targetM3: plan.targetM3, maxSalinityPpm: MAX_SALINITY_PPM, budgetUsd, lines, briefing };

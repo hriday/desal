@@ -170,8 +170,8 @@ describe('chaos plan lifecycle', () => {
     const s = runShift(startShift(fresh(), 'auto').state);
     const orders = s.chaos.pending!.orders;
     const next = startShift(s, 'auto').state;
-    expect(orders.lines[0]).toContain(`${next.seawater.tempC.toFixed(1)} C`);
-    expect(orders.lines[0]).toContain(`${next.seawater.chlorophyllUgL.toFixed(1)} ug/L`);
+    expect(orders.lines[0]).toContain(`${next.seawater.tempC.toFixed(1)} °C`);
+    expect(orders.lines[0]).toContain(`${next.seawater.chlorophyllUgL.toFixed(1)} µg/L`);
   });
 
   it('after a full shift: next plan pending, active cleared', () => {

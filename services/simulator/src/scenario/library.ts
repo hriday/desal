@@ -15,6 +15,11 @@ import type { Scenario, ScenarioEvent } from './types.js';
 const PUMPS = ['P-101', 'P-102', 'P-103'] as const;
 const FAULT_LOOPS = ['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum'] as const;
 const FAULT_KINDS = ['stuck', 'drift', 'oscillate'] as const;
+/**
+ * Shift 1's gentle sensor failure only hits loops whose frozen reading visibly misleads the plant
+ * (a frozen blowdown or vacuum reading barely shows), and always freezes (spec §4.10).
+ */
+const SHIFT_ONE_SENSOR_LOOPS = ['tbt', 'intakeFlow', 'recirc'] as const;
 
 export function eventMessage(kind: ScenarioKind, p: Record<string, number | string>): string {
   switch (kind) {
@@ -154,8 +159,13 @@ export function drawEvent(
     }
     case 'sensorFailure': {
       let loop: string, mode: string;
-      [loop, s] = pick(s, FAULT_LOOPS);
-      [mode, s] = pick(s, ['freeze', 'noise'] as const);
+      if (n === 1) {
+        [loop, s] = pick(s, SHIFT_ONE_SENSOR_LOOPS);
+        mode = 'freeze';
+      } else {
+        [loop, s] = pick(s, FAULT_LOOPS);
+        [mode, s] = pick(s, ['freeze', 'noise'] as const);
+      }
       params = { loop, mode };
       break;
     }

@@ -70,10 +70,10 @@ function lineUpPumps(intake: PlantState['intake']): PlantState['intake'] {
 
 /**
  * Begin a shift: activate the pending plan (drawing one now if the state has none, e.g. a bare
- * test state), apply its starting conditions, reset shift accumulators, clear the crew and every
- * per-shift fault, abandon any restart left in progress, its scenario, reset shift accumulators, abandon any restart left in progress,
- * set the loop modes for the chosen control mode, and credit the shift's allocation (scaled by how
- * much in-spec water the previous shift delivered against its target).
+ * test state), apply its scenario's starting conditions, reset shift accumulators, clear the crew and
+ * every per-shift fault, abandon any restart left in progress, set the loop modes for the chosen
+ * control mode, and credit the shift's allocation (scaled by how much in-spec water the previous
+ * shift delivered against its target).
  */
 export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: PlantState; events: SimEvent[] } {
   const shiftNumber = s.run.shiftNumber + 1;

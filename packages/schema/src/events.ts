@@ -28,12 +28,13 @@ export type ScenarioKind = z.infer<typeof ScenarioKindSchema>;
 
 export const SHARP_KINDS: readonly ScenarioKind[] = ['pumpTrip', 'tubeLeak', 'vacuumLoss', 'powerDip', 'storm', 'sensorFailure'];
 
-// Water first: productM3 is in-spec water only (off-spec is offSpecM3 and counts for nothing).
-// spentUsd = gas burned + backup ordered + repairs this shift; nextAllocationUsd is what the next
-// shift will be allocated given this shift's in-spec water against its target.
 export const EventClearHowSchema = z.enum(['player', 'crew', 'expired', 'noted']);
 export type EventClearHow = z.infer<typeof EventClearHowSchema>;
 
+// Water first: productM3 is in-spec water only (off-spec is offSpecM3 and counts for nothing).
+// spentUsd = gas burned + backup ordered + repairs + crew jobs + standing cost this shift;
+// nextAllocationUsd is what the next shift will be allocated given this shift's in-spec water
+// against its target.
 export const ShiftSummarySchema = z.object({
   productM3: num,
   targetM3: num,

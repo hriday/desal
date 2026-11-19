@@ -112,7 +112,7 @@ Every shift starts with **orders**: a short note from the shift supervisor. It r
   - one or two lines on known conditions (e.g. gas supply, seawater, equipment condition carried over from damage);
   - on a warned hell shift, a hint drawn from the shift's actual events ("storm forecast after midday", "grid is unstable today", "P-102 is running rough").
 - Hints are true but vague. Never list every event. Unwarned hell shifts read like normal ones.
-- **Shift 1's orders** add a three-line briefing on the job: deliver the water, keep salt under the limit, watch the budget; click a monitor to act.
+- **Shift 1's orders** add a three-line briefing on the job: deliver the water, keep salt under the limit, watch the fuel budget; click a monitor to act.
 - The simulator writes the orders. They're carried on the `shiftStart` event (and a new `orders` field on handover status), so the gateway and UI just display them. Text is assembled from templates, not free-form.
 
 ### 4.6 Maintenance crew (new command)
