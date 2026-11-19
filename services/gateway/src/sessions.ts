@@ -35,8 +35,8 @@ interface Socket {
   gameId: string | null;
   /** Sent newGame; the 'game' reply waits for the simulator's gameStart. */
   awaitingStart: boolean;
-  windowStart: number;
-  windowCount: number;
+  /** When each message accepted in the last second arrived (oldest first; at most MAX_MSGS_PER_S). */
+  recent: number[];
 }
 
 /** Commands only the gateway may issue: startGame (via newGame) and heartbeat (its own timer). */
@@ -67,7 +67,7 @@ export class Sessions {
   }
 
   open(socketId: string, sink: SocketSink): void {
-    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, windowStart: this.now(), windowCount: 0 });
+    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, recent: [] });
   }
 
   /** Unbind the socket. Its game's heartbeats stop with the last socket, so the simulator abandons it after 90 s unless someone resumes. */
@@ -87,11 +87,10 @@ export class Sessions {
       return;
     }
     const now = this.now();
-    if (now - s.windowStart >= 1000) {
-      s.windowStart = now;
-      s.windowCount = 0;
-    }
-    if (++s.windowCount > MAX_MSGS_PER_S) return this.error(s, 'rate limited');
+    // Sliding window: forget arrivals a second or more old, then count what is left.
+    while (s.recent.length > 0 && now - s.recent[0]! >= 1000) s.recent.shift();
+    if (s.recent.length >= MAX_MSGS_PER_S) return this.error(s, 'rate limited');
+    s.recent.push(now);
 
     const parsed = parseClientMsg(raw);
     if (!parsed.ok) return this.error(s, parsed.reason);

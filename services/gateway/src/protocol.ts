@@ -2,8 +2,11 @@ import { ClientMsgSchema, type ClientMsg, type ServerErrorReason } from '@desal/
 
 /** Largest client message accepted, in bytes; larger ones close the socket. */
 export const MAX_MSG_BYTES = 16384;
-/** Client messages allowed per socket per second; the rest are dropped. */
-export const MAX_MSGS_PER_S = 20;
+/**
+ * Client messages allowed per socket in any sliding 1 s window; the rest are dropped. 50 leaves
+ * room for the UI's "set all stage levels" burst (20 commands at once).
+ */
+export const MAX_MSGS_PER_S = 50;
 /** Concurrent sockets per gateway; extra ones are closed with code 1013 (try again later). */
 export const MAX_SOCKETS = 50;
 /** How often each bound game gets a heartbeat (the simulator abandons a game after 90 s without one). */

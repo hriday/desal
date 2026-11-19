@@ -148,15 +148,36 @@ describe('limits', () => {
     expect(closed.size).toBe(0);
   });
 
-  it('drops a 25 msgs/s flood beyond 20 per second, with rate limited errors', () => {
+  it('drops a 55 msgs/s flood beyond 50 per second, with rate limited errors', () => {
     const box = open('s1');
-    for (let i = 0; i < 25; i++) client('s1', { t: 'ping' });
-    expect(box.filter((m) => m.t === 'pong')).toHaveLength(20);
+    for (let i = 0; i < 55; i++) client('s1', { t: 'ping' });
+    expect(box.filter((m) => m.t === 'pong')).toHaveLength(50);
     expect(box.filter((m) => m.t === 'error')).toEqual(Array(5).fill({ t: 'error', reason: 'rate limited' }));
-    clock += 1000; // a new second: allowed again
+    clock += 1000; // a second later: allowed again
     box.length = 0;
     client('s1', { t: 'ping' });
     expect(box).toEqual([{ t: 'pong' }]);
+  });
+
+  it('allows a 20-command burst (set all stage levels)', () => {
+    const box = bound('s1');
+    for (let i = 1; i <= 20; i++) client('s1', { t: 'cmd', command: { type: 'setSetpoint', loop: `level${i}`, value: 0.5 } });
+    expect(box).toEqual([]);
+    expect(sent.filter((e) => e.command.type === 'setSetpoint')).toHaveLength(20);
+  });
+
+  it('limits over a sliding 1 s window, not fixed seconds', () => {
+    const box = open('s1');
+    const pings = (n: number) => {
+      box.length = 0;
+      for (let i = 0; i < n; i++) client('s1', { t: 'ping' });
+      return box.filter((m) => m.t === 'pong').length;
+    };
+    expect(pings(30)).toBe(30); // t
+    clock += 500;
+    expect(pings(25)).toBe(20); // t+500: 30 + 20 = 50 in the last second
+    clock += 500;
+    expect(pings(31)).toBe(30); // t+1000: the 30 from t have left the window; 20 remain
   });
 
   it('ping answers pong', () => {
