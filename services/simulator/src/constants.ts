@@ -7,14 +7,23 @@ export const STAGE_COUNT = 20;
 /** Ticks between full state snapshots. */
 export const SNAPSHOT_EVERY_TICKS = 30;
 
-/** PI(D) gains per loop kind. Placeholder tuning; real tuning happens in the calibration task. */
+/**
+ * PI(D) gains per loop kind, sized for errors in each loop's own units at dtS = TICK_PLANT_S
+ * (ki multiplies error x seconds). Tuned against the unit models' per-tick process gains:
+ * - tbt: integrating plant (recovered heat recirculates), ~0.008 C/tick per % firing.
+ * - intakeFlow: instant plant, ~70 m3/h per % speed with two pumps.
+ * - recirc: 60 s lag, 50 m3/h per %.
+ * - blowdown: 3600 s lag, -0.006 CF per % (reverse).
+ * - vacuum: 600 s lag, 0.007 quality per %.
+ * - level: integrating plant, -0.0008 m/tick per % valve (reverse).
+ */
 export const LOOP_GAINS = {
-  tbt: { kp: 5, ki: 0.3, kd: 0 },
-  intakeFlow: { kp: 0.6, ki: 0.05, kd: 0 },
-  recirc: { kp: 0.6, ki: 0.05, kd: 0 },
-  blowdown: { kp: 0.5, ki: 0.04, kd: 0 },
-  vacuum: { kp: 0.5, ki: 0.04, kd: 0 },
-  level: { kp: 0.7, ki: 0.05, kd: 0 },
+  tbt: { kp: 18, ki: 0.02, kd: 0 },
+  intakeFlow: { kp: 0.002, ki: 0.000125, kd: 0 },
+  recirc: { kp: 0.004, ki: 0.00015, kd: 0 },
+  blowdown: { kp: 500, ki: 0.14, kd: 0 },
+  vacuum: { kp: 200, ki: 0.35, kd: 0 },
+  level: { kp: 375, ki: 0.7, kd: 0 },
 } as const;
 
 /** Setpoint and output ranges per loop kind. 'level' applies to level1..level20. Outputs are percent. */
@@ -110,7 +119,7 @@ export const DISTILLATE_DENSITY = 1000;
 /** Total scale thickness at which stage effectiveness halves (mm). */
 export const SCALE_REF_MM = 1.0;
 /** Heater temperature rise needed with perfectly clean tubes (degC); divided by mean effectiveness. */
-export const HEATER_DT0_C = 8;
+export const HEATER_DT0_C = 9;
 /** Bottom-stage approach to seawater with perfect vacuum and full cooling flow (degC). */
 export const BOTTOM_APPROACH_C = 6;
 /** Bottom-stage temperature rise at zero vacuum quality (degC). */

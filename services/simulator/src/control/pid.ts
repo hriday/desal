@@ -9,7 +9,7 @@ export interface Gains {
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-/** Advance one loop by one tick. Pure: returns a new Loop. `action` is the loop kind's LOOP_ACTION. */
+/** Advance one loop by one tick. Pure: returns a new Loop. `action` is the loop kind's LOOP_ACTION (required). */
 export function pidStep(
   loop: Loop,
   measured: number,
@@ -17,7 +17,7 @@ export function pidStep(
   outMin: number,
   outMax: number,
   dtS: number,
-  action: 'direct' | 'reverse' = 'direct',
+  action: 'direct' | 'reverse',
 ): Loop {
   const errorOf = (y: number): number => (action === 'direct' ? loop.setpoint - y : y - loop.setpoint);
   if (loop.mode === 'manual') {

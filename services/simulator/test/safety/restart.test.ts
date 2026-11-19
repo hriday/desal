@@ -109,10 +109,14 @@ describe('beginRestart (Auto)', () => {
   });
 
   it('level loops keep every stage in band when the restart pushes recirc back to balance', () => {
-    // Tripped while running reduced recirc (65 % ~ 3250 m3/h): the recirc step's jump back to
+    // Tripped while recirc was held in manual at 65 % (~3250 m3/h): the recirc step's jump back to
     // balance disturbs every level, and the (reverse-acting) level loops must hold them.
     let s = tripped('auto');
-    s = { ...s, loops: { ...s.loops, recirc: { ...s.loops.recirc, output: 65 } }, brine: { ...s.brine, recircM3h: 3250 } };
+    s = {
+      ...s,
+      loops: { ...s.loops, recirc: { ...s.loops.recirc, mode: 'manual', output: 65 } },
+      brine: { ...s.brine, recircM3h: 3250 },
+    };
     s = runUntil(s, 30).state;
     s = ok(beginRestart(s)).state;
     let maxLevel = 0;
@@ -129,11 +133,12 @@ describe('beginRestart (Auto)', () => {
       }
     }
     expect(s.status).toBe('online');
+    expect(maxLevel).toBeGreaterThan(0.35); // the recirc jump really did disturb the levels
     expect(maxLevel).toBeLessThan(0.6); // no carryover, far from the 0.8 m flood trip
     expect(minLevel).toBeGreaterThan(0.05);
-    // Centred on the 0.3 m setpoint. The placeholder level gains leave a slow, lightly damped
-    // swing, so this checks centring rather than settling (calibration retunes the gains).
+    // Centred on the 0.3 m setpoint, and settled there by the end.
     expect(Math.abs(sum / n - 0.3)).toBeLessThan(0.05);
+    for (const st of s.stages) expect(Math.abs(st.levelM - 0.3)).toBeLessThan(0.01);
   });
 
   it('is rejected unless tripped', () => {

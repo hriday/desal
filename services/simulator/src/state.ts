@@ -8,12 +8,25 @@ import type {
   TripCause,
 } from '@desal/schema';
 import {
+  BASE_SALINITY_PPM,
+  BIO_GROWTH_PER_CHL,
+  BIO_KILL_PER_CHLORINE,
   BLOWDOWN_MAX_M3H,
+  BOTTOM_APPROACH_C,
+  BOTTOM_VACUUM_PENALTY_C,
+  BRINE_DENSITY,
+  BURNER_MAX_MW,
   CF_MAX,
   CF_MIN,
   CF_NOMINAL,
+  CP_BRINE,
+  DISTILLATE_DENSITY,
+  HEATER_DT0_C,
+  INTAKE_REQUIRED_BASE_M3H,
+  LATENT_J_kg,
   LEVEL_BALANCE_VALVE_PCT,
   LOOP_GAINS,
+  PUMP_RATED_M3H,
   RECIRC_NOMINAL_M3H,
   RECIRC_PUMP_MAX_M3H,
   STAGE_COUNT,
@@ -102,17 +115,34 @@ export interface PlantState {
   careerShiftCount: number;
 }
 
-// Nominal steady-state values; a later calibration task tunes these.
+const SEAWATER_C = 30;
+const TBT_C = 108;
+const CHLOROPHYLL_UGL = 1;
+const CHLORINE_MGL = 1;
+/** Biofouling (and so screen fouling) where growth balances the chlorine kill (as units/intake). */
+const BIOFOULING = (BIO_GROWTH_PER_CHL * CHLOROPHYLL_UGL) / (BIO_KILL_PER_CHLORINE * CHLORINE_MGL);
+const INTAKE_SP_M3H = 6000;
+const RUNNING_PUMPS = 2;
+/** Bottom-stage temperature with full cooling flow at nominal vacuum (as units/stages bottomTempC). */
+const BOTTOM_C = SEAWATER_C + BOTTOM_APPROACH_C + (1 - VACUUM_QUALITY_NOMINAL) * BOTTOM_VACUUM_PENALTY_C;
+const RECIRC_KGS = (RECIRC_NOMINAL_M3H * BRINE_DENSITY) / 3600;
+/** Heater duty that holds TBT with clean tubes: recovered = TBT - HEATER_DT0_C (as units/heater). */
+const HEAT_MW = (RECIRC_KGS * CP_BRINE * HEATER_DT0_C) / 1e6;
+
+// Nominal steady state, derived from the unit physics so tick 0 -> 1 starts at equilibrium.
 const NOMINAL = {
-  tbtC: 108,
+  tbtC: TBT_C,
   recircM3h: RECIRC_NOMINAL_M3H,
-  intakeM3h: 5500,
-  intakePumpPct: 90,
+  intakeM3h: INTAKE_SP_M3H,
+  /** Pump speed that delivers the intake setpoint through two clean pumps and the equilibrium screen. */
+  intakePumpPct: (100 * INTAKE_SP_M3H) / (RUNNING_PUMPS * PUMP_RATED_M3H * (1 - BIOFOULING)),
   vacuumQuality: VACUUM_QUALITY_NOMINAL,
   concentrationFactor: CF_NOMINAL,
   levelM: 0.3,
-  firingPct: 63,
-  heatMW: 45,
+  firingPct: (100 * HEAT_MW) / BURNER_MAX_MW,
+  heatMW: HEAT_MW,
+  /** Flash distillate over the whole cascade with clean tubes (as units/stages). */
+  productM3h: ((RECIRC_KGS * CP_BRINE * (TBT_C - BOTTOM_C)) / LATENT_J_kg) * (3600 / DISTILLATE_DENSITY),
 };
 
 // Actuator outputs (percent) that hold the nominal plant at equilibrium with no PID action.
@@ -135,7 +165,7 @@ function pump(running: boolean): Pump {
 
 export function createInitialState(seed: number, startPlantTime: number): PlantState {
   const stages: Stage[] = Array.from({ length: STAGE_COUNT }, (_, i) => ({
-    tempC: 104 - (66 * i) / (STAGE_COUNT - 1),
+    tempC: NOMINAL.tbtC - (NOMINAL.tbtC - BOTTOM_C) * ((i + 0.5) / STAGE_COUNT),
     levelM: NOMINAL.levelM,
     softScaleMm: 0,
     hardScaleMm: 0,
@@ -159,14 +189,14 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
       vacuum: loop('vacuum', NOMINAL.vacuumQuality, BALANCE.vacuumPct),
       levels: Array.from({ length: STAGE_COUNT }, () => loop('level', NOMINAL.levelM, BALANCE.levelPct)),
     },
-    seawater: { tempC: 30, salinityGL: 45, chlorophyllUgL: 1 },
+    seawater: { tempC: SEAWATER_C, salinityGL: 45, chlorophyllUgL: CHLOROPHYLL_UGL },
     intake: {
       pumps: { 'P-101': pump(true), 'P-102': pump(true), 'P-103': pump(false) },
-      screenFouling: 0,
+      screenFouling: BIOFOULING,
       flowM3h: NOMINAL.intakeM3h,
-      requiredM3h: NOMINAL.intakeM3h,
+      requiredM3h: INTAKE_REQUIRED_BASE_M3H,
     },
-    pretreat: { chlorineMgL: 1, antiscalantMgL: 2, biofouling: 0 },
+    pretreat: { chlorineMgL: CHLORINE_MGL, antiscalantMgL: 2, biofouling: BIOFOULING },
     heater: { tbtC: NOMINAL.tbtC, firingPct: NOMINAL.firingPct, burnerCondition: 1, heatMW: NOMINAL.heatMW },
     stages,
     brine: {
@@ -175,7 +205,7 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
       blowdownM3h: (BLOWDOWN_MAX_M3H * BALANCE.blowdownPct) / 100,
     },
     vacuum: { quality: NOMINAL.vacuumQuality },
-    product: { flowM3h: 510, salinityPpm: 10, divertToDrain: false },
+    product: { flowM3h: NOMINAL.productM3h, salinityPpm: BASE_SALINITY_PPM, divertToDrain: false },
     fuel: {
       active: 'gas',
       changeover: null,

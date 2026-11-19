@@ -1,4 +1,5 @@
-import type { PlantEvent } from '@desal/schema';
+import type { PlantEvent, PumpId, ShiftSummary } from '@desal/schema';
+import { TICK_PLANT_S } from './constants.js';
 import { nextRandom } from './rng.js';
 import { loadScenario } from './scenario/engine.js';
 import { scenarioForShift } from './scenario/library.js';
@@ -49,5 +50,35 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
         target: { ...scenario.target },
       },
     ],
+  };
+}
+
+/**
+ * End the running shift: emit `shiftEnd` with its summary and return to handover. All plant state
+ * is kept, and so is `shift` (its id and final accumulators) until the next startShift.
+ */
+export function endShift(s: PlantState): { state: PlantState; events: PlantEvent[] } {
+  const shift = s.shift;
+  if (!shift) return { state: { ...s, phase: 'handover' }, events: [] };
+  const { acc, target } = shift;
+  const pumpWear = Object.fromEntries(
+    Object.entries(s.intake.pumps).map(([id, p]) => [id, p.wear]),
+  ) as Record<PumpId, number>;
+  const summary: ShiftSummary = {
+    productM3: acc.productM3,
+    targetM3: target.productM3,
+    offSpecMinutes: (acc.offSpecTicks * TICK_PLANT_S) / 60,
+    fuelCostUsd: acc.fuelCostUsd,
+    fuelBudgetUsd: target.fuelBudgetUsd,
+    trips: acc.trips,
+    damage: {
+      maxHardScaleMm: s.stages.reduce((m, st) => Math.max(m, st.hardScaleMm), 0),
+      pumpWear,
+      burnerCondition: s.heater.burnerCondition,
+    },
+  };
+  return {
+    state: { ...s, phase: 'handover' },
+    events: [{ type: 'shiftEnd', tick: s.tick, plantTime: s.plantTime, shiftId: shift.id, summary }],
   };
 }

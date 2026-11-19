@@ -4,7 +4,11 @@ import { pidStep } from '../../src/control/pid.js';
 import { createInitialState, type Loop } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
 
-const G = LOOP_GAINS.tbt;
+/**
+ * Gains for the toy first-order test plant below (dt = 1). Kept local: the plant loops' LOOP_GAINS are
+ * tuned for their own process gains at dtS = 40 and do not suit this plant.
+ */
+const G = { kp: 5, ki: 0.3, kd: 0 };
 const mk = (over: Partial<Loop> = {}): Loop => ({
   mode: 'auto', setpoint: 50, output: 0, integral: 0, prevError: 0, fault: null, ...over,
 });
@@ -13,7 +17,7 @@ function run(loop: Loop, y: number, steps: number) {
   const ys: number[] = [];
   const us: number[] = [];
   for (let i = 0; i < steps; i++) {
-    loop = pidStep(loop, y, G, 0, 100, 1);
+    loop = pidStep(loop, y, G, 0, 100, 1, 'direct');
     y += (loop.output - y) * 0.1;
     ys.push(y);
     us.push(loop.output);
@@ -59,8 +63,8 @@ describe('pidStep', () => {
     expect(Math.abs(us[0]! - 60)).toBeLessThan(0.5);
   });
   it.each([1, 40])('manual -> auto does not bump at dtS=%i with nonzero error', (dt) => {
-    const manual = pidStep(mk({ mode: 'manual', output: 60 }), 30, G, 0, 100, dt);
-    const auto = pidStep({ ...manual, mode: 'auto' }, 30, G, 0, 100, dt);
+    const manual = pidStep(mk({ mode: 'manual', output: 60 }), 30, G, 0, 100, dt, 'direct');
+    const auto = pidStep({ ...manual, mode: 'auto' }, 30, G, 0, 100, dt, 'direct');
     expect(Math.abs(auto.output - 60)).toBeLessThan(0.5);
   });
 });
