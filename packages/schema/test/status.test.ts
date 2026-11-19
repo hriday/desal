@@ -14,3 +14,10 @@ test('rejects an invalid phase, status and loop key', () => {
 test('accepts the over phase', () => {
   expect(PlantStatusSchema.safeParse({ ...status, phase: 'over' }).success).toBe(true);
 });
+
+test('rejects non-finite new fields and accepts null shiftTarget / changeoverRemainingTicks', () => {
+  const nulls = { ...status, shiftTarget: null, fuel: { ...status.fuel, changeoverRemainingTicks: null } };
+  expect(PlantStatusSchema.safeParse(nulls).success).toBe(true);
+  expect(PlantStatusSchema.safeParse({ ...status, doses: { chlorineMgL: Infinity, antiscalantMgL: 1 } }).success).toBe(false);
+  expect(PlantStatusSchema.safeParse({ ...status, fuel: { ...status.fuel, gasCapMW: NaN } }).success).toBe(false);
+});

@@ -239,4 +239,20 @@ describe('emission', () => {
     expect(r.status.shiftTicksRemaining).toBe(SHIFT_TICKS - 1);
     expect(allFinite(r.status)).toBe(true);
   });
+
+  it('reports doses, backup/gas prices, live shift target and changeover progress in status', () => {
+    const st = running();
+    st.fuel.changeover = { to: 'backup', remainingTicks: 7 };
+    st.shift!.target = { productM3: 123, maxSalinityPpm: 45, fuelBudgetUsd: 6789 };
+    const r = tick(st, []);
+    const f = r.status.fuel;
+    expect(f.backupPriceUsdPerGJ).toBe(r.state.fuel.backup.priceUsdPerGJ);
+    expect(f.gasPriceUsdPerGJ).toBe(r.state.fuel.gas.priceUsdPerGJ);
+    expect(f.gasCapMW).toBe(r.state.fuel.gas.capMW);
+    expect(f.changeoverTo).toBe('backup');
+    expect(f.changeoverRemainingTicks).toBe(r.state.fuel.changeover!.remainingTicks);
+    expect(r.status.doses).toEqual({ chlorineMgL: r.state.pretreat.chlorineMgL, antiscalantMgL: r.state.pretreat.antiscalantMgL });
+    expect(r.status.shiftTarget).toEqual({ productM3: 123, maxSalinityPpm: 45, fuelBudgetUsd: 6789 });
+    expect(PlantStatusSchema.parse(r.status)).toEqual(r.status);
+  });
 });
