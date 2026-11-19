@@ -11,7 +11,11 @@ function status(over: Partial<PlantStatus> = {}): PlantStatus {
     phase: 'running', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
     loops: { tbt: { mode: 'auto', setpoint: 100, output: 50 } } as PlantStatus['loops'],
     pumps: { 'P-101': { running: true, overhaulRemainingTicks: 0 }, 'P-102': { running: false, overhaulRemainingTicks: 0 }, 'P-103': { running: false, overhaulRemainingTicks: 0 } },
-    fuel: { active: 'gas', changeoverTo: null, backupGrade: 'standard', gasCurtailmentNotice: null },
+    fuel: {
+      active: 'gas', changeoverTo: null, changeoverRemainingTicks: null, backupGrade: 'standard', gasCurtailmentNotice: null,
+      gasPriceUsdPerGJ: 8, gasCapMW: 60, backupPriceUsdPerGJ: 14,
+    },
+    doses: { chlorineMgL: 1, antiscalantMgL: 2 }, shiftTarget: null,
     ballCleaning: false, divertToDrain: false, shiftTicksRemaining: 100, deliveries: [],
     acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard', ...over,
   };
@@ -23,6 +27,14 @@ const statusMsg = (over: Partial<PlantStatus> = {}): ServerMsg => ({ t: 'status'
 const eventMsg = (e: Record<string, unknown>): ServerMsg => ({ t: 'event', event: ev(e) });
 
 describe('store reducer', () => {
+  it('a dose stays pending until the status reports it', () => {
+    let s = reducer(initialState(), { type: 'sent', command: { type: 'setDose', chemical: 'chlorine', mgL: 2.5 }, commandId: 'c1' });
+    s = server(s, statusMsg({ doses: { chlorineMgL: 1, antiscalantMgL: 2 } }));
+    expect(s.pending.has('setDose:chlorine')).toBe(true);
+    s = server(s, statusMsg({ doses: { chlorineMgL: 2.5, antiscalantMgL: 2 } }));
+    expect(s.pending.has('setDose:chlorine')).toBe(false);
+  });
+
   it('frames update readings and trends', () => {
     let s = server(initialState(), { t: 'frame', tick: 1, plantTime: 10, readings: { a: 1, b: 2 } });
     s = server(s, { t: 'frame', tick: 2, plantTime: 11, readings: { a: 3 } });

@@ -50,9 +50,10 @@ describe('limits', () => {
     expect(loopRange('recirc', 'setOutput')).toEqual({ min: 0, max: 100 });
   });
 
-  it('prices backup fuel as tonnes x LHV x price for the offered grade', () => {
-    expect(backupOrderCostUsd(10, 'standard')).toBeCloseTo(10 * 42.5 * 14);
-    expect(backupOrderCostUsd(10, 'offgrade')).toBeCloseTo(10 * 38 * 14);
+  it('prices backup fuel as tonnes x LHV x the reported price, for the offered grade', () => {
+    expect(backupOrderCostUsd(10, 'standard', 14)).toBeCloseTo(10 * 42.5 * 14);
+    expect(backupOrderCostUsd(10, 'offgrade', 20)).toBeCloseTo(10 * 38 * 20);
+    expect(backupOrderCostUsd(10, 'standard', NaN)).toBeUndefined();
   });
 });
 
@@ -207,6 +208,15 @@ describe('IntakeView controls', () => {
     expect((within(busyRow).getByRole('button', { name: /P-103/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('doses show the values the plant reports', () => {
+    const { container } = withSend(IntakeView, demoStatus({ doses: { chlorineMgL: 1.5, antiscalantMgL: 3 } }));
+    const chl = container.querySelector('[data-control="Chlorine dose"]')!;
+    const anti = container.querySelector('[data-control="Antiscalant dose"]')!;
+    expect(chl.textContent).toContain('reported 1.5 mg/L');
+    expect(anti.textContent).toContain('reported 3.0 mg/L');
+    expect((within(chl as HTMLElement).getByRole('spinbutton') as HTMLInputElement).value).toBe('1.5');
+  });
+
   it('pump start/stop, intake flow and doses', () => {
     const { container, sent } = withSend(IntakeView, demoStatus());
     fireEvent.click(within(container).getByRole('button', { name: /P-101/ }));
@@ -303,6 +313,17 @@ describe('FuelView controls', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     fireEvent.click(within(container).getByRole('button', { name: /^order/i }));
     expect(sent).toEqual([{ type: 'orderFuel', tonnes: 20 }]);
+  });
+
+  it('uses the backup price the plant reports; no price, no order', () => {
+    const fuel = demoStatus().fuel;
+    const dear = withSend(FuelView, demoStatus({ balanceUsd: 50000, fuel: { ...fuel, backupPriceUsdPerGJ: 20 } }));
+    fireEvent.change(within(dear.container).getByRole('spinbutton', { name: /tonnes/i }), { target: { value: '20' } });
+    expect(dear.container.textContent).toContain('$17,000'); // 20 x 42.5 x 20
+    cleanup();
+    const none = withSend(FuelView, demoStatus({ fuel: { ...fuel, backupPriceUsdPerGJ: NaN } }));
+    fireEvent.change(within(none.container).getByRole('spinbutton', { name: /tonnes/i }), { target: { value: '20' } });
+    expect((within(none.container).getByRole('button', { name: /^order/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('prices an off-grade offer at the off-grade LHV', () => {

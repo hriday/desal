@@ -54,6 +54,7 @@ function confirmed(cmd: Command, st: PlantStatus): boolean {
     case 'setOutput': return close(st.loops[cmd.loop]?.output, cmd.value);
     case 'setLoopMode': return st.loops[cmd.loop]?.mode === cmd.mode;
     case 'pump': return st.pumps[cmd.pumpId]?.running === (cmd.action === 'start');
+    case 'setDose': return close(cmd.chemical === 'chlorine' ? st.doses?.chlorineMgL : st.doses?.antiscalantMgL, cmd.mgL);
     case 'ballCleaning': return st.ballCleaning === cmd.on;
     case 'divertToDrain': return st.divertToDrain === cmd.on;
     case 'selectFuel': return st.fuel.active === cmd.fuel || st.fuel.changeoverTo === cmd.fuel;

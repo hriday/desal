@@ -37,18 +37,18 @@ export const PlantStatusSchema = z.object({
   fuel: z.object({
     active: FuelKindSchema,
     changeoverTo: FuelKindSchema.nullable(),
-    // New fields below are optional: required once web adopts them.
-    changeoverRemainingTicks: num.nullable().optional(),
+    /** Ticks left in the current changeover; null when none is in progress. */
+    changeoverRemainingTicks: num.nullable(),
     backupGrade: FuelGradeSchema,
     gasCurtailmentNotice: z.string().nullable(),
-    gasPriceUsdPerGJ: num.optional(),
-    gasCapMW: num.optional(),
-    backupPriceUsdPerGJ: num.optional(),
+    gasPriceUsdPerGJ: num,
+    gasCapMW: num,
+    /** Price of backup fuel (USD/GJ); orders cost tonnes x LHV x this. */
+    backupPriceUsdPerGJ: num,
   }),
-  // Optional: required once web adopts it.
-  doses: z.object({ chlorineMgL: num, antiscalantMgL: num }).optional(),
+  doses: z.object({ chlorineMgL: num, antiscalantMgL: num }),
   /** The live shift target (reflects a mid-shift demandChange); null outside a shift. */
-  shiftTarget: z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num }).nullable().optional(), // optional: required once web adopts it
+  shiftTarget: z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num }).nullable(),
   ballCleaning: z.boolean(),
   divertToDrain: z.boolean(),
   shiftTicksRemaining: num,

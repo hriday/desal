@@ -49,7 +49,7 @@ function FuelOrder(ctl: ControlCtx) {
   const t = Number(tonnes);
   const valid = tonnes.trim() !== '' && Number.isFinite(t) && t >= ORDER_MIN_T && t <= ORDER_MAX_T;
   const grade = ctl.status?.offeredGrade ?? 'standard';
-  const cost = valid ? backupOrderCostUsd(t, grade) : undefined;
+  const cost = valid ? backupOrderCostUsd(t, grade, ctl.status?.fuel?.backupPriceUsdPerGJ) : undefined;
   const bal = ctl.status?.balanceUsd;
   const affordable = cost !== undefined && num(bal) && bal >= cost;
   const pending = pendingCommand(ctl, 'orderFuel') !== undefined;
@@ -105,6 +105,7 @@ export function FuelView(props: ExpandedProps) {
             <Row k="Burner demand" v={fmt(get(readings, 'fuel.burnMW'), 1, 'MW')} />
             <Row k="Backup tank" v={fmt(tonnes, 0, 't')} tone={tonnes === undefined ? undefined : tonnes < 10 ? 'bad' : tonnes < 40 ? 'warn' : undefined} />
             <Row k="Tank grade" v={label(GRADE_TEXT, fuel?.backupGrade) ?? DASH} />
+            <Row k="Backup price" v={num(fuel?.backupPriceUsdPerGJ) ? `$${fuel.backupPriceUsdPerGJ.toFixed(2)}/GJ` : DASH} />
             <Row k="Offered grade" v={label(GRADE_TEXT, status?.offeredGrade) ?? DASH} tone={status?.offeredGrade === 'offgrade' ? 'warn' : undefined} />
             <Row k="Fuel cost this shift" v={usd(cost)} />
             <Row k="Fuel cost per m³" v={perM3 === undefined ? DASH : `$${perM3.toFixed(2)}/m³`} />

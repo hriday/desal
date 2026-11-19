@@ -82,15 +82,13 @@ describe('expanded views', () => {
     expect(container.textContent).toContain('6,325 m³/h'); // 5500 x (1 + 0.03 x 5)
   });
 
-  it('HeaterView shows changeover progress', () => {
-    const events: PlantEvent[] = [
-      ...demoEvents(),
-      { gameId: DEMO_GAME_ID, seq: 90, tick: 1716, plantTime: 68640, shiftId: 3, type: 'fuelChangeover', from: 'gas', to: 'backup', phase: 'started' },
-    ];
-    const st = demoStatus({ fuel: { ...demoStatus().fuel, changeoverTo: 'backup' } });
-    const { container } = render(<HeaterView {...sample()} status={st} events={events} />);
-    expect(container.textContent).toContain('Changing over to backup');
-    expect(container.textContent).toContain('50 %'); // 4 of 8 ticks
+  it('HeaterView shows changeover progress from the reported ticks remaining', () => {
+    const st = demoStatus({ fuel: { ...demoStatus().fuel, changeoverTo: 'backup', changeoverRemainingTicks: 4 } });
+    const { container } = render(<HeaterView {...sample()} status={st} />);
+    expect(container.textContent).toContain('Changing over to backup, 3 min left'); // 4 ticks x 40 s
+    const unknown = demoStatus({ fuel: { ...demoStatus().fuel, changeoverTo: 'backup', changeoverRemainingTicks: null } });
+    cleanup();
+    expect(render(<HeaterView {...sample()} status={unknown} />).container.textContent).toContain('Changing over to backup, — left');
   });
 
   it('FuelView lists deliveries in transit with their arrival in plant-minutes, and the curtailment notice', () => {

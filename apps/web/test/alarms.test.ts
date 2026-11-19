@@ -155,6 +155,13 @@ describe('alarmContext', () => {
     expect(alarmContext(events, 3)).toEqual({ target: demoTarget, faults: ['Controller fault on loop vacuum: stuck.'] });
     expect(alarmContext([], null)).toEqual({ target: null, faults: [] });
   });
+
+  it("prefers the status's live shift target (a mid-shift demandChange), else the shiftStart one", () => {
+    const live = { ...demoTarget, productM3: 4200 };
+    expect(alarmContext(events, 3, live).target).toEqual(live);
+    expect(alarmContext(events, 3, null).target).toEqual(demoTarget);
+    expect(alarmContext(events, 3, undefined).target).toEqual(demoTarget);
+  });
 });
 
 describe('byWorst', () => {

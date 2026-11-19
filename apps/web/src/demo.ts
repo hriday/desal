@@ -21,7 +21,12 @@ export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
       'P-102': { running: true, overhaulRemainingTicks: 0 },
       'P-103': { running: false, overhaulRemainingTicks: 0 },
     },
-    fuel: { active: 'gas', changeoverTo: null, backupGrade: 'standard', gasCurtailmentNotice: null },
+    fuel: {
+      active: 'gas', changeoverTo: null, changeoverRemainingTicks: null, backupGrade: 'standard', gasCurtailmentNotice: null,
+      gasPriceUsdPerGJ: 8, gasCapMW: 60, backupPriceUsdPerGJ: 14,
+    },
+    doses: { chlorineMgL: 1.5, antiscalantMgL: 3 },
+    shiftTarget: demoTarget,
     ballCleaning: false, divertToDrain: false, shiftTicksRemaining: 330, deliveries: [],
     acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard',
     ...over,

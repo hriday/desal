@@ -102,8 +102,13 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
   return out;
 }
 
-/** The alarm context for the current shift, from the event log. */
-export function alarmContext(events: readonly PlantEvent[], shiftId: number | null): Required<AlarmContext> {
+/**
+ * The alarm context for the current shift. The target is the status's live `shiftTarget` when given
+ * (it follows a mid-shift demandChange), else the one from this shift's shiftStart event.
+ */
+export function alarmContext(
+  events: readonly PlantEvent[], shiftId: number | null, liveTarget?: ShiftTarget | null,
+): Required<AlarmContext> {
   let target: ShiftTarget | null = null;
   const faults: string[] = [];
   if (shiftId === null) return { target, faults };
@@ -112,7 +117,7 @@ export function alarmContext(events: readonly PlantEvent[], shiftId: number | nu
     if (e.type === 'shiftStart') target = e.target;
     else if (e.type === 'scenario' && e.kind === 'controllerFault') faults.push(e.message);
   }
-  return { target, faults };
+  return { target: liveTarget ?? target, faults };
 }
 
 /** Alarms worst first (bad before warn), otherwise in their original order. */

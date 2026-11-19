@@ -1,5 +1,4 @@
 import type { PumpId } from '@desal/schema';
-import { useState } from 'react';
 import { requiredIntakeM3h } from '../alarms/rules';
 import { dose, overhaul, pump } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
@@ -25,8 +24,6 @@ export function pumpState(p: { running?: unknown; overhaulRemainingTicks?: unkno
   }
   return p.running === true ? 'Running' : p.running === false ? 'Stopped' : DASH;
 }
-
-type Chemical = 'chlorine' | 'antiscalant';
 
 /** Start/stop for one pump, and an overhaul (with its cost) only while it is stopped and not already under one. */
 function PumpControl({ id, ...ctl }: ControlCtx & { id: PumpId }) {
@@ -63,19 +60,19 @@ function PumpControl({ id, ...ctl }: ControlCtx & { id: PumpId }) {
   );
 }
 
-/** Dose controls. The plant does not report doses, so these show what was last sent from this page. */
+/** Chlorine and antiscalant doses, against the doses the plant reports. */
 function DoseControls(ctl: ControlCtx) {
-  const [sent, setSent] = useState<Partial<Record<Chemical, number>>>({});
   const ok = canSend(ctl);
   return (
     <>
       {(['chlorine', 'antiscalant'] as const).map((c) => {
         const p = pendingCommand(ctl, `setDose:${c}`);
+        const reported = c === 'chlorine' ? ctl.status?.doses?.chlorineMgL : ctl.status?.doses?.antiscalantMgL;
         return (
           <Setpoint
             key={c}
             label={c === 'chlorine' ? 'Chlorine dose' : 'Antiscalant dose'}
-            reported={undefined}
+            reported={num(reported) ? reported : undefined}
             pending={p?.type === 'setDose' ? p.mgL : undefined}
             min={0}
             max={DOSE_MAX_MGL}
@@ -83,8 +80,7 @@ function DoseControls(ctl: ControlCtx) {
             unit="mg/L"
             digits={1}
             disabled={!ok}
-            note={`last sent ${fmt(sent[c], 1, 'mg/L')}`}
-            onCommit={(v) => { if (ctl.send?.(dose(c, v))) setSent((s) => ({ ...s, [c]: v })); }}
+            onCommit={(v) => ctl.send?.(dose(c, v))}
           />
         );
       })}
