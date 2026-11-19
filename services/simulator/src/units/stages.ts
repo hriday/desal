@@ -40,10 +40,14 @@ export function stageEffectiveness(stage: Stage): number {
   return 1 / (1 + (stage.softScaleMm + stage.hardScaleMm) / SCALE_REF_MM);
 }
 
-/** Brine temperature entering the heater after heat recovery. Scaled tubes recover less, so the heater must do more. */
+/**
+ * Brine temperature entering the heater after heat recovery. Scaled tubes recover less, so the
+ * heater must do more. Never below the bottom-stage temperature, so with no firing TBT decays
+ * toward it instead of falling without limit.
+ */
 export function recoveredTempC(s: PlantState): number {
   const meanEff = s.stages.reduce((sum, st) => sum + stageEffectiveness(st), 0) / s.stages.length;
-  return s.heater.tbtC - HEATER_DT0_C / meanEff;
+  return Math.max(bottomTempC(s), s.heater.tbtC - HEATER_DT0_C / meanEff);
 }
 
 /** Last-stage temperature: seawater plus an approach that widens with poor vacuum and short cooling flow. */

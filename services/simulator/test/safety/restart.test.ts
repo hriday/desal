@@ -66,6 +66,23 @@ function manualAtRamp(): { state: PlantState; events: PlantEvent[] } {
 
 const damageEvents = (events: PlantEvent[]) => events.filter((e) => e.type === 'damage');
 
+describe('a tripped plant left idle', () => {
+  it('cools toward the bottom-stage temperature, never below seawater, over 500 ticks', () => {
+    const s0 = applyTrip(createInitialState(1, 0), 'manual').state;
+    let s = s0;
+    let minTbt = Infinity;
+    for (let i = 0; i < 500; i++) {
+      s = tickOnce(s).state;
+      minTbt = Math.min(minTbt, s.heater.tbtC);
+    }
+    expect(s.status).toBe('tripped');
+    expect(s.loops.tbt.output).toBe(0);
+    expect(minTbt).toBeGreaterThanOrEqual(s.seawater.tempC);
+    expect(s.heater.tbtC).toBeLessThan(60); // it did cool well down
+    expect(allFinite(s)).toBe(true);
+  });
+});
+
 describe('beginRestart (Auto)', () => {
   it('brings a tripped nominal plant online within 120 ticks, reporting each step in order', () => {
     const s = tripped('auto');
