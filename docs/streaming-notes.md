@@ -37,6 +37,8 @@ Every record has a Kafka timestamp, by default the producer's clock (`CreateTime
 
 So the telemetry, status and events topics use `message.timestamp.type=LogAppendTime`: the broker stamps wall-clock append time, and retention behaves normally. The event time lives in the payload, in each record's `plantTime` field. That field is what Flink will use as event time (with watermarks), not the Kafka timestamp. `plant.commands` and `plant.state` keep the default.
 
+All records produced by one tick share one clock: every event, telemetry reading and the status from a single `tick()` call carry the same `tick` and `plantTime`, those of the state after the tick (the post-advance clock while running; the unchanged clock in handover or pause). So events join telemetry and status on `tick` exactly, e.g. a `trip` lines up with the readings that show it.
+
 ## Delivery semantics
 
 - **Plant output (producer side): at-least-once.** If a tick's produce fails, the tick stays applied, its records are kept and all of them are resent until Kafka acknowledges. A retry can duplicate records that already got through (`SimRunner.step` and `resend`). Consumers must tolerate duplicates.

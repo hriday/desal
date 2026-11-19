@@ -135,13 +135,21 @@ function withAccumulators(s: PlantState, x: StepTotals): PlantState {
 
 const countTrips = (events: PlantEvent[]): number => events.filter((e) => e.type === 'trip').length;
 
+/** Stamp events with the tick and plant time of the state the tick() call returns. */
+const stamped = (events: PlantEvent[], s: PlantState): PlantEvent[] =>
+  events.map((e) => ({ ...e, tick: s.tick, plantTime: s.plantTime }));
+
 /**
  * Advance the simulation one tick. Commands are applied first; outside a running shift
  * (handover, paused) only the status is emitted and the plant does not advance.
+ *
+ * Stamp contract: every record one call produces (events, telemetry, status) carries the tick
+ * and plantTime of the returned state, i.e. the post-advance clock in a running tick and the
+ * unchanged clock in handover or pause.
  */
 export function tick(s0: PlantState, commands: unknown[]): TickResult {
   let s = s0;
-  const events: PlantEvent[] = [];
+  let events: PlantEvent[] = [];
   for (const c of commands) {
     const r = applyCommand(s, c);
     s = r.state;
@@ -152,7 +160,7 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   if (s.phase !== 'running') {
     // A manual trip while paused still counts against the shift.
     s = withAccumulators(s, { deliveredM3: 0, offSpec: false, fuelCostUsd: 0, trips: commandTrips });
-    return { state: s, telemetry: [], status: toStatus(s), events, snapshotDue: commandTrips > 0 };
+    return { state: s, telemetry: [], status: toStatus(s), events: stamped(events, s), snapshotDue: commandTrips > 0 };
   }
 
   const step = stepPlant(s);
@@ -161,6 +169,8 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   s = withAccumulators(step.state, { ...step, trips });
   s = { ...s, tick: s.tick + 1, plantTime: s.plantTime + TICK_PLANT_S * 1000 };
   const telemetry = toTelemetry(s);
+  // Commands and the plant step stamped their events with the pre-advance clock.
+  events = stamped(events, s);
 
   let ended = false;
   if (s.shift && s.tick - s.shift.startTick >= SHIFT_TICKS) {

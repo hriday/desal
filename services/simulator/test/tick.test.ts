@@ -146,6 +146,44 @@ describe('TBT setpoint 118 without antiscalant', () => {
   });
 });
 
+describe('record stamps', () => {
+  /** Every record of one tick() call: events, telemetry and status. */
+  const stamps = (r: ReturnType<typeof tick>) => [...r.events, ...r.telemetry, r.status].map((x) => [x.tick, x.plantTime]);
+
+  it('in a running tick that trips, every event, reading and status carry the post-tick tick and plantTime', () => {
+    const s = runTicks(running(), 3).state;
+    const r = tick(s, [env(s, { type: 'manualTrip' }), env(s, { type: 'setDose', chemical: 'chlorine', mgL: 99 })]);
+    expect(r.events.some((e) => e.type === 'trip')).toBe(true);
+    expect(r.events.some((e) => e.type === 'damage')).toBe(true);
+    expect(r.events.some((e) => e.type === 'commandRejected')).toBe(true);
+    expect(r.telemetry.length).toBeGreaterThan(0);
+    expect(new Set(stamps(r).map((x) => x.join()))).toEqual(new Set([`${s.tick + 1},${s.plantTime + TICK_PLANT_S * 1000}`]));
+  });
+
+  it('a tick that trips on an interlock stamps the trip like its telemetry', () => {
+    let s = running('manual');
+    s = tick(s, [env(s, { type: 'setOutput', loop: 'tbt', value: 70 })]).state;
+    const r = tick(s, [env(s, { type: 'selectFuel', fuel: 'backup' })]);
+    expect(r.events.some((e) => e.type === 'trip')).toBe(true);
+    expect(new Set(stamps(r).map((x) => x.join()))).toEqual(new Set([`${r.state.tick},${r.state.plantTime}`]));
+  });
+
+  it('shiftStart is stamped like the first tick of the shift it starts', () => {
+    const s = createInitialState(1, T0);
+    const r = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]);
+    expect(r.events[0]).toMatchObject({ type: 'shiftStart', tick: 1, plantTime: T0 + TICK_PLANT_S * 1000 });
+    expect(new Set(stamps(r).map((x) => x.join()))).toEqual(new Set([`1,${T0 + TICK_PLANT_S * 1000}`]));
+  });
+
+  it('outside a running shift every record carries the unchanged tick', () => {
+    const s = runTicks(running(), 3).state;
+    const paused = tick(s, [env(s, { type: 'pause' })]).state;
+    const r = tick(paused, [env(paused, { type: 'manualTrip' }), env(paused, { type: 'setDose', chemical: 'chlorine', mgL: 99 })]);
+    expect(r.events.map((e) => e.type)).toContain('commandRejected');
+    expect(new Set(stamps(r).map((x) => x.join()))).toEqual(new Set([`${paused.tick},${paused.plantTime}`]));
+  });
+});
+
 describe('emission', () => {
   it('flags snapshotDue on ticks 30 and 60', () => {
     let s = running();
