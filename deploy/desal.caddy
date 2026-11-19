@@ -1,0 +1,11 @@
+# desal.moosha.org: Kafka UI behind basic auth until the game UI exists (Plan 2).
+# Installed by scripts/deploy/deploy.sh as /etc/caddy/sites/desal.caddy, with
+# __AUTH_USER__ / __AUTH_HASH__ replaced (credentials in /opt/desal/basic-auth.txt).
+__HOST__ {
+	encode zstd gzip
+	header X-Robots-Tag "noindex, nofollow"
+	basic_auth {
+		__AUTH_USER__ __AUTH_HASH__
+	}
+	reverse_proxy 127.0.0.1:8080
+}
