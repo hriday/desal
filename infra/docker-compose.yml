@@ -34,6 +34,10 @@ services:
       # loudly instead of silently creating a 1-partition topic.
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+      # Must match the volume mount below. Unset, the image writes topic data (and
+      # so the saved career in plant.state) to /tmp/kafka-logs inside the container,
+      # which `docker compose down` throws away. KRaft metadata lives here too.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - desal-kafka-data:/var/lib/kafka/data
     healthcheck:

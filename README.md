@@ -32,6 +32,8 @@ docker compose -f infra/docker-compose.yml down        # keeps data
 docker compose -f infra/docker-compose.yml down -v     # also wipes data, i.e. the career save
 ```
 
+Kafka's data (`log.dirs`, set by `KAFKA_LOG_DIRS`, plus the KRaft metadata) lives in the named volume `desal-kafka-data` at `/var/lib/kafka/data`, so `down` / `up` and container recreates keep the career. Only `down -v` (or `docker volume rm desal-kafka-data`) deletes it.
+
 ## Tests
 
 ```sh
