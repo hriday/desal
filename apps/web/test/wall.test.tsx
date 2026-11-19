@@ -225,7 +225,7 @@ describe('living wall (Task 11)', () => {
 
   it('a warn alarm alone does not make the frame pulse as high', () => {
     const { getByRole } = render(<Monitor id="heater" status={demoStatus()} {...props} alarms={[alarm('heater', 'warn')]} seen={new Set()} onOpen={() => {}} />);
-    expect(getByRole('button').getAttribute('data-alert')).not.toBe('high');
+    expect(getByRole('button').getAttribute('data-alert')).toBe('warn');
   });
 
   it('a Monitor is down (data-down="true") while the plant is tripped, not while online', () => {
@@ -237,6 +237,16 @@ describe('living wall (Task 11)', () => {
     };
     expect(down('tripped')).toBe('true');
     expect(down('online')).not.toBe('true');
+  });
+
+  it.each([
+    ['intake', 'acidCleaning', 'true'],
+    ['stages', 'restarting', null],
+    ['shift', 'tripped', null],
+    ['shift', 'acidCleaning', null],
+  ] as const)('%s monitor with plant %s: data-down is %s', (id, status, expected) => {
+    const { getByRole } = render(<Monitor id={id} status={demoStatus({ status })} {...props} alarms={[]} onOpen={() => {}} />);
+    expect(getByRole('button').getAttribute('data-down')).toBe(expected);
   });
 });
 

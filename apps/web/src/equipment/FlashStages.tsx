@@ -1,12 +1,12 @@
 import { DESIGN_PRODUCT_M3H, RECIRC_NOMINAL_M3H } from '../plantConstants';
-import { C, clamp01, fmt, get, stageKey } from './format';
+import { C, VIEWBOX, clamp01, fmt, get, stageKey } from './format';
 import { Pipe, flowFrac } from './Pipe';
 import type { EquipmentProps } from './types';
 
 const STAGES = 20;
 const LEVEL_MAX_M = 1.0;
-const TOP = 20;
-const H = 56;
+const TOP = 24;
+const H = 90;
 const W = 9.4;
 
 export type ScaleTint = 'ok' | 'warn' | 'bad';
@@ -27,7 +27,7 @@ export function FlashStages({ readings }: EquipmentProps) {
     (acc, s) => (s.hard !== undefined && (acc === null || s.hard > acc.mm) ? { n: s.n, mm: s.hard } : acc), null);
   const worstTint = scaleTint(w?.mm);
   return (
-    <svg viewBox="0 0 200 104" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Flash stages">
+    <svg viewBox={VIEWBOX} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Flash stages">
       {stages.map(({ n, level, tint }) => {
         const x = 4 + (n - 1) * W;
         const fill = level === undefined ? 0 : clamp01(level / LEVEL_MAX_M) * (H - 2);
@@ -40,16 +40,16 @@ export function FlashStages({ readings }: EquipmentProps) {
         );
       })}
       {/* Recirculating brine runs S20 -> S1 through the condenser tubes; distillate collects S1 -> S20. */}
-      <Pipe name="condenser" d={`M${4 + STAGES * W - 1} ${TOP + 6} H4`} stroke={C.water} width={3}
+      <Pipe name="condenser" d={`M${4 + STAGES * W - 1} ${TOP + 8} H4`} stroke={C.water} width={4}
         flow={flowFrac(get(readings, 'brine.recircM3h'), RECIRC_NOMINAL_M3H)} />
-      <Pipe name="distillate" d={`M4 ${TOP + H + 6} H${4 + STAGES * W - 1}`} stroke={C.ok} width={2} opacity={0.7}
+      <Pipe name="distillate" d={`M4 ${TOP + H + 6} H${4 + STAGES * W - 1}`} stroke={C.ok} width={2.5} opacity={0.7}
         flow={flowFrac(get(readings, 'product.flowM3h'), DESIGN_PRODUCT_M3H)} />
-      <text x={4} y={TOP + H + 16} fill={C.muted} fontSize={7}>S1</text>
-      <text x={4 + STAGES * W - 1} y={TOP + H + 16} fill={C.muted} fontSize={7} textAnchor="end">S20</text>
-      <text x={4} y={12} fill={C.muted} fontSize={7}>CF {fmt(get(readings, 'brine.concentrationFactor'), 2)}</text>
-      <text x={196} y={12} fill={vac !== undefined && vac < 0.8 ? (vac < 0.7 ? C.bad : C.warn) : C.muted} fontSize={7} textAnchor="end">Vac {fmt(vac, 2)}</text>
-      <text x={4} y={102} fill={C.text} fontSize={8}>20 stages</text>
-      <text x={196} y={102} fill={worstTint === 'ok' ? C.muted : C[worstTint]} fontSize={8} textAnchor="end">
+      <text x={4} y={TOP + H + 18} fill={C.muted} fontSize={9}>S1</text>
+      <text x={4 + STAGES * W - 1} y={TOP + H + 18} fill={C.muted} fontSize={9} textAnchor="end">S20</text>
+      <text x={4} y={16} fill={C.muted} fontSize={10}>CF {fmt(get(readings, 'brine.concentrationFactor'), 2)}</text>
+      <text x={196} y={16} fill={vac !== undefined && vac < 0.8 ? (vac < 0.7 ? C.bad : C.warn) : C.muted} fontSize={10} textAnchor="end">Vac {fmt(vac, 2)}</text>
+      <text x={4} y={146} fill={C.text} fontSize={11}>20 stages</text>
+      <text x={196} y={146} fill={worstTint === 'ok' ? C.muted : C[worstTint]} fontSize={11} textAnchor="end">
         {w ? `S${w.n} scale ${fmt(w.mm, 2, 'mm')}` : `scale ${fmt(undefined)}`}
       </text>
     </svg>

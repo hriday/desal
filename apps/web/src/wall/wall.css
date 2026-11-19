@@ -93,10 +93,11 @@
 /* Narrow screens: one monitor per row, each drawing at its natural aspect, scrolling down the page. */
 @media (max-width: 640px) {
   .wall { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
-  .monitor__screen { flex: none; aspect-ratio: 200 / 104; }
+  .monitor__screen { flex: none; aspect-ratio: 200 / 150; } /* the drawings' VIEWBOX */
 }
 @media (min-width: 641px) and (max-width: 899px) {
-  .wall { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(160px, 1fr)); }
+  /* Never shrink below three readable rows; a short window scrolls the page instead of clipping. */
+  .wall { flex: 1 0 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(160px, 1fr)); }
 }
 
 .alarm-strip {

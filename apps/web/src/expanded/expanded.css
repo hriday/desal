@@ -38,7 +38,7 @@
   grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
   gap: 12px;
 }
-.xv__drawing svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
+.xv__drawing svg { display: block; width: 100%; height: auto; max-height: 52vh; font-family: var(--mono); }
 .xv__drawing { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px; }
 .xv__detail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .xv__wide, .xv__trends, .xv__controls { grid-column: 1 / -1; }
