@@ -231,7 +231,7 @@ These are my calls, keeping the approved flat-schematic monitor style (main spec
 - Scaling is low at ≤ 95 °C, rises above 100 °C and is severe above 105 °C. Above 105 °C, hard CaSO4 scale deposits directly, so it cannot be ball-cleaned away.
 - Running hotter still makes more water, so pushing TBT up is a real trade-off for catching up on quota, paid for in scale.
 - The TBT setpoint range is 85–112 °C, and the high-high trip moves from 118 to 115 °C.
-- An untouched game should still last about as many shifts as before.
+- An untouched game should end on its own within about 40 shifts (Ruling R12b; with real chaos events it had stretched to 66).
 
 ## 5. Constraints
 
