@@ -70,6 +70,8 @@ export function createGateway(opts: GatewayOptions): Gateway {
 
   const server = createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/healthz') {
+      // Only startup/shutdown can be observed: the client exposes no consumer crash or disconnect
+      // events (consumer.on is not implemented; pinned by test/kafka.test.ts).
       const ok = kafka.connected;
       res.writeHead(ok ? 200 : 503, { 'content-type': 'text/plain' }).end(ok ? 'ok' : 'kafka not connected');
       return;

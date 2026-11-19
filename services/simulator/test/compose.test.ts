@@ -13,3 +13,20 @@ describe('infra/docker-compose.yml', () => {
     expect(logDirs).toBe(mount);
   });
 });
+
+describe('deploy/compose.yml', () => {
+  const prod = readFileSync(fileURLToPath(new URL('../../../deploy/compose.yml', import.meta.url)), 'utf8');
+  it('describes plant.state as per-game saves, not the single-career save of before games existed', () => {
+    expect(prod).not.toMatch(/career/i);
+    expect(prod).toMatch(/every game's save/);
+  });
+});
+
+describe('scripts/deploy/deploy.sh', () => {
+  const deploy = readFileSync(fileURLToPath(new URL('../../../scripts/deploy/deploy.sh', import.meta.url)), 'utf8');
+  it("waits for the line the simulator really logs once it runs ('running with N live game(s)')", () => {
+    const pattern = /docker logs desal-simulator 2>&1 \| grep -qE '([^']+)'/.exec(deploy)?.[1];
+    expect(pattern).toBeDefined();
+    expect(new RegExp(pattern!).test('[sim] running with 3 live game(s)')).toBe(true);
+  });
+});

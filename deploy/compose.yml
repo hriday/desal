@@ -32,8 +32,8 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_HEAP_OPTS: "-Xmx384m -Xms384m"
-      # Topic data lives in the volume: the compacted plant.state topic in here is
-      # the career save game (docs/hosting.md, "Backups").
+      # Topic data lives in the volume: the compacted plant.state topic in here holds
+      # every game's save, one per gameId (docs/hosting.md, "Backups").
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data

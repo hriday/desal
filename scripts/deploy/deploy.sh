@@ -2,8 +2,8 @@
 # Deploy desal to the server from this machine (docs/hosting.md).
 #   scripts/deploy/deploy.sh            # deploys HEAD
 #   DESAL_SERVER=root@1.2.3.4 DESAL_HOST=example.org scripts/deploy/deploy.sh
-# It ships the committed tree (git archive, so uncommitted changes are NOT
-# deployed), builds the web app locally and ships it to /opt/desal/web-<commit>,
+# It refuses to run on a dirty tree, then ships the committed tree (git archive
+# of HEAD), builds the web app locally and ships it to /opt/desal/web-<commit>,
 # builds the simulator and gateway images on the server, installs the Caddy site,
 # and runs `docker compose up -d` in /opt/desal. Safe to re-run.
 # Needs pnpm and installed dependencies (pnpm install) on this machine.
@@ -16,8 +16,12 @@ COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 SIMULATOR_IMAGE="desal-simulator:$COMMIT"
 GATEWAY_IMAGE="desal-gateway:$COMMIT"
 
-if ! git -C "$REPO_ROOT" diff --quiet HEAD; then
-  echo "note: uncommitted changes are not deployed (deploying $COMMIT)" >&2
+# A dirty tree would deploy something nobody committed: the web app is built from the working
+# tree while the images come from HEAD. Refuse, untracked files included.
+if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
+  echo "error: uncommitted changes in $REPO_ROOT; commit or stash them first (HEAD is $COMMIT)" >&2
+  git -C "$REPO_ROOT" status --short >&2
+  exit 1
 fi
 
 echo "==> building the web app (wss://$HOST/ws)"
@@ -87,7 +91,7 @@ REMOTE
 
 echo "==> waiting for the simulator and the gateway"
 for _ in $(seq 1 30); do
-  if ssh "$SERVER" "docker logs desal-simulator 2>&1 | grep -qE 'resuming career|starting a fresh|fresh career'"; then break; fi
+  if ssh "$SERVER" "docker logs desal-simulator 2>&1 | grep -qE 'running with [0-9]+ live game'"; then break; fi
   sleep 3
 done
 healthy=""
