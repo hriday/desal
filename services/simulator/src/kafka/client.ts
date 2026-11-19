@@ -31,35 +31,57 @@ interface TopicSpec {
   configEntries?: { name: string; value: string }[];
 }
 
-// Records on these topics carry plant time as their Kafka timestamp (event time,
-// which Flink will use). Plant time runs 40x faster than the wall clock, so it is
-// soon hours ahead; Kafka 4 rejects timestamps more than 1 h in the future by
-// default (message.timestamp.after.max.ms), so lift that limit per topic.
-const ALLOW_FUTURE_TIMESTAMPS = { name: 'message.timestamp.after.max.ms', value: '9223372036854775807' };
+// CreateTime vs LogAppendTime: by default (CreateTime) a record's timestamp is
+// whatever the producer says. Our producer's clock is *plant* time, which runs 40x
+// faster than real time and can pause, so as a Kafka timestamp it would break
+// time-based retention (records "from the future" never expire) and Kafka 4 even
+// rejects timestamps >1 h ahead. LogAppendTime makes the broker stamp wall-clock
+// append time instead, so retention works normally. Event time belongs in the
+// payload: every record carries a `plantTime` field, and that is what Flink will
+// use as event time (with watermarks), not the Kafka timestamp.
+const LOG_APPEND_TIME = { name: 'message.timestamp.type', value: 'LogAppendTime' };
 
 const SPECS: TopicSpec[] = [
   // Messages are keyed by sensorId. Kafka hashes the key to pick a partition, so
   // one sensor's readings always land in one partition and stay in order, while
   // the 6 partitions let Flink process different sensors in parallel.
-  { base: TOPICS.telemetry, numPartitions: 6, configEntries: [ALLOW_FUTURE_TIMESTAMPS] },
+  // ~108 msgs/s is the bulk of all traffic, so on a shared server it gets tight
+  // limits: 24 h, and at most 256 MiB per partition (6 x 256 MiB ~ 1.5 GiB total);
+  // whichever limit is hit first deletes the oldest segments.
+  {
+    base: TOPICS.telemetry,
+    numPartitions: 6,
+    configEntries: [
+      LOG_APPEND_TIME,
+      { name: 'retention.ms', value: '86400000' },
+      { name: 'retention.bytes', value: '268435456' },
+    ],
+  },
   // 1 partition = one total order for operator actions; replaying them
   // reproduces the same plant history.
   { base: TOPICS.commands, numPartitions: 1 },
-  { base: TOPICS.events, numPartitions: 1, configEntries: [ALLOW_FUTURE_TIMESTAMPS] },
+  { base: TOPICS.events, numPartitions: 1, configEntries: [LOG_APPEND_TIME] },
   // Status is only interesting while fresh, so expire it after 1 hour.
-  // (Time-based retention compares against record timestamps, so with plant-time
-  // timestamps a status record only expires 1 h after the wall clock reaches it.)
   {
     base: TOPICS.status,
     numPartitions: 1,
-    configEntries: [{ name: 'retention.ms', value: '3600000' }, ALLOW_FUTURE_TIMESTAMPS],
+    configEntries: [LOG_APPEND_TIME, { name: 'retention.ms', value: '3600000' }],
   },
   // Compaction keeps only the latest value per key (the plant key), so this
   // topic holds the current state: the career save, never deleted by age.
   { base: TOPICS.state, numPartitions: 1, configEntries: [{ name: 'cleanup.policy', value: 'compact' }] },
 ];
 
-/** Creates any missing topics; safe to call repeatedly. */
+/**
+ * Creates any missing topics; safe to call repeatedly.
+ *
+ * It does not reconcile the configs of topics that already exist: this client's
+ * KafkaJS-compatible admin has no alterConfigs/describeConfigs. To fix an existing
+ * topic, use the broker CLI, e.g.
+ *   docker exec desal-kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 \
+ *     --entity-type topics --entity-name plant.telemetry --alter \
+ *     --add-config message.timestamp.type=LogAppendTime,retention.ms=86400000,retention.bytes=268435456
+ */
 export async function ensureTopics(kafka: KafkaInstance): Promise<void> {
   const admin = kafka.admin();
   await admin.connect();

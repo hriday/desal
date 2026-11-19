@@ -18,6 +18,7 @@ const admin = kafka.admin();
 const producer = kafka.producer();
 const created: string[] = [];
 const consumers: { disconnect(): Promise<void> }[] = [];
+const collectGroups: string[] = [];
 
 beforeAll(async () => {
   await admin.connect();
@@ -36,6 +37,10 @@ afterAll(async () => {
   await producer.disconnect();
   // Best effort: a failed cleanup must not fail the run.
   await admin.deleteTopics({ topics: created }).catch(() => {});
+  // Drop the runners' suffixed commands groups (desal-sim<suffix>) and the collector
+  // groups, so nothing from the test run lingers in Kafka UI.
+  const groups = Array.from({ length: n }, (_, i) => `desal-sim${RUN}-${i + 1}`);
+  await admin.deleteGroups([...groups, ...collectGroups]).catch(() => {});
   await admin.disconnect();
 });
 
@@ -43,7 +48,10 @@ afterAll(async () => {
 async function collect<T = Record<string, unknown>>(base: string): Promise<T[]> {
   const out: T[] = [];
   // Throwaway group + fromBeginning: read the whole topic without disturbing anyone's offsets.
-  const consumer = kafka.consumer({ kafkaJS: { groupId: `test-collect-${randomUUID()}`, fromBeginning: true } });
+  // autoCommit off: the group stores no offsets (it is deleted in afterAll).
+  const groupId = `test-collect-${randomUUID()}`;
+  collectGroups.push(groupId);
+  const consumer = kafka.consumer({ kafkaJS: { groupId, fromBeginning: true, autoCommit: false } });
   consumers.push(consumer);
   await consumer.connect();
   await consumer.subscribe({ topics: [topicName(base)] });

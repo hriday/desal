@@ -41,7 +41,7 @@ describe('ensureTopics', () => {
     }
   });
 
-  it('configures cleanup.policy=compact on plant.state and retention on plant.status', () => {
+  it('configures compaction, retention and LogAppendTime timestamps', () => {
     // The KafkaJS-compatible admin in @confluentinc/kafka-javascript has no
     // describeConfigs, so ask the broker's own CLI inside the container.
     const describe = (topic: string) =>
@@ -56,5 +56,11 @@ describe('ensureTopics', () => {
       );
     expect(describe(TOPICS.state)).toContain('cleanup.policy=compact');
     expect(describe(TOPICS.status)).toContain('retention.ms=3600000');
+    for (const t of [TOPICS.telemetry, TOPICS.status, TOPICS.events]) {
+      expect(describe(t), t).toContain('message.timestamp.type=LogAppendTime');
+    }
+    const telemetry = describe(TOPICS.telemetry);
+    expect(telemetry).toContain('retention.ms=86400000');
+    expect(telemetry).toContain('retention.bytes=268435456');
   });
 });

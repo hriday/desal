@@ -1,7 +1,7 @@
 import { PLANT_KEY, TOPICS } from '@desal/schema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { topicName } from '../../src/kafka/client.js';
-import { SimRunner, type OutRecord, type SimIO } from '../../src/kafka/runner.js';
+import { commandsGroup, SimRunner, type OutRecord, type SimIO } from '../../src/kafka/runner.js';
 import { createInitialState } from '../../src/state.js';
 import { env } from '../envelope.js';
 
@@ -66,10 +66,11 @@ describe('SimRunner (fake I/O)', () => {
     const m = telemetry.messages[0]!;
     const reading = JSON.parse(String(m.value));
     expect(m.key).toBe(reading.sensorId);
-    expect(m.timestamp).toBe(String(reading.plantTime));
+    // Event time travels in the payload; the broker stamps LogAppendTime.
+    expect(m.timestamp).toBeUndefined();
+    expect(typeof reading.plantTime).toBe('number');
     const status = io.on(TOPICS.status)[0]!.messages[0]!;
     expect(status.key).toBe(PLANT_KEY);
-    expect(status.timestamp).toBe(String(JSON.parse(String(status.value)).plantTime));
   });
 
   it('freezes the plant while Kafka is down, retries every 2 s, and resumes on success', async () => {
@@ -123,5 +124,20 @@ describe('SimRunner (fake I/O)', () => {
     const last = JSON.parse(String(snaps.at(-1)!.messages[0]!.value));
     expect(last.state.tick).toBe(runner.state.tick);
     expect(snaps.at(-1)!.messages[0]!.key).toBe(PLANT_KEY);
+  });
+});
+
+describe('commandsGroup', () => {
+  it('is suffixed like topic names, so test runs never join the real desal-sim group', () => {
+    const prev = process.env.DESAL_TOPIC_SUFFIX;
+    try {
+      delete process.env.DESAL_TOPIC_SUFFIX;
+      expect(commandsGroup()).toBe('desal-sim');
+      process.env.DESAL_TOPIC_SUFFIX = '.test-1';
+      expect(commandsGroup()).toBe('desal-sim.test-1');
+    } finally {
+      if (prev === undefined) delete process.env.DESAL_TOPIC_SUFFIX;
+      else process.env.DESAL_TOPIC_SUFFIX = prev;
+    }
   });
 });

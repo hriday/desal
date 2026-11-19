@@ -33,9 +33,8 @@ async function main(): Promise<void> {
   // A throwaway group per watcher: every watcher sees every record (consumers in
   // the same group would split the partitions between them). fromBeginning false
   // = a new group starts at the end of the topic, i.e. a live tail.
-  const consumer = kafka.consumer({
-    kafkaJS: { groupId: `desal-watch-${randomUUID()}`, fromBeginning: false, autoCommit: false },
-  });
+  const groupId = `desal-watch-${randomUUID()}`;
+  const consumer = kafka.consumer({ kafkaJS: { groupId, fromBeginning: false, autoCommit: false } });
   await consumer.connect();
   await consumer.subscribe({ topics: [topicName(base)] });
   console.error(`watching ${topicName(base)}${sensorId ? ` for ${sensorId}` : ''} (Ctrl-C to quit)`);
@@ -54,6 +53,11 @@ async function main(): Promise<void> {
 
   const quit = async () => {
     await consumer.disconnect();
+    // The empty throwaway group would otherwise linger in Kafka UI for a while.
+    const admin = kafka.admin();
+    await admin.connect();
+    await admin.deleteGroups([groupId]).catch(() => {});
+    await admin.disconnect();
     process.exit(0);
   };
   process.on('SIGINT', () => void quit());

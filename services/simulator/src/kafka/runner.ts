@@ -47,8 +47,14 @@ export interface SimIO {
   stop(): Promise<void>;
 }
 
-/** Commands consumer group. One group = the simulator's committed read position in plant.commands. */
-export const COMMANDS_GROUP = 'desal-sim';
+/**
+ * Commands consumer group: the group is where Kafka stores the simulator's committed
+ * read position in plant.commands. Suffixed like topic names, so integration tests
+ * (unique suffix) never join the real simulator's group and trigger rebalances in it.
+ */
+export function commandsGroup(): string {
+  return `desal-sim${process.env.DESAL_TOPIC_SUFFIX ?? ''}`;
+}
 
 function parseCommand(value: Buffer | null): unknown {
   if (value === null) return null;
@@ -75,7 +81,8 @@ export function kafkaIO(kafka: KafkaInstance): SimIO {
   // before a crash are therefore lost (not replayed): fine for a game. A future
   // improvement is storing the command offset inside the snapshot and seeking to
   // it on load, which makes "state + position" atomic.
-  const consumer = kafka.consumer({ kafkaJS: { groupId: COMMANDS_GROUP, fromBeginning: false } });
+  const groupId = commandsGroup();
+  const consumer = kafka.consumer({ kafkaJS: { groupId, fromBeginning: false } });
   const topic = topicName(TOPICS.commands);
 
   return {
@@ -89,7 +96,7 @@ export function kafkaIO(kafka: KafkaInstance): SimIO {
       await admin.connect();
       let startAt: { partition: number; offset: string }[] = [];
       try {
-        const [committed] = await admin.fetchOffsets({ groupId: COMMANDS_GROUP, topics: [topic] });
+        const [committed] = await admin.fetchOffsets({ groupId, topics: [topic] });
         const ends = await admin.fetchTopicOffsets(topic);
         startAt = ends
           .filter((e) => (committed?.partitions.find((p) => p.partition === e.partition)?.offset ?? '-1') === '-1')
@@ -130,32 +137,32 @@ export interface RunnerOptions {
 }
 
 function snapshotRecord(s: PlantState): OutRecord {
-  // Keyed by PLANT_KEY so compaction keeps exactly one latest save per plant. No
-  // explicit timestamp: the broker-assigned wall-clock time is fine for a save.
+  // Keyed by PLANT_KEY so compaction keeps exactly one latest save per plant.
   return { topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: serialize(s) }] };
 }
 
 /** The records one tick produces, in produce order: events, status, telemetry, snapshot. */
 function tickRecords(r: TickResult): OutRecord[] {
   const out: OutRecord[] = [];
-  // Kafka record timestamp = plant time (event time), which Flink windows on later.
+  // No producer timestamps: these topics use LogAppendTime (the broker stamps
+  // wall-clock time); plant time, the event time, travels in each payload.
   // Events and status are keyed by the plant: one partition, one total order.
   if (r.events.length > 0) {
     out.push({
       topic: topicName(TOPICS.events),
-      messages: r.events.map((e) => ({ key: PLANT_KEY, value: JSON.stringify(e), timestamp: String(e.plantTime) })),
+      messages: r.events.map((e) => ({ key: PLANT_KEY, value: JSON.stringify(e) })),
     });
   }
   out.push({
     topic: topicName(TOPICS.status),
-    messages: [{ key: PLANT_KEY, value: JSON.stringify(r.status), timestamp: String(r.status.plantTime) }],
+    messages: [{ key: PLANT_KEY, value: JSON.stringify(r.status) }],
   });
   if (r.telemetry.length > 0) {
     // One batched send for all ~108 readings. Key = sensorId, so each sensor's
     // readings hash to one partition and stay in order for that sensor.
     out.push({
       topic: topicName(TOPICS.telemetry),
-      messages: r.telemetry.map((t) => ({ key: t.sensorId, value: JSON.stringify(t), timestamp: String(t.plantTime) })),
+      messages: r.telemetry.map((t) => ({ key: t.sensorId, value: JSON.stringify(t) })),
     });
   }
   if (r.snapshotDue) out.push(snapshotRecord(r.state));

@@ -30,12 +30,21 @@ export async function readToEnd(
 ): Promise<ReadRecord[]> {
   const admin = kafka.admin();
   await admin.connect();
-  let offsets: { partition: number; low: string; high: string }[];
   try {
-    offsets = await admin.fetchTopicOffsets(topic);
+    return await readWith(kafka, admin, topic, lastOnly, timeoutMs);
   } finally {
     await admin.disconnect();
   }
+}
+
+async function readWith(
+  kafka: KafkaInstance,
+  admin: KafkaJS.Admin,
+  topic: string,
+  lastOnly: boolean,
+  timeoutMs: number,
+): Promise<ReadRecord[]> {
+  const offsets = await admin.fetchTopicOffsets(topic);
   // low = first offset still stored (older ones deleted/compacted), high = next offset.
   // Partitions with high <= low are empty; an all-empty topic returns at once.
   const pending = new Map<number, number>();
@@ -47,10 +56,9 @@ export async function readToEnd(
   if (pending.size === 0) return [];
 
   // A throwaway group id: this one-off reader must never share (or commit)
-  // offsets with a real consumer group. autoCommit off = it leaves no trace.
-  const consumer: KafkaJS.Consumer = kafka.consumer({
-    kafkaJS: { groupId: `desal-read-${randomUUID()}`, fromBeginning: true, autoCommit: false },
-  });
+  // offsets with a real consumer group. autoCommit off = it commits nothing.
+  const groupId = `desal-read-${randomUUID()}`;
+  const consumer: KafkaJS.Consumer = kafka.consumer({ kafkaJS: { groupId, fromBeginning: true, autoCommit: false } });
   const out: ReadRecord[] = [];
   let finish!: () => void;
   const done = new Promise<void>((resolve) => (finish = resolve));
@@ -87,6 +95,9 @@ export async function readToEnd(
     }
   } finally {
     await consumer.disconnect();
+    // Even without offsets the broker keeps the empty group's metadata for a
+    // while (it would clutter Kafka UI), so delete it. Best effort.
+    await admin.deleteGroups([groupId]).catch(() => {});
   }
   return out;
 }
