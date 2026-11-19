@@ -109,7 +109,7 @@ export const PlantStateSchema = z.object({
       startTick: num,
       mode: LoopModeSchema,
       target: TargetSchema,
-      acc: z.object({ productM3: num, offSpecTicks: num, fuelCostUsd: num, trips: num }),
+      acc: z.object({ productM3: num, offSpecTicks: num, fuelCostUsd: num, trips: num, revenueUsd: num, finesUsd: num }),
     })
     .nullable(),
   scenario: z.object({

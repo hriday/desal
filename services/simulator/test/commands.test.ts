@@ -134,7 +134,9 @@ describe('applyCommand', () => {
   });
 
   it('orderFuel schedules an off-grade delivery at tick + 90 under offgradeOnly', () => {
-    const s = running();
+    // 100 t costs $53,200 (off-grade) or $59,500 (standard), more than the starting balance.
+    const r0 = running();
+    const s: PlantState = { ...r0, run: { ...r0.run, balanceUsd: 100000 } };
     const o: PlantState = {
       ...s,
       tick: 10,

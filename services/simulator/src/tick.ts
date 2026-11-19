@@ -9,6 +9,7 @@ import {
   TICK_PLANT_S,
 } from './constants.js';
 import { pidStep } from './control/pid.js';
+import { settleTick, tickRevenue } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
 import { applyTrip, checkInterlocks } from './safety/interlocks.js';
 import { stepAcidClean, stepRestart } from './safety/restart.js';
@@ -17,7 +18,7 @@ import { endShift } from './shift.js';
 import type { Loop, PlantState, SimEvent } from './state.js';
 import { stepFuel } from './units/fuel.js';
 import { heaterDemandMW, stepHeater } from './units/heater.js';
-import { stepIntake } from './units/intake.js';
+import { stepIntake, stepOverhauls } from './units/intake.js';
 import { stepProduct } from './units/product.js';
 import { recoveredTempC, stepStages } from './units/stages.js';
 
@@ -79,7 +80,7 @@ export function stepPlant(s0: PlantState): PlantStep {
 
   const sc = stepScenario(s0);
   events.push(...sc.events);
-  let s = stepIntake(stepLoops(sc.state), dt);
+  let s = stepOverhauls(stepIntake(stepLoops(sc.state), dt));
 
   const fuel = stepFuel(s, heaterDemandMW(s), dt);
   s = fuel.state;
@@ -114,7 +115,13 @@ export function stepPlant(s0: PlantState): PlantStep {
   };
 }
 
-type StepTotals = Pick<PlantStep, 'deliveredM3' | 'offSpec' | 'fuelCostUsd'> & { trips: number };
+type StepTotals = Pick<PlantStep, 'deliveredM3' | 'offSpec' | 'fuelCostUsd'> & {
+  trips: number;
+  revenueUsd: number;
+  finesUsd: number;
+};
+
+const NO_STEP: Omit<StepTotals, 'trips'> = { deliveredM3: 0, offSpec: false, fuelCostUsd: 0, revenueUsd: 0, finesUsd: 0 };
 
 function withAccumulators(s: PlantState, x: StepTotals): PlantState {
   if (!s.shift) return s;
@@ -128,6 +135,8 @@ function withAccumulators(s: PlantState, x: StepTotals): PlantState {
         offSpecTicks: acc.offSpecTicks + (x.offSpec ? 1 : 0),
         fuelCostUsd: acc.fuelCostUsd + x.fuelCostUsd,
         trips: acc.trips + x.trips,
+        revenueUsd: acc.revenueUsd + x.revenueUsd,
+        finesUsd: acc.finesUsd + x.finesUsd,
       },
     },
   };
@@ -168,7 +177,7 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
 
   if (s.phase !== 'running') {
     // A manual trip while paused still counts against the shift.
-    s = withAccumulators(s, { deliveredM3: 0, offSpec: false, fuelCostUsd: 0, trips: commandTrips });
+    s = withAccumulators(s, { ...NO_STEP, trips: commandTrips });
     const out = stamped(events, s);
     return { state: out.state, telemetry: [], status: toStatus(out.state), events: out.events, snapshotDue: commandTrips > 0 };
   }
@@ -176,7 +185,10 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   const step = stepPlant(s);
   events.push(...step.events);
   const trips = commandTrips + countTrips(step.events);
-  s = withAccumulators(step.state, { ...step, trips });
+  // The operating account: water revenue in; gas burned and off-spec fines out.
+  const money = tickRevenue(step.deliveredM3, step.offSpec);
+  s = settleTick(step.state, money.revenueUsd, money.fineUsd + step.fuelCostUsd);
+  s = withAccumulators(s, { ...step, trips, revenueUsd: money.revenueUsd, finesUsd: money.fineUsd });
   s = { ...s, tick: s.tick + 1, plantTime: s.plantTime + TICK_PLANT_S * 1000 };
   const telemetry = toTelemetry(s);
 

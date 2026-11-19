@@ -16,7 +16,7 @@ function running(shift: number, seed = 1): PlantState {
       startTick: 0,
       mode: 'auto',
       target: sc.target,
-      acc: { productM3: 0, offSpecTicks: 0, fuelCostUsd: 0, trips: 0 },
+      acc: { productM3: 0, offSpecTicks: 0, fuelCostUsd: 0, trips: 0, revenueUsd: 0, finesUsd: 0 },
     },
   };
 }

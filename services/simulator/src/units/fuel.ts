@@ -11,6 +11,7 @@ import type { Delivery, PlantState, SimEvent } from '../state.js';
 export interface FuelStep {
   state: PlantState;
   deliveredMW: number;
+  /** Fuel paid this step: gas burned; backup fuel is paid on order, so 0 while it burns. */
   costUsd: number;
   events: SimEvent[];
 }
@@ -50,7 +51,8 @@ export function stepFuel(s: PlantState, demandMW: number, dtS: number): FuelStep
   }
 
   let deliveredMW: number;
-  let priceUsdPerGJ: number;
+  // Gas is paid as it burns; backup fuel was paid in full when ordered, so it burns at no cost.
+  let priceUsdPerGJ = 0;
   if (active === 'gas') {
     deliveredMW = Math.min(capMW, Math.max(0, gas.capMW));
     priceUsdPerGJ = gas.priceUsdPerGJ;
@@ -61,7 +63,6 @@ export function stepFuel(s: PlantState, demandMW: number, dtS: number): FuelStep
     deliveredMW = Math.min(capMW, tankMW);
     const drained = (deliveredMW * dtS) / (lhv * 1000);
     backup = { ...backup, tonnes: Math.max(0, backup.tonnes - drained) };
-    priceUsdPerGJ = backup.priceUsdPerGJ;
   }
   const costUsd = (deliveredMW * dtS * priceUsdPerGJ) / 1000;
 

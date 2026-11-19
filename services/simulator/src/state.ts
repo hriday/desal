@@ -78,7 +78,8 @@ export interface ShiftState {
   startTick: number;
   mode: 'auto' | 'manual';
   target: ShiftTarget;
-  acc: { productM3: number; offSpecTicks: number; fuelCostUsd: number; trips: number };
+  /** fuelCostUsd: gas burned plus backup fuel ordered. finesUsd: off-spec and shortfall fines. */
+  acc: { productM3: number; offSpecTicks: number; fuelCostUsd: number; trips: number; revenueUsd: number; finesUsd: number };
 }
 export interface ScenarioEffects {
   offgradeOnly: boolean;

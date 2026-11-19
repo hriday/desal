@@ -60,12 +60,13 @@ describe('run state', () => {
     let s = fresh();
     s = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]).state;
     s = tick(s, [env(s, { type: 'orderFuel', tonnes: 20 })]).state;
-    const status = tick(s, []).status;
+    const last = tick(s, []);
+    const status = last.status;
     expect(PlantStatusSchema.parse(status)).toEqual(status);
     expect(status).toMatchObject({
       gameId: GAME_ID,
       shiftNumber: 1,
-      balanceUsd: START_BALANCE_USD,
+      balanceUsd: last.state.run.balanceUsd,
       acidCleanRemainingTicks: 0,
       restartAuto: null,
       offeredGrade: 'standard',
@@ -74,6 +75,8 @@ describe('run state', () => {
     expect(status.deliveries).toHaveLength(1);
     expect(status.deliveries[0]).toMatchObject({ tonnes: 20, grade: 'standard' });
     expect(status.deliveries[0]!.arrivesInTicks).toBeGreaterThan(0);
+    // The 20 t order (20 x 42.5 x 14 = $11,900) was paid when placed.
+    expect(status.balanceUsd).toBeLessThan(START_BALANCE_USD - 11900 + 100);
   });
 
   it('shiftNumber advances across two shifts and the run totals accumulate', () => {

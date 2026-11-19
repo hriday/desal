@@ -1,5 +1,6 @@
 import type { PumpId, ShiftSummary } from '@desal/schema';
 import { TICK_PLANT_S } from './constants.js';
+import { charge, shortfallFineUsd } from './economy.js';
 import { nextRandom } from './rng.js';
 import { loadScenario } from './scenario/engine.js';
 import { scenarioForShift } from './scenario/library.js';
@@ -47,7 +48,7 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
       startTick: s.tick,
       mode,
       target: { ...scenario.target },
-      acc: { productM3: 0, offSpecTicks: 0, fuelCostUsd: 0, trips: 0 },
+      acc: { productM3: 0, offSpecTicks: 0, fuelCostUsd: 0, trips: 0, revenueUsd: 0, finesUsd: 0 },
     },
   };
   return {
@@ -67,12 +68,22 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
 }
 
 /**
- * End the running shift: emit `shiftEnd` with its summary and return to handover. All plant state
- * is kept, and so is `shift` (its id and final accumulators) until the next startShift.
+ * End the running shift: charge any shortfall fine, emit `shiftEnd` with its summary and return to
+ * handover. All plant state is kept, and so is `shift` (its id and final accumulators) until the
+ * next startShift.
  */
-export function endShift(s: PlantState): { state: PlantState; events: SimEvent[] } {
-  const shift = s.shift;
-  if (!shift) return { state: { ...s, phase: 'handover' }, events: [] };
+export function endShift(s0: PlantState): { state: PlantState; events: SimEvent[] } {
+  if (!s0.shift) return { state: { ...s0, phase: 'handover' }, events: [] };
+  const events: SimEvent[] = [];
+  let shift = s0.shift;
+  let s = s0;
+  const fine = shortfallFineUsd(shift.target.productM3, shift.acc.productM3);
+  if (fine > 0) {
+    const c = charge(s0, fine, 'shortfallFine');
+    shift = { ...shift, acc: { ...shift.acc, finesUsd: shift.acc.finesUsd + fine } };
+    s = { ...c.state, shift };
+    events.push(c.event);
+  }
   const { acc, target } = shift;
   const pumpWear = Object.fromEntries(
     Object.entries(s.intake.pumps).map(([id, p]) => [id, p.wear]),
@@ -84,8 +95,8 @@ export function endShift(s: PlantState): { state: PlantState; events: SimEvent[]
     fuelCostUsd: acc.fuelCostUsd,
     fuelBudgetUsd: target.fuelBudgetUsd,
     trips: acc.trips,
-    revenueUsd: 0,
-    finesUsd: 0,
+    revenueUsd: acc.revenueUsd,
+    finesUsd: acc.finesUsd,
     balanceUsd: s.run.balanceUsd,
     damage: {
       maxHardScaleMm: s.stages.reduce((m, st) => Math.max(m, st.hardScaleMm), 0),
@@ -99,6 +110,6 @@ export function endShift(s: PlantState): { state: PlantState; events: SimEvent[]
       phase: 'handover',
       run: { ...s.run, totalProductM3: s.run.totalProductM3 + acc.productM3, shiftsCompleted: s.run.shiftsCompleted + 1 },
     },
-    events: [{ type: 'shiftEnd', tick: s.tick, plantTime: s.plantTime, shiftId: shift.id, summary }],
+    events: [...events, { type: 'shiftEnd', tick: s.tick, plantTime: s.plantTime, shiftId: shift.id, summary }],
   };
 }
