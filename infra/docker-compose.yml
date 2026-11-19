@@ -1,0 +1,65 @@
+# Local Kafka for development. Production runs on a shared Linux server where
+# Kafka must never be publicly exposed: every host port is bound to 127.0.0.1.
+name: desal
+
+services:
+  kafka:
+    image: apache/kafka:4.1.1
+    container_name: desal-kafka
+    # Shared-server budget: cap the container and the JVM heap (heap < container
+    # limit leaves room for page cache and off-heap buffers).
+    mem_limit: 1g
+    ports:
+      - "127.0.0.1:9092:9092"
+    environment:
+      # KRaft mode: no ZooKeeper. One node is both broker and controller.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # Three listeners: HOST for apps on this machine, DOCKER for other
+      # containers (Kafka UI), CONTROLLER for KRaft's internal quorum traffic.
+      KAFKA_LISTENERS: HOST://:9092,DOCKER://:29092,CONTROLLER://:9093
+      # What clients are told to reconnect to after the first bootstrap call.
+      # It must be reachable from the client's side, hence two different names.
+      KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:29092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: HOST:PLAINTEXT,DOCKER:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
+      # Single broker, so internal topics can only have one replica.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Topics are created explicitly (ensureTopics) so a typo'd name fails
+      # loudly instead of silently creating a 1-partition topic.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+      # Must match the volume mount below. Unset, the image writes topic data (and
+      # so the saved career in plant.state) to /tmp/kafka-logs inside the container,
+      # which `docker compose down` throws away. KRaft metadata lives here too.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - desal-kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.3.0
+    container_name: desal-kafka-ui
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: desal-local
+      # Uses the DOCKER listener, not localhost (which would be the UI container).
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+volumes:
+  desal-kafka-data:
+    name: desal-kafka-data

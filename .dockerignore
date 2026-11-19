@@ -1,0 +1,10 @@
+**/node_modules
+.git
+.claude
+.superpowers
+docs
+infra
+deploy
+scripts
+**/*.test.ts
+**/*.int.test.ts
