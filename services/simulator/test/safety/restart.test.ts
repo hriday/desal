@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { RESTART_STEP_TIMEOUT_TICKS } from '../../src/constants.js';
 import { applyTrip } from '../../src/safety/interlocks.js';
 import { beginAcidClean, beginRestart, restartStep, stepAcidClean, stepRestart, type Result } from '../../src/safety/restart.js';
-import { createInitialState, type PlantState, type SimEvent } from '../../src/state.js';
+import { createInitialState, NOMINAL, type PlantState, type SimEvent } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
 import { runUntil, tickOnce } from './harness.js';
 import { GAME_ID } from '../envelope.js';
@@ -43,8 +43,8 @@ function manualRamp(prevFiringPct: number, firingPct: number): PlantState {
     {
       ...s,
       status: 'restarting',
-      restart: { step: 'ramp', stepStartedTick: s.tick, auto: false, prevFiringPct, progressTick: s.tick, bestTbtC: 95 },
-      heater: { ...s.heater, tbtC: 95 }, // well short of online
+      restart: { step: 'ramp', stepStartedTick: s.tick, auto: false, prevFiringPct, progressTick: s.tick, bestTbtC: NOMINAL.tbtC - 13 },
+      heater: { ...s.heater, tbtC: NOMINAL.tbtC - 13 }, // well short of online
     },
     firingPct,
   );
@@ -88,7 +88,7 @@ describe('a tripped plant left idle', () => {
 describe('beginRestart (Auto)', () => {
   it('brings a tripped nominal plant online within 120 ticks, reporting each step in order', () => {
     const s = tripped('auto');
-    expect(s.heater.tbtC).toBeLessThan(100); // it really cooled
+    expect(s.heater.tbtC).toBeLessThan(NOMINAL.tbtC - 8); // it really cooled
     const start = ok(beginRestart(s));
     expect(start.state.status).toBe('restarting');
     const run = runUntil(start.state, 120, isOnline);

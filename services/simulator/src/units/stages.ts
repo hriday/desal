@@ -15,6 +15,8 @@ import {
   EJECTOR_HALVE_FIRING_FRAC,
   EJECTOR_HALVE_TBT_C,
   EJECTOR_MIN_LOAD_FACTOR,
+  HARD_SCALE_ONSET_C,
+  HARD_SCALE_SHARE_PER_C,
   HEATER_DT0_C,
   K_LEVEL,
   LATENT_J_kg,
@@ -24,7 +26,9 @@ import {
   RECIRC_NOMINAL_M3H,
   RECIRC_PUMP_MAX_M3H,
   RECIRC_TAU_S,
+  SCALE_E_FOLD_C,
   SCALE_K,
+  SCALE_REF_C,
   SCALE_REF_MM,
   SOFT_TO_HARD_PER_S,
   VACUUM_QUALITY_MIN,
@@ -76,11 +80,17 @@ export function bottomTempC(s: PlantState): number {
   );
 }
 
-/** Soft scale growth rate (mm/s) at a stage temperature for the current chemistry. */
-function softScaleRate(tempC: number, antiscalantMgL: number, cf: number): number {
+/**
+ * Scale growth rates (mm/s) at a stage temperature for the current chemistry. Soft scale rises
+ * exponentially with temperature: low at <= 95 C, severe above 105 C. Above HARD_SCALE_ONSET_C, CaSO4
+ * also deposits directly as hard scale, a share of the soft rate that grows with every degree over.
+ */
+export function scalingRates(tempC: number, antiscalantMgL: number, cf: number): { softMmPerS: number; hardMmPerS: number } {
   const inhibition = 1 - Math.min(0.9, antiscalantMgL / 4);
   const cfMult = Math.max(1, (cf - 1.5) * 4 + 1);
-  return SCALE_K * Math.exp((tempC - 110) / 5) * inhibition * cfMult;
+  const softMmPerS = SCALE_K * Math.exp((tempC - SCALE_REF_C) / SCALE_E_FOLD_C) * inhibition * cfMult;
+  const hardMmPerS = softMmPerS * HARD_SCALE_SHARE_PER_C * Math.max(0, tempC - HARD_SCALE_ONSET_C);
+  return { softMmPerS, hardMmPerS };
 }
 
 /** The recirculation pump's deliverable maximum: reduced to a fraction of normal during a power dip. */
@@ -142,16 +152,18 @@ export function stepStages(
     const tempC = tbt - (tbt - bottom) * ((i + 0.5) / n);
     distillateKgS += ((massKgS * CP_BRINE * stageDtC) / LATENT_J_kg) * stageEffectiveness(st) * (s.faults.stageDerate[i] ?? 1);
 
-    const grown = st.softScaleMm + softScaleRate(tempC, antiscalantMgL, s.brine.concentrationFactor) * dtS;
+    const rates = scalingRates(tempC, antiscalantMgL, s.brine.concentrationFactor);
+    const grown = st.softScaleMm + rates.softMmPerS * dtS;
     const hardened = grown * (1 - Math.exp(-SOFT_TO_HARD_PER_S * dtS));
     const cleaned = ballClean ? (grown - hardened) * Math.exp(-BALL_CLEAN_RATE * dtS) : grown - hardened;
+    const hardScaleMm = st.hardScaleMm + hardened + rates.hardMmPerS * dtS;
 
     const levelLoop = s.loops.levels[i];
     const valve = levelLoop ? pct(levelLoop.output) : 0;
     const levelM = clamp(st.levelM + K_LEVEL * (inflowFraction - valve) * dtS + disturbanceM, 0, LEVEL_MAX_M);
     carryover += Math.max(0, levelM - CARRYOVER_LEVEL_M);
 
-    return { tempC, levelM, softScaleMm: cleaned, hardScaleMm: st.hardScaleMm + hardened };
+    return { tempC, levelM, softScaleMm: cleaned, hardScaleMm };
   });
 
   const factor = ballClean ? BALL_CLEAN_DISTILLATE_FACTOR : 1;

@@ -12,7 +12,7 @@ export const SNAPSHOT_EVERY_TICKS = 30;
  * (ki multiplies error x seconds). Tuned against the unit models' per-tick process gains:
  * - tbt: integrating plant (recovered heat recirculates), ~0.008 C/tick per % firing.
  * - intakeFlow: instant plant, ~70 m3/h per % speed with two pumps.
- * - recirc: 60 s lag, 50 m3/h per %.
+ * - recirc: 60 s lag, 65 m3/h per %.
  * - blowdown: 3600 s lag, -0.006 CF per % (reverse).
  * - vacuum: 600 s lag, 0.007 quality per %.
  * - level: integrating plant, -0.0008 m/tick per % valve (reverse).
@@ -28,9 +28,9 @@ export const LOOP_GAINS = {
 
 /** Setpoint and output ranges per loop kind. 'level' applies to level1..level20. Outputs are percent. */
 export const LOOP_RANGES = {
-  tbt: { spMin: 90, spMax: 118, outMin: 0, outMax: 100 },
+  tbt: { spMin: 85, spMax: 112, outMin: 0, outMax: 100 },
   intakeFlow: { spMin: 0, spMax: 7000, outMin: 0, outMax: 100 },
-  recirc: { spMin: 2000, spMax: 5000, outMin: 0, outMax: 100 },
+  recirc: { spMin: 2000, spMax: 6500, outMin: 0, outMax: 100 },
   blowdown: { spMin: 1.2, spMax: 1.8, outMin: 0, outMax: 100 },
   vacuum: { spMin: 0.5, spMax: 1.0, outMin: 0, outMax: 100 },
   level: { spMin: 0.15, spMax: 0.6, outMin: 0, outMax: 100 },
@@ -79,8 +79,11 @@ export const CAVITATION_RISE_PER_TICK = 0.04;
 export const CAVITATION_DECAY_PER_TICK = 0.01;
 /** Baseline pump wear per tick (thousands of plant hours to wear out). */
 export const PUMP_WEAR_BASE_PER_TICK = 2.2e-6;
-/** Extra pump wear per tick at full cavitation. */
-export const PUMP_WEAR_CAVITATION_PER_TICK = 3e-5;
+/**
+ * Extra pump wear per tick at full cavitation: a shift of it costs about a fifth of a pump's life,
+ * so leaving fouled screens unattended wears the intake out (an untouched game ends within 40 shifts).
+ */
+export const PUMP_WEAR_CAVITATION_PER_TICK = 3e-4;
 
 /** Maximum burner thermal output (MW). */
 export const BURNER_MAX_MW = 60;
@@ -122,16 +125,27 @@ export const LATENT_J_kg = 2.33e6;
 export const DISTILLATE_DENSITY = 1000;
 /** Total scale thickness at which stage effectiveness halves (mm). */
 export const SCALE_REF_MM = 1.0;
-/** Heater temperature rise needed with perfectly clean tubes (degC); divided by mean effectiveness. */
-export const HEATER_DT0_C = 9;
+/**
+ * Heater temperature rise needed with perfectly clean tubes (degC); divided by mean effectiveness.
+ * GOR is about the flash range (TBT - bottom, 56.5 C at nominal) over this rise.
+ */
+export const HEATER_DT0_C = 7;
 /** Bottom-stage approach to seawater with perfect vacuum and full cooling flow (degC). */
 export const BOTTOM_APPROACH_C = 6;
 /** Bottom-stage temperature rise at zero vacuum quality (degC). */
 export const BOTTOM_VACUUM_PENALTY_C = 20;
 /** Bottom-stage temperature rise at zero cooling (intake) flow (degC). */
 export const BOTTOM_FLOW_PENALTY_C = 15;
-/** Soft scale growth rate at 110 C with no antiscalant and CF <= 1.5 (mm/s). */
+/** Soft scale growth rate at SCALE_REF_C with no antiscalant and CF <= 1.5 (mm/s). */
 export const SCALE_K = 3e-6;
+/** Stage temperature the soft scale rate SCALE_K is quoted at (degC). */
+export const SCALE_REF_C = 105;
+/** Stage temperature rise (degC) that multiplies the soft scale rate by e: low at <= 95 C, severe above 105 C. */
+export const SCALE_E_FOLD_C = 4;
+/** Stage temperature above which CaSO4 deposits directly as hard scale, which ball cleaning cannot remove (degC). */
+export const HARD_SCALE_ONSET_C = 105;
+/** Direct hard scale per degC above HARD_SCALE_ONSET_C, as a fraction of the soft scale rate there. */
+export const HARD_SCALE_SHARE_PER_C = 0.2;
 /** Fraction of soft scale that hardens per second (1/s). */
 export const SOFT_TO_HARD_PER_S = 1e-6;
 /** Fractional removal of soft scale per second while ball cleaning runs (1/s). */
@@ -140,9 +154,12 @@ export const BALL_CLEAN_RATE = 2e-4;
 export const BALL_CLEAN_DISTILLATE_FACTOR = 0.95;
 
 /** Brine recirculation at full recirc pump output (m3/h). */
-export const RECIRC_PUMP_MAX_M3H = 5000;
-/** Nominal brine recirculation the stage levels are balanced against (m3/h). */
-export const RECIRC_NOMINAL_M3H = 4180;
+export const RECIRC_PUMP_MAX_M3H = 6500;
+/**
+ * Nominal brine recirculation the stage levels are balanced against (m3/h): sized so the 93.5 C
+ * nominal TBT makes about 532 m3/h of distillate.
+ */
+export const RECIRC_NOMINAL_M3H = 5350;
 /** Recirc flow time constant (s). */
 export const RECIRC_TAU_S = 60;
 /** Vacuum quality with no ejector steam. */
@@ -183,7 +200,7 @@ export const CF_SALINITY_PPM = 10;
 export const DEFAULT_MAX_SALINITY_PPM = 25;
 
 /** TBT high-high trip (degC). */
-export const TBT_HH_C = 118;
+export const TBT_HH_C = 115;
 /** Stage level at or above which the stage-flood interlock trips (m). */
 export const LEVEL_FLOOD_M = 0.8;
 /** Vacuum quality below which the loss-of-vacuum interlock trips. */

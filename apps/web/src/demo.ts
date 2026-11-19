@@ -9,7 +9,7 @@ export const demoTarget: ShiftTarget = { productM3: 3900, maxSalinityPpm: 25, fu
 export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
   const loop = (setpoint: number, output: number) => ({ mode: 'auto' as const, setpoint, output });
   const loops: Record<string, { mode: 'auto'; setpoint: number; output: number }> = {
-    tbt: loop(108, 72), intakeFlow: loop(5800, 66), recirc: loop(4180, 84), blowdown: loop(1.45, 40), vacuum: loop(0.95, 55),
+    tbt: loop(93.5, 72), intakeFlow: loop(5800, 66), recirc: loop(5350, 82), blowdown: loop(1.45, 40), vacuum: loop(0.95, 55),
   };
   for (let i = 1; i <= 20; i++) loops[`level${i}`] = loop(0.35, 50);
   return {
@@ -44,15 +44,15 @@ export function demoReadings(over: Record<string, number> = {}): Record<string, 
     'intake.P-103.flowM3h': 0, 'intake.P-103.wear': 0.05, 'intake.P-103.cavitation': 0,
     'intake.flowM3h': 5800, 'intake.screenFouling': 0.18, 'intake.seawaterTempC': 28,
     'pretreat.chlorophyllUgL': 4.1,
-    'heater.tbtC': 108, 'heater.firingPct': 72, 'heater.heatMW': 43.2, 'heater.burnerCondition': 0.93,
-    'brine.recircM3h': 4180, 'brine.concentrationFactor': 1.45, 'brine.blowdownM3h': 760,
+    'heater.tbtC': 93.5, 'heater.firingPct': 72, 'heater.heatMW': 43.2, 'heater.burnerCondition': 0.93,
+    'brine.recircM3h': 5350, 'brine.concentrationFactor': 1.45, 'brine.blowdownM3h': 760,
     'vacuum.quality': 0.94,
     'product.flowM3h': 512, 'product.salinityPpm': 18, 'product.shiftProductM3': 2380,
     'fuel.gasCapMW': 60, 'fuel.gasPriceUsdPerGJ': 8, 'fuel.backupTonnes': 128, 'fuel.burnMW': 43.2, 'fuel.shiftCostUsd': 5120,
   };
   for (let i = 1; i <= 20; i++) {
     const k = pad(i);
-    r[`stages.${k}.tempC`] = 104.2 - (i - 1) * 3.4;
+    r[`stages.${k}.tempC`] = 92.1 - (i - 1) * 2.8;
     r[`stages.${k}.levelM`] = 0.31 + (i - 1) * 0.004;
     r[`stages.${k}.softScaleMm`] = 0.05;
     r[`stages.${k}.hardScaleMm`] = i === 2 ? 0.8 : 0.08;

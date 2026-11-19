@@ -179,7 +179,7 @@ export interface PlantState {
 }
 
 const SEAWATER_C = 30;
-const TBT_C = 108;
+const TBT_C = 93.5;
 const CHLOROPHYLL_UGL = 1;
 const CHLORINE_MGL = 1;
 /** Biofouling (and so screen fouling) where growth balances the chlorine kill (as units/intake). */

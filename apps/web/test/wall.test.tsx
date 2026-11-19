@@ -18,7 +18,7 @@ afterEach(cleanup);
 
 const EQUIPMENT: [string, ComponentType<EquipmentProps>, string[]][] = [
   ['Intake', Intake, ['5,800 m³/h', 'Chl-a 4.1', 'P-101', 'P-103']],
-  ['BrineHeater', BrineHeater, ['108.0 °C', '72 %', 'burner health 93 %']],
+  ['BrineHeater', BrineHeater, ['93.5 °C', '72 %', 'burner health 93 %']],
   ['FlashStages', FlashStages, ['20 stages', 'Vac 0.94']],
   ['ProductWater', ProductWater, ['512 m³/h', '18 ppm', 'in spec']],
   ['Fuel', Fuel, ['60 MW', '$8.00/GJ', '128 t', 'standard', 'on gas']],

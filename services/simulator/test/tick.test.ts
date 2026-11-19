@@ -118,12 +118,12 @@ describe('shift lifecycle', () => {
   });
 });
 
-describe('TBT setpoint 118 without antiscalant', () => {
+describe('TBT setpoint at its maximum without antiscalant', () => {
   it('speeds stage-1 scaling until it trips on tbtHighHigh, counting the trip', () => {
     let s = runTicks(running(), 5).state;
     const rate0 = tick(s, []).state.stages[0]!.softScaleMm - s.stages[0]!.softScaleMm;
     s = tick(s, [
-      env(s, { type: 'setSetpoint', loop: 'tbt', value: 118 }),
+      env(s, { type: 'setSetpoint', loop: 'tbt', value: LOOP_RANGES.tbt.spMax }),
       env(s, { type: 'setDose', chemical: 'antiscalant', mgL: 0 }),
     ]).state;
     let maxRate = 0;

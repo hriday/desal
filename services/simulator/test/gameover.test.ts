@@ -191,10 +191,10 @@ describe('quitGame', () => {
 });
 
 describe('runs end', () => {
-  it('an untouched Auto run, starting each shift at handover, reaches game over within 100 shifts', () => {
+  it('an untouched Auto run, starting each shift at handover, reaches game over within 40 shifts', () => {
     let s = createInitialState(7, T0, GAME_ID);
     let end: PlantEvent | undefined;
-    for (let t = 0; t < 100 * (SHIFT_TICKS + 1) && s.phase !== 'over'; t++) {
+    for (let t = 0; t < 40 * (SHIFT_TICKS + 1) && s.phase !== 'over'; t++) {
       const cmds = s.phase === 'handover' ? [env(s, { type: 'startShift', mode: 'auto' }, null)] : [];
       const r = tick(s, cmds);
       s = r.state;
@@ -205,7 +205,7 @@ describe('runs end', () => {
     console.log(
       `untouched run ended in shift ${s.run.shiftNumber}: ${end.reason}, score ${JSON.stringify(end.score)}`,
     );
-    expect(s.run.shiftNumber).toBeLessThanOrEqual(100);
+    expect(s.run.shiftNumber).toBeLessThanOrEqual(40);
     expect(end.score).toEqual(scoreOf(s));
   });
 });

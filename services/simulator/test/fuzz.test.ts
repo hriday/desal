@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LOOP_RANGES } from '../src/constants.js';
 import { nextRandom } from '../src/rng.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
@@ -33,13 +34,9 @@ class Rand {
 }
 
 const LOOPS = ['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum', 'level1', 'level7', 'level20'] as const;
-const SP: Record<string, [number, number]> = {
-  tbt: [90, 118],
-  intakeFlow: [0, 7000],
-  recirc: [2000, 5000],
-  blowdown: [1.2, 1.8],
-  vacuum: [0.5, 1],
-};
+const SP: Record<string, [number, number]> = Object.fromEntries(
+  (['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum'] as const).map((k) => [k, [LOOP_RANGES[k].spMin, LOOP_RANGES[k].spMax]]),
+);
 const PUMPS = ['P-101', 'P-102', 'P-103'] as const;
 
 function randomCommand(r: Rand, s: PlantState): unknown {

@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { STAGE_COUNT } from '../../src/constants.js';
-import { createInitialState, type PlantState, type Stage } from '../../src/state.js';
-import { bottomTempC, recoveredTempC, stageEffectiveness, stepStages } from '../../src/units/stages.js';
+import { SOFT_TO_HARD_PER_S, STAGE_COUNT } from '../../src/constants.js';
+import { createInitialState, NOMINAL, type PlantState, type Stage } from '../../src/state.js';
+import { bottomTempC, recoveredTempC, scalingRates, stageEffectiveness, stepStages } from '../../src/units/stages.js';
 import { allFinite } from '../helpers.js';
 import { GAME_ID } from '../envelope.js';
 
 const DT = 40;
 
-/** Nominal plant: TBT 108, seawater 30 C, vacuum 0.95, recirc 4180 m3/h, clean tubes. */
+/** Nominal plant: nominal TBT and recirc, seawater 30 C, vacuum 0.95, clean tubes. */
 function nominal(): PlantState {
   const s = createInitialState(1, 0, GAME_ID);
   return {
     ...s,
     seawater: { ...s.seawater, tempC: 30 },
-    heater: { ...s.heater, tbtC: 108 },
+    heater: { ...s.heater, tbtC: NOMINAL.tbtC },
     vacuum: { quality: 0.95 },
-    brine: { ...s.brine, recircM3h: 4180 },
+    brine: { ...s.brine, recircM3h: NOMINAL.recircM3h },
     intake: { ...s.intake, flowM3h: 5500, requiredM3h: 5500 },
   };
 }
@@ -59,12 +59,12 @@ describe('stepStages at nominal', () => {
     const r = stepStages(nominal(), DT);
     const t = r.state.stages.map((st) => st.tempC);
     for (let i = 1; i < t.length; i++) expect(t[i]).toBeLessThan(t[i - 1] ?? Number.NaN);
-    expect(t[0]).toBeLessThan(108);
+    expect(t[0]).toBeLessThan(NOMINAL.tbtC);
   });
 
   it('holds the nominal plant at equilibrium for a shift with no PID action', () => {
     const r = run(nominal(), 720);
-    expect(r.state.brine.recircM3h).toBeCloseTo(4180, 0);
+    expect(r.state.brine.recircM3h).toBeCloseTo(NOMINAL.recircM3h, 0);
     expect(r.state.vacuum.quality).toBeCloseTo(0.95, 3);
     expect(r.state.brine.concentrationFactor).toBeCloseTo(1.45, 3);
     for (const st of r.state.stages) expect(st.levelM).toBeCloseTo(0.3, 3);
@@ -76,9 +76,9 @@ describe('stepStages at nominal', () => {
 describe('scaling', () => {
   const rate = (s: PlantState): number => stage(stepStages(s, DT).state, 0).softScaleMm - stage(s, 0).softScaleMm;
 
-  it('grows >= 3x faster in stage 1 at TBT 114 than at 108', () => {
-    const lo = nominal();
-    const hi = { ...lo, heater: { ...lo.heater, tbtC: 114 } };
+  it('grows >= 3x faster in stage 1 at TBT 108 than at 102', () => {
+    const lo = { ...nominal(), heater: { ...nominal().heater, tbtC: 102 } };
+    const hi = { ...lo, heater: { ...lo.heater, tbtC: 108 } };
     expect(rate(hi)).toBeGreaterThanOrEqual(3 * rate(lo));
     expect(rate(lo)).toBeGreaterThan(0);
   });
@@ -119,6 +119,46 @@ describe('scaling', () => {
   });
 });
 
+describe('scaling temperature curve', () => {
+  const total = (tempC: number): number => {
+    const r = scalingRates(tempC, 2, 1.45);
+    return r.softMmPerS + r.hardMmPerS;
+  };
+  /** Clean stages held at a TBT for an hour (90 ticks), with nominal chemistry. */
+  const hourAt = (tbtC: number): Stage => {
+    const s = withStages({ ...nominal(), heater: { ...nominal().heater, tbtC } }, (st) => ({ ...st, softScaleMm: 0, hardScaleMm: 0 }));
+    return stage(run(s, 90).state, 0);
+  };
+
+  it('is low at the 93.5 C nominal: at most a quarter of the rate at 100 C', () => {
+    expect(total(93.5)).toBeGreaterThan(0);
+    expect(total(93.5)).toBeLessThanOrEqual(0.25 * total(100));
+  });
+
+  it('is severe above 105 C: at least 3x the rate at 100 C', () => {
+    expect(total(105)).toBeGreaterThanOrEqual(3 * total(100));
+  });
+
+  it('deposits hard scale directly above 105 C, more the hotter it runs', () => {
+    expect(scalingRates(105, 2, 1.45).hardMmPerS).toBe(0);
+    expect(scalingRates(108, 2, 1.45).hardMmPerS).toBeGreaterThan(0);
+    expect(scalingRates(110, 2, 1.45).hardMmPerS).toBeGreaterThan(scalingRates(108, 2, 1.45).hardMmPerS);
+  });
+
+  it('an hour at TBT 108 grows hard scale beyond what soft scale hardening alone can give', () => {
+    const st = hourAt(108);
+    // Hardening alone gives at most (final soft scale) x SOFT_TO_HARD_PER_S x 3600 s in an hour.
+    expect(st.hardScaleMm).toBeGreaterThan(st.softScaleMm * SOFT_TO_HARD_PER_S * 3600);
+  });
+
+  it('an hour at 95 C grows hard scale only by soft scale hardening (no direct term)', () => {
+    expect(scalingRates(95, 2, 1.45).hardMmPerS).toBe(0);
+    const st = hourAt(95);
+    expect(st.hardScaleMm).toBeGreaterThan(0);
+    expect(st.hardScaleMm).toBeLessThanOrEqual(st.softScaleMm * SOFT_TO_HARD_PER_S * 3600);
+  });
+});
+
 describe('levels', () => {
   it('level1 manual with valve closed floods stage 1 above 0.6 m within 30 ticks with carryover', () => {
     const s = nominal();
@@ -140,7 +180,7 @@ describe('levels', () => {
   it('a fast recirc increase disturbs the levels upward', () => {
     const s = nominal();
     const r = stepStages({ ...s, loops: { ...s.loops, recirc: { ...s.loops.recirc, output: 100 } } }, DT);
-    expect(r.state.brine.recircM3h).toBeGreaterThan(4180);
+    expect(r.state.brine.recircM3h).toBeGreaterThan(NOMINAL.recircM3h);
     expect(stage(r.state, 5).levelM).toBeGreaterThan(0.3);
   });
 });

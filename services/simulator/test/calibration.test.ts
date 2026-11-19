@@ -1,14 +1,20 @@
 import type { PlantEvent } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
 import { DISTILLATE_DENSITY, LATENT_J_kg, SHIFT_TICKS, TICK_PLANT_S } from '../src/constants.js';
+import { applyCommand } from '../src/commands.js';
 import { startShift } from '../src/shift.js';
-import { createInitialState } from '../src/state.js';
+import { createInitialState, NOMINAL } from '../src/state.js';
 import { tick } from '../src/tick.js';
-import { GAME_ID } from './envelope.js';
+import { env, GAME_ID } from './envelope.js';
 
-/** An untouched shift 1 in Auto: no commands for the whole shift. */
-function untouchedShift() {
+/** An untouched shift 1 in Auto: no commands for the whole shift (bar an optional TBT setpoint at the start). */
+function untouchedShift(tbtSetpointC = NOMINAL.tbtC) {
   let s = startShift(createInitialState(1, 0, GAME_ID), 'auto').state;
+  if (tbtSetpointC !== s.loops.tbt.setpoint) {
+    const r = applyCommand(s, env(s, { type: 'setSetpoint', loop: 'tbt', value: tbtSetpointC }));
+    if (r.events.some((e) => e.type === 'commandRejected')) throw new Error('setpoint rejected');
+    s = r.state;
+  }
   const events: PlantEvent[] = [];
   let maxSalinity = 0;
   let minLevel = Infinity;
@@ -64,5 +70,23 @@ describe('calibration: untouched shift 1 in Auto', () => {
   it('holds every stage level within 0.15-0.6 m', () => {
     expect(run.minLevel).toBeGreaterThanOrEqual(0.15);
     expect(run.maxLevel).toBeLessThanOrEqual(0.6);
+  });
+});
+
+describe('calibration: the 93.5 C nominal', () => {
+  it('runs at a 93.5 C top brine temperature', () => {
+    expect(NOMINAL.tbtC).toBe(93.5);
+    expect(createInitialState(1, 0, GAME_ID).heater.tbtC).toBe(93.5);
+    expect(createInitialState(1, 0, GAME_ID).loops.tbt.setpoint).toBe(93.5);
+  });
+
+  it('a shift held at 108 C makes more water but at least 5x the scale', () => {
+    const totalScale = (r: ReturnType<typeof untouchedShift>): number =>
+      r.s.stages.reduce((sum, st) => sum + st.softScaleMm + st.hardScaleMm, 0);
+    const hot = untouchedShift(108);
+    const nominal = untouchedShift();
+    expect(hot.events.filter((e) => e.type === 'trip')).toEqual([]);
+    expect(hot.summary.productM3).toBeGreaterThan(nominal.summary.productM3);
+    expect(totalScale(hot)).toBeGreaterThanOrEqual(5 * totalScale(nominal));
   });
 });

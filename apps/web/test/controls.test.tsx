@@ -45,7 +45,8 @@ function enter(root: HTMLElement, name: RegExp, value: string) {
 
 describe('limits', () => {
   it('mirrors the simulator LOOP_RANGES', () => {
-    expect(LOOP_RANGES.tbt).toEqual({ spMin: 90, spMax: 118, outMin: 0, outMax: 100 });
+    expect(LOOP_RANGES.tbt).toEqual({ spMin: 85, spMax: 112, outMin: 0, outMax: 100 });
+    expect(LOOP_RANGES.recirc).toEqual({ spMin: 2000, spMax: 6500, outMin: 0, outMax: 100 });
     expect(loopRange('level7', 'setSetpoint')).toEqual({ min: 0.15, max: 0.6 });
     expect(loopRange('recirc', 'setOutput')).toEqual({ min: 0, max: 100 });
   });
@@ -92,20 +93,20 @@ describe('loop controls follow the mode', () => {
 
   it('shows the reported value and its range, and clamps to the range', () => {
     const { container, sent } = withSend(HeaterView, demoStatus());
-    expect(container.textContent).toContain('reported 108.0 °C');
-    expect(container.textContent).toContain('90–118 °C');
+    expect(container.textContent).toContain('reported 93.5 °C');
+    expect(container.textContent).toContain('85–112 °C');
     enter(container, /tbt setpoint/i, '150');
-    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'tbt', value: 118 }]);
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'tbt', value: 112 }]);
   });
 
   it('− and + step the field, Enter sends', () => {
     const { container, sent } = withSend(HeaterView, demoStatus());
     fireEvent.click(within(container).getByRole('button', { name: /increase tbt setpoint/i }));
     const input = within(container).getByRole('spinbutton', { name: /tbt setpoint/i }) as HTMLInputElement;
-    expect(input.value).toBe('108.5');
+    expect(input.value).toBe('94.0');
     expect(sent).toEqual([]);
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'tbt', value: 108.5 }]);
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'tbt', value: 94 }]);
   });
 
   it('loop-mode toggles appear only in Auto mode', () => {
@@ -430,9 +431,9 @@ describe('pending and rejection', () => {
     const { gameId } = demoStatus();
     dispatchServer({ t: 'event', event: { gameId, epoch: 0, seq: 500, tick: 1, plantTime: 1, shiftId: 3, type: 'commandRejected', commandId: sends[0]!.commandId, reason: 'setpoint changes are Auto-mode only' } });
     expect(within(container).getByRole('alert').textContent).toContain('setpoint changes are Auto-mode only');
-    expect(input.value).toBe('108.0');
+    expect(input.value).toBe('93.5');
     expect(container.textContent).not.toContain('sending…');
-    expect(container.textContent).toContain('reported 108.0 °C');
+    expect(container.textContent).toContain('reported 93.5 °C');
   });
 
   it('a paid fuel order cannot repeat until a status arrives', () => {

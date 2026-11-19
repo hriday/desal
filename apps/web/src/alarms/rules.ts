@@ -70,7 +70,8 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
 
   // Brine heater
   const tbt = r('heater.tbtC');
-  add('tbt', 'heater', high(tbt, 112, 116), `TBT high ${tbt?.toFixed(1)} °C`);
+  // Warn where scaling turns severe (105 C); alarm short of the 115 C high-high trip.
+  add('tbt', 'heater', high(tbt, 105, 113), `TBT high ${tbt?.toFixed(1)} °C`);
 
   // Flash stages
   const lvl = worstStage(readings, 'levelM');

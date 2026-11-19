@@ -20,11 +20,11 @@ describe('alarmsFor', () => {
     expect(() => alarmsFor(demoStatus(), {})).not.toThrow();
   });
 
-  it('TBT: warn at 112, bad at 116', () => {
-    expect(level('tbt', clean({ 'heater.tbtC': 111.9 }))).toBeUndefined();
-    expect(level('tbt', clean({ 'heater.tbtC': 112 }))).toBe('warn');
-    expect(level('tbt', clean({ 'heater.tbtC': 115.9 }))).toBe('warn');
-    expect(level('tbt', clean({ 'heater.tbtC': 116 }))).toBe('bad');
+  it('TBT: warn at 105 (severe scaling), bad at 113 (short of the 115 trip)', () => {
+    expect(level('tbt', clean({ 'heater.tbtC': 104.9 }))).toBeUndefined();
+    expect(level('tbt', clean({ 'heater.tbtC': 105 }))).toBe('warn');
+    expect(level('tbt', clean({ 'heater.tbtC': 112.9 }))).toBe('warn');
+    expect(level('tbt', clean({ 'heater.tbtC': 113 }))).toBe('bad');
   });
 
   it('stage level: any stage at 0.5 is warn, at 0.65 bad', () => {

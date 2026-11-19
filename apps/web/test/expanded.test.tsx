@@ -23,8 +23,8 @@ const empty: ExpandedProps = { status: null, readings: {}, target: null, trends:
 
 const VIEWS: [string, ComponentType<ExpandedProps>, string[]][] = [
   ['IntakeView', IntakeView, ['P-101', 'P-103', 'Running', 'Stopped', '5,800 m³/h', '5,500 m³/h', '0.18', '4.1 µg/L', '28.0 °C', '31 %', '5 %']],
-  ['HeaterView', HeaterView, ['108.0 °C', '72 %', '43.2 MW', '93 %', 'Gas']],
-  ['StagesView', StagesView, ['104.2 °C', '0.80 mm', '1.45', '512 m³/h', 'Off']],
+  ['HeaterView', HeaterView, ['93.5 °C', '72 %', '43.2 MW', '93 %', 'Gas']],
+  ['StagesView', StagesView, ['92.1 °C', '0.80 mm', '1.45', '512 m³/h', 'Off']],
   ['ProductView', ProductView, ['512 m³/h', '18.0 ppm', '25 ppm', '2,380 / 3,900 m³', '61 %', 'To tank']],
   ['FuelView', FuelView, ['60 MW', '$8.00/GJ', '128 t', 'Standard', '$2.15/m³', '$5,120']],
   ['ShiftView', ShiftView, ['Shift 3', '3h 40m', '2,380 / 3,900 m³', '$12,450', 'Online', 'Auto', '$13,120', '$20,000']],
@@ -70,7 +70,7 @@ describe('expanded views', () => {
     rows.forEach((r) => expect(r.querySelectorAll('[data-stage-cell]')).toHaveLength(10));
     const s2 = container.querySelector('[data-stage-cell="2"]')!.textContent;
     expect(s2).toContain('S2');
-    expect(s2).toContain('100.8 °C');
+    expect(s2).toContain('89.3 °C');
     expect(s2).toContain('0.314 m');
     expect(s2).toContain('0.05');
     expect(s2).toContain('0.80');

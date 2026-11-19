@@ -79,6 +79,16 @@ describe('applyCommand', () => {
     expect(good.state.loops.tbt.setpoint).toBe(112);
   });
 
+  it('TBT setpoint range is 85-112 C: 84 and 113 are rejected, 85 is accepted', () => {
+    const s = running();
+    for (const value of [84, 113]) {
+      const r = applyCommand(s, env({ type: 'setSetpoint', loop: 'tbt', value }));
+      expect(r.state).toBe(s);
+      expect(rejection(r.events)).toContain('out of range');
+    }
+    expect(applyCommand(s, env({ type: 'setSetpoint', loop: 'tbt', value: 85 })).state.loops.tbt.setpoint).toBe(85);
+  });
+
   it('setOutput on tbt: rejected in Auto, accepted in Manual, range-checked', () => {
     const a = running('auto');
     const r = applyCommand(a, env({ type: 'setOutput', loop: 'tbt', value: 50 }));
