@@ -66,4 +66,13 @@ describe('snapshots', () => {
     c.phase = 'bogus';
     expect(restore(wrap(c)).ok).toBe(false);
   });
+
+  it('restores a mid-restart save from before the stall clock, starting the clock at the step start', () => {
+    const s = clone();
+    s.status = 'restarting';
+    s.restart = { step: 'ramp', stepStartedTick: 12, auto: true, prevFiringPct: 20 };
+    const r = restore(wrap(s));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.state.restart).toEqual({ ...s.restart, progressTick: 12, bestTbtC: 0 });
+  });
 });

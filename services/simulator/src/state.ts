@@ -91,8 +91,19 @@ export interface PlantState {
   controlMode: 'auto' | 'manual';
   status: PlantStatusKind;
   trip: { cause: TripCause; atTick: number } | null;
-  /** prevFiringPct: firing (tbt output) seen at the previous restart step, used to police the manual ramp rate. */
-  restart: { step: RestartStep; stepStartedTick: number; auto: boolean; prevFiringPct: number } | null;
+  /**
+   * prevFiringPct: firing (tbt output) seen at the previous restart step, used to police the manual ramp rate.
+   * progressTick / bestTbtC: the Auto stall clock; the tick the step last made progress, and the best
+   * TBT seen in the ramp.
+   */
+  restart: {
+    step: RestartStep;
+    stepStartedTick: number;
+    auto: boolean;
+    prevFiringPct: number;
+    progressTick: number;
+    bestTbtC: number;
+  } | null;
   acidCleanRemainingTicks: number;
   loops: Record<'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum', Loop> & { levels: Loop[] };
   seawater: { tempC: number; salinityGL: number; chlorophyllUgL: number };

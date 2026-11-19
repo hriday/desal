@@ -56,7 +56,16 @@ export const PlantStateSchema = z.object({
   status: PlantStatusKindSchema,
   trip: z.object({ cause: TripCauseSchema, atTick: num }).nullable(),
   restart: z
-    .object({ step: RestartStepSchema, stepStartedTick: num, auto: z.boolean(), prevFiringPct: num })
+    .object({
+      step: RestartStepSchema,
+      stepStartedTick: num,
+      auto: z.boolean(),
+      prevFiringPct: num,
+      // Absent in saves from before the stall timeout: the stall clock then starts at the step start.
+      progressTick: num.optional(),
+      bestTbtC: num.optional(),
+    })
+    .transform((r) => ({ ...r, progressTick: r.progressTick ?? r.stepStartedTick, bestTbtC: r.bestTbtC ?? 0 }))
     .nullable(),
   acidCleanRemainingTicks: num,
   loops: z.object({

@@ -1,5 +1,6 @@
 import type { PlantEvent, RestartStep } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
+import { RESTART_STEP_TIMEOUT_TICKS } from '../../src/constants.js';
 import { applyTrip } from '../../src/safety/interlocks.js';
 import { beginAcidClean, beginRestart, restartStep, stepAcidClean, stepRestart, type Result } from '../../src/safety/restart.js';
 import { createInitialState, type PlantState } from '../../src/state.js';
@@ -41,7 +42,7 @@ function manualRamp(prevFiringPct: number, firingPct: number): PlantState {
     {
       ...s,
       status: 'restarting',
-      restart: { step: 'ramp', stepStartedTick: s.tick, auto: false, prevFiringPct },
+      restart: { step: 'ramp', stepStartedTick: s.tick, auto: false, prevFiringPct, progressTick: s.tick, bestTbtC: 95 },
       heater: { ...s.heater, tbtC: 95 }, // well short of online
     },
     firingPct,
@@ -222,6 +223,79 @@ describe('restartStep (Manual)', () => {
     s = tickOnce(s).state;
     s = ok(restartStep(setFiring(s, 50), 'ramp')).state; // +35 % then ramp, same tick
     expect(stepRestart(s).state.trip?.cause).toBe('flameOut');
+  });
+});
+
+describe('Auto restart: stall timeout and manual takeover', () => {
+  /** An Auto restart run until it reaches the ramp step. */
+  function autoAtRamp(s0: PlantState = tripped('auto')): PlantState {
+    const run = runUntil(ok(beginRestart(s0)).state, 120, (s) => s.restart?.step === 'ramp');
+    expect(run.state.restart?.step).toBe('ramp');
+    return run.state;
+  }
+
+  it('a stuck TBT controller stalls the ramp; it gives up with ok:false within the timeout and drops to tripped without damage', () => {
+    const s0 = tripped('auto');
+    const stuck: PlantState = { ...s0, loops: { ...s0.loops, tbt: { ...s0.loops.tbt, fault: { kind: 'stuck', bias: 0 } } } };
+    const start = ok(beginRestart(stuck));
+    const run = runUntil(start.state, 4 * RESTART_STEP_TIMEOUT_TICKS, (s) => s.status !== 'restarting');
+    const failed = run.events.find((e) => e.type === 'restartProgress' && !e.ok);
+    expect(failed).toMatchObject({ type: 'restartProgress', step: 'ramp', ok: false });
+    expect(failed && 'reason' in failed && failed.reason).toMatch(/timed out/);
+    expect(run.state.status).toBe('tripped');
+    expect(run.state.restart).toBeNull();
+    expect(run.state.loops.tbt.output).toBe(0);
+    // Gave up within one step timeout of entering the ramp.
+    const rampAt = run.events.find((e) => e.type === 'restartProgress' && e.ok && e.step === 'ramp')!;
+    expect(failed!.tick - rampAt.tick).toBeLessThanOrEqual(RESTART_STEP_TIMEOUT_TICKS);
+    // No trip and no trip damage (applyTrip never ran: the original trip record is untouched),
+    // so the operator can fix the cause and retry.
+    expect(run.events.some((e) => e.type === 'trip' || e.type === 'damage')).toBe(false);
+    expect(run.state.trip).toEqual(stuck.trip);
+    expect('rejected' in beginRestart(run.state)).toBe(false);
+  });
+
+  it('times out a step whose precondition never comes (vacuum never pulls)', () => {
+    const t = tripped('auto');
+    let s = ok(beginRestart({ ...t, vacuum: { quality: 0.4 } })).state;
+    const events: PlantEvent[] = [];
+    for (let i = 0; i <= RESTART_STEP_TIMEOUT_TICKS && s.status === 'restarting'; i++) {
+      // Something keeps the ejector closed (e.g. a field fault the operator has to find).
+      s = { ...s, loops: { ...s.loops, vacuum: { ...s.loops.vacuum, output: 0 } } };
+      const r = tickOnce(s);
+      s = r.state;
+      events.push(...r.events);
+    }
+    expect(events.find((e) => e.type === 'restartProgress' && !e.ok)).toMatchObject({ step: 'vacuum', ok: false });
+    expect(s.status).toBe('tripped');
+  });
+
+  it('does not time out a healthy cold ramp that keeps gaining TBT (it takes ~300 ticks)', () => {
+    const cold = tripped('auto', 500);
+    expect(cold.heater.tbtC).toBeLessThan(40);
+    const run = runUntil(ok(beginRestart(cold)).state, 600, isOnline);
+    expect(run.state.status).toBe('online');
+    expect(run.ticks).toBeGreaterThan(3 * RESTART_STEP_TIMEOUT_TICKS);
+    expect(run.events.some((e) => e.type === 'restartProgress' && !e.ok)).toBe(false);
+  });
+
+  it('switching tbt to manual during the Auto ramp lets the operator firing through, policed by the ramp limits', () => {
+    const at = autoAtRamp();
+    const prev = at.restart!.prevFiringPct;
+    // A gentle manual rise (8 %/tick) differs from what the PID-capped Auto ramp would give.
+    const gentle = stepRestart(setFiring(at, prev + 8));
+    expect(gentle.state.status).toBe('restarting');
+    expect(gentle.state.loops.tbt.output).toBe(prev + 8);
+    expect(gentle.state.loops.tbt.mode).toBe('manual');
+    expect(damageEvents(gentle.events)).toEqual([]);
+
+    // Over the warning rate: penalised like a Manual-mode ramp.
+    const fast = stepRestart(setFiring(at, prev + 15));
+    expect(fast.state.loops.tbt.output).toBe(prev + 15);
+    expect(damageEvents(fast.events).length).toBeGreaterThan(0);
+
+    // Over the trip rate: flames out.
+    expect(stepRestart(setFiring(at, prev + 30)).state.trip?.cause).toBe('flameOut');
   });
 });
 

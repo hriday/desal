@@ -57,6 +57,8 @@ The career save is the latest record (key `plant-1`) of the compacted `plant.sta
 
 If Kafka goes down mid-run, the plant freezes and retries the failed tick until Kafka acknowledges it again.
 
+An Auto (one-button) restart gives up on a step that makes no progress for 90 ticks (1 plant hour; in the ramp, progress means TBT still climbing): it emits `restartProgress` with `ok: false` and a reason, and the plant goes back to `tripped` without trip damage, so you can fix the cause and restart again. Putting the firing (`tbt`) loop in manual during an Auto ramp hands the firing to you, policed by the same ramp-rate limits as a Manual restart.
+
 Set `KAFKA_BROKERS` (comma-separated) to use a broker other than `localhost:9092`.
 
 ## CLI

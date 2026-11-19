@@ -205,6 +205,14 @@ export const RESTART_RECIRC_FRACTION = 0.8;
 export const IGNITION_FIRING_PCT = 15;
 /** Firing rise per tick the Auto ramp allows itself (percent per tick); below RAMP_WARN_PCT_PER_TICK. */
 export const AUTO_RAMP_PCT_PER_TICK = 5;
+/**
+ * An Auto restart step that makes no progress for this many ticks (1 plant hour) gives up, back to
+ * tripped. Before the ramp a step must complete in this time; the ramp counts each
+ * RESTART_PROGRESS_TBT_C gain in TBT as progress (a cold ramp legitimately takes ~300 ticks).
+ */
+export const RESTART_STEP_TIMEOUT_TICKS = 90;
+/** TBT gain (C) over the best seen in the ramp that counts as progress and restarts the stall clock. */
+export const RESTART_PROGRESS_TBT_C = 0.5;
 /** Manual firing rise per tick above which the burner wears and the hot stages scale (percent per tick). */
 export const RAMP_WARN_PCT_PER_TICK = 10;
 /** Manual firing rise per tick above which the burner flames out and the plant re-trips (percent per tick). */

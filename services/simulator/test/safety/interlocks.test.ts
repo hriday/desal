@@ -55,7 +55,7 @@ describe('checkInterlocks', () => {
     const s: PlantState = {
       ...online(),
       status: 'restarting',
-      restart: { step: 'recirc', stepStartedTick: 0, auto: true, prevFiringPct: 0 },
+      restart: { step: 'recirc', stepStartedTick: 0, auto: true, prevFiringPct: 0, progressTick: 0, bestTbtC: 0 },
     };
     expect(checkInterlocks(s, 0)).toBeNull();
     const ramp: PlantState = { ...s, tick: 5, restart: { ...s.restart!, step: 'ramp', stepStartedTick: 4 } };
@@ -67,7 +67,7 @@ describe('checkInterlocks', () => {
       ...online(),
       status: 'restarting',
       vacuum: { quality: 0.4 },
-      restart: { step: 'vacuum', stepStartedTick: 0, auto: true, prevFiringPct: 0 },
+      restart: { step: 'vacuum', stepStartedTick: 0, auto: true, prevFiringPct: 0, progressTick: 0, bestTbtC: 0 },
     };
     expect(checkInterlocks(s, 0)).toBeNull();
     expect(checkInterlocks({ ...s, restart: { ...s.restart!, step: 'recirc' } }, 0)).toBe('lossOfVacuum');

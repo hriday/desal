@@ -11,7 +11,9 @@ import {
   RAMP_SCALE_MM,
   RAMP_TRIP_PCT_PER_TICK,
   RAMP_WARN_PCT_PER_TICK,
+  RESTART_PROGRESS_TBT_C,
   RESTART_RECIRC_FRACTION,
+  RESTART_STEP_TIMEOUT_TICKS,
   RESTART_VACUUM_MIN,
   TICK_PLANT_S,
   TRIP_SCALE_STAGES,
@@ -65,7 +67,7 @@ function enterStep(s: PlantState, step: RestartStep, auto: boolean): { state: Pl
     ...s,
     status: 'restarting',
     loops,
-    restart: { step, stepStartedTick: s.tick, auto, prevFiringPct },
+    restart: { step, stepStartedTick: s.tick, auto, prevFiringPct, progressTick: s.tick, bestTbtC: s.heater.tbtC },
   };
   return { state, events: [{ ...eventBase(s), type: 'restartProgress', step, ok: true }] };
 }
@@ -113,10 +115,35 @@ function rampPenalty(s: PlantState): { state: PlantState; events: PlantEvent[] }
 }
 
 /**
+ * Give up a stalled Auto restart: report the step as failed and return to tripped with the burner
+ * off. No applyTrip, so no trip damage: the operator can fix the cause and restart again.
+ */
+function abandonRestart(s: PlantState, step: RestartStep, reason: string): { state: PlantState; events: PlantEvent[] } {
+  const state: PlantState = {
+    ...s,
+    status: 'tripped',
+    restart: null,
+    loops: { ...s.loops, tbt: { ...s.loops.tbt, output: 0 } },
+  };
+  return { state, events: [{ ...eventBase(s), type: 'restartProgress', step, ok: false, reason }] };
+}
+
+/** Police one tick of an operator-driven firing rise: penalty above the warning rate, flame-out above the trip rate. */
+function policeFiringRise(s: PlantState, prevFiringPct: number): { state: PlantState; events: PlantEvent[] } {
+  const risePct = s.loops.tbt.output - prevFiringPct;
+  if (risePct > RAMP_TRIP_PCT_PER_TICK) return applyTrip(s, 'flameOut');
+  if (risePct > RAMP_WARN_PCT_PER_TICK) return rampPenalty(s);
+  return { state: s, events: [] };
+}
+
+/**
  * Advance a restart by one tick (call after the units have run).
  * - Auto: advance a step whenever the next step's precondition holds. In the ramp, firing follows
  *   what the TBT PID asks for, but rises by at most AUTO_RAMP_PCT_PER_TICK; the PID state is kept
- *   so it takes over bumplessly once online.
+ *   so it takes over bumplessly once online. If the operator has put tbt in manual, their firing
+ *   is used instead, policed like a Manual-mode ramp. A step that has not completed within
+ *   RESTART_STEP_TIMEOUT_TICKS gives up (restartProgress ok:false) and the plant is tripped again,
+ *   without trip damage.
  * - Manual (ignition and ramp): the operator's firing rise per tick is policed. Above
  *   RAMP_WARN_PCT_PER_TICK the burner wears and the hot stages scale; above RAMP_TRIP_PCT_PER_TICK
  *   the burner flames out and the plant re-trips.
@@ -134,25 +161,41 @@ export function stepRestart(s: PlantState): { state: PlantState; events: PlantEv
     // Burner locked out before ignition: hold firing at 0 whatever the operator set.
     state = { ...s, loops: { ...s.loops, tbt: { ...s.loops.tbt, output: 0 } } };
   }
+  // The ramp's stall clock restarts whenever TBT gains RESTART_PROGRESS_TBT_C over its best.
+  const rampProgress = r.step === 'ramp' && s.heater.tbtC >= r.bestTbtC + RESTART_PROGRESS_TBT_C;
+  const withProgress = (st: PlantState): PlantState =>
+    rampProgress && st.restart
+      ? { ...st, restart: { ...st.restart, progressTick: s.tick, bestTbtC: s.heater.tbtC } }
+      : st;
+  const timedOut = r.auto && !rampProgress && s.tick - r.progressTick >= RESTART_STEP_TIMEOUT_TICKS;
   if (r.auto && r.step !== 'ramp') {
     const next = STEPS[STEPS.indexOf(r.step) + 1];
-    if (!next || unmetPrecondition(state, next)) return { state: withPrev(state), events: [] };
-    return enterStep(state, next, true);
+    const unmet = next ? unmetPrecondition(state, next) : null;
+    if (next && !unmet) return enterStep(state, next, true);
+    if (timedOut) {
+      return abandonRestart(state, r.step, `step ${r.step} timed out: ${next} still requires ${unmet}`);
+    }
+    return { state: withPrev(state), events: [] };
   }
-  if (r.auto) {
+  if (r.auto && s.loops.tbt.mode === 'auto') {
     const tbt = s.loops.tbt;
     const { outMin, outMax } = LOOP_RANGES.tbt;
-    const pid = pidStep({ ...tbt, mode: 'auto' }, s.heater.tbtC, LOOP_GAINS.tbt, outMin, outMax, TICK_PLANT_S, LOOP_ACTION.tbt);
+    const pid = pidStep(tbt, s.heater.tbtC, LOOP_GAINS.tbt, outMin, outMax, TICK_PLANT_S, LOOP_ACTION.tbt);
     const output = Math.min(tbt.output + AUTO_RAMP_PCT_PER_TICK, pid.output);
-    state = { ...s, loops: { ...s.loops, tbt: { ...pid, mode: tbt.mode, output } } };
+    state = { ...s, loops: { ...s.loops, tbt: { ...pid, output } } };
   } else if (r.step === 'ignition' || r.step === 'ramp') {
-    const risePct = s.loops.tbt.output - r.prevFiringPct;
-    if (risePct > RAMP_TRIP_PCT_PER_TICK) return applyTrip(s, 'flameOut');
-    if (risePct > RAMP_WARN_PCT_PER_TICK) {
-      const p = rampPenalty(s);
-      state = p.state;
-      events.push(...p.events);
+    // Operator-driven firing: a Manual restart, or tbt taken into manual during an Auto ramp.
+    // The manual-mode PID step back-calculates the integral, so a return to auto is bumpless.
+    let firing = s;
+    if (r.auto) {
+      const { outMin, outMax } = LOOP_RANGES.tbt;
+      const tbt = pidStep(s.loops.tbt, s.heater.tbtC, LOOP_GAINS.tbt, outMin, outMax, TICK_PLANT_S, LOOP_ACTION.tbt);
+      firing = { ...s, loops: { ...s.loops, tbt } };
     }
+    const p = policeFiringRise(firing, r.prevFiringPct);
+    if (p.state.status === 'tripped') return p;
+    state = p.state;
+    events.push(...p.events);
   }
 
   if (r.step === 'ramp' && state.heater.tbtC >= state.loops.tbt.setpoint - ONLINE_MARGIN_C) {
@@ -160,7 +203,11 @@ export function stepRestart(s: PlantState): { state: PlantState; events: PlantEv
     events.push({ ...eventBase(s), type: 'online' });
     return { state, events };
   }
-  return { state: withPrev(state), events };
+  if (timedOut) {
+    const p = abandonRestart(state, r.step, `step ${r.step} timed out: TBT did not reach setpoint`);
+    return { state: p.state, events: [...events, ...p.events] };
+  }
+  return { state: withProgress(withPrev(state)), events };
 }
 
 /** Acid clean from a trip: 2 plant hours, then all hard scale is gone and the plant waits, tripped. */
