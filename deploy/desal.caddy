@@ -7,7 +7,9 @@ __HOST__ {
 	# Public: browsers and the play CLI. reverse_proxy handles the WebSocket upgrade.
 	# Caddy sets X-Forwarded-For to the client's address (it replaces any value the
 	# client sent, because no trusted_proxies are configured), and the gateway uses
-	# it for per-client limits; it only honours the header from loopback peers.
+	# it for per-client limits. The gateway honours the header only from peers in its
+	# TRUSTED_PROXIES (loopback and private ranges): through Docker's port proxy it
+	# sees Caddy as the bridge gateway (172.x.0.1), not as 127.0.0.1.
 	handle /ws* {
 		reverse_proxy 127.0.0.1:8081
 	}

@@ -395,3 +395,24 @@ describe('last socket leaving', () => {
     expect(sent[0]).toMatchObject({ gameId: GAME_A, command: { type: 'heartbeat' } });
   });
 });
+
+describe('configurable per-client limits', () => {
+  it('takes MAX_GAMES_PER_CLIENT and NEW_GAME_INTERVAL_MS from deps', () => {
+    sessions = new Sessions({
+      send: (env) => {
+        sent.push(env);
+      },
+      latestStatus: (id) => book.get(id),
+      now: () => clock,
+      limits: { maxGames: 2, newGameIntervalMs: 0 },
+    });
+    for (const id of ['a', 'b', 'c']) {
+      open(id, 'c1');
+      client(id, { t: 'newGame' });
+    }
+    // No interval, so b starts at once (the default 10 s would refuse it); c is over the 2-game cap.
+    expect(sent).toHaveLength(2);
+    expect(inbox.get('b')).toEqual([]);
+    expect(inbox.get('c')).toEqual([{ t: 'error', reason: 'capacity' }]);
+  });
+});

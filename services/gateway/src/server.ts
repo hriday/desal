@@ -3,15 +3,10 @@ import { createServer, STATUS_CODES, type IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { CommandEnvelope } from '@desal/schema';
 import { WebSocket, WebSocketServer } from 'ws';
+import { clientIdOf, DEFAULT_TRUSTED_PROXIES, trustedProxies } from './clients.js';
 import type { RecordHandler, SeenStatus } from './kafka.js';
-import {
-  CLOSE_GOING_AWAY,
-  CLOSE_TRY_AGAIN_LATER,
-  HEARTBEAT_MS,
-  MAX_MSG_BYTES,
-  MAX_SOCKETS,
-  MAX_SOCKETS_PER_CLIENT,
-} from './protocol.js';
+import { DEFAULT_PER_CLIENT, type PerClientLimits } from './limits.js';
+import { CLOSE_GOING_AWAY, CLOSE_TRY_AGAIN_LATER, HEARTBEAT_MS, MAX_MSG_BYTES, MAX_SOCKETS } from './protocol.js';
 import { Sessions } from './sessions.js';
 
 /** The part of GatewayKafka the server uses (a fake in tests). */
@@ -27,6 +22,10 @@ export interface GatewayOptions {
   /** Allowed browser Origins; empty allows all (local dev). Clients sending no Origin are always allowed (R2). */
   allowedOrigins?: string[];
   maxSockets?: number;
+  /** Per-client caps; unset fields use DEFAULT_PER_CLIENT. */
+  perClient?: Partial<PerClientLimits>;
+  /** Comma-separated CIDRs whose X-Forwarded-For is trusted (TRUSTED_PROXIES); default DEFAULT_TRUSTED_PROXIES. */
+  trustedProxies?: string;
   heartbeatMs?: number;
   log?: (msg: string) => void;
 }
@@ -52,30 +51,19 @@ function refuse(socket: Duplex, code: number): void {
   setTimeout(() => socket.destroy(), 1000).unref();
 }
 
-const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
-
-/**
- * Who a connection belongs to, for the per-client limits. Behind Caddy on the same host every
- * TCP peer is loopback, so the real client is X-Forwarded-For's first address. That header is
- * trusted only from a loopback peer; anyone else could just make it up.
- */
-export function clientIdOf(peer: string | undefined, forwardedFor: string | string[] | undefined): string {
-  const xff = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
-  const first = xff?.split(',')[0]?.trim();
-  if (peer !== undefined && LOOPBACK.has(peer) && first) return first;
-  return peer ?? 'unknown';
-}
-
 /** HTTP (GET /healthz) plus the WebSocket endpoint /ws. */
 export function createGateway(opts: GatewayOptions): Gateway {
   const { kafka } = opts;
   const allowed = new Set(opts.allowedOrigins ?? []);
   const maxSockets = opts.maxSockets ?? MAX_SOCKETS;
+  const perClient: PerClientLimits = { ...DEFAULT_PER_CLIENT, ...opts.perClient };
+  const trusted = trustedProxies(opts.trustedProxies ?? DEFAULT_TRUSTED_PROXIES);
   const log = opts.log ?? ((m: string) => console.log(`[gateway] ${m}`));
   const sessions = new Sessions({
     send: (env) => kafka.sendCommand(env),
     latestStatus: (id) => kafka.latestStatus(id),
     gameEnded: (id) => kafka.gameEnded(id),
+    limits: perClient,
     log,
   });
   const alive = new WeakMap<WebSocket, boolean>();
@@ -96,19 +84,23 @@ export function createGateway(opts: GatewayOptions): Gateway {
   // exception here would kill the process), so the path is compared as a string, never parsed.
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on('error', (e) => log(`upgrade socket: ${e.message}`));
+    // ws completes the handshake synchronously, so code after it can still throw in here; an
+    // HTTP 400 written onto an upgraded socket would be garbage to the client.
+    let upgraded: WebSocket | null = null;
     try {
       if ((req.url ?? '').split('?')[0] !== '/ws') return refuse(socket, 404);
       const origin = req.headers.origin;
       if (origin !== undefined && allowed.size > 0 && !allowed.has(origin)) return refuse(socket, 403);
       // Without Kafka a socket could neither start a game nor see one: refuse until it is up.
       if (!kafka.connected) return refuse(socket, 503);
-      const clientId = clientIdOf(req.socket.remoteAddress, req.headers['x-forwarded-for']);
+      const clientId = clientIdOf(req.socket.remoteAddress, req.headers['x-forwarded-for'], trusted);
       wss.handleUpgrade(req, socket, head, (ws) => {
+        upgraded = ws;
         if (sessions.socketCount() >= maxSockets) {
           ws.close(CLOSE_TRY_AGAIN_LATER, 'gateway full');
           return;
         }
-        if (sessions.clientSocketCount(clientId) >= MAX_SOCKETS_PER_CLIENT) {
+        if (sessions.clientSocketCount(clientId) >= perClient.maxSockets) {
           ws.close(CLOSE_TRY_AGAIN_LATER, 'too many connections');
           return;
         }
@@ -116,7 +108,8 @@ export function createGateway(opts: GatewayOptions): Gateway {
       });
     } catch (e) {
       log(`bad upgrade request: ${e instanceof Error ? e.message : String(e)}`);
-      refuse(socket, 400);
+      if (upgraded) (upgraded as WebSocket).terminate();
+      else refuse(socket, 400);
     }
   });
 

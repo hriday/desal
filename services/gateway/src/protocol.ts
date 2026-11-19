@@ -9,7 +9,10 @@ export const MAX_MSG_BYTES = 16384;
 export const MAX_MSGS_PER_S = 50;
 /** Concurrent sockets per gateway; extra ones are closed with code 1013 (try again later). */
 export const MAX_SOCKETS = 50;
-/** Per client (IP address): concurrent sockets, extras closed with 1013. */
+/**
+ * Per-client defaults (client = IPv4 address or IPv6 /64), each overridable by the env var of the
+ * same name (main.ts). Concurrent sockets, extras closed with 1013:
+ */
 export const MAX_SOCKETS_PER_CLIENT = 3;
 /** Per client: at most one newGame per this many ms ... */
 export const NEW_GAME_INTERVAL_MS = 10_000;

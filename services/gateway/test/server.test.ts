@@ -3,7 +3,8 @@ import { TOPICS, type CommandEnvelope } from '@desal/schema';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { StatusBook } from '../src/kafka.js';
-import { clientIdOf, createGateway, type Gateway } from '../src/server.js';
+import type { PerClientLimits } from '../src/limits.js';
+import { createGateway, type Gateway } from '../src/server.js';
 import { gameStart } from './fixtures.js';
 
 /** A fake GatewayKafka: records commands, and is "connected" unless told otherwise. */
@@ -34,9 +35,17 @@ afterEach(async () => {
   gw = undefined;
 });
 
-async function start(opts: { connected?: boolean; allowedOrigins?: string[]; maxSockets?: number } = {}) {
+async function start(
+  opts: { connected?: boolean; allowedOrigins?: string[]; maxSockets?: number; perClient?: Partial<PerClientLimits>; trustedProxies?: string } = {},
+) {
   const kafka = fakeKafka(opts.connected);
-  gw = createGateway({ kafka, allowedOrigins: opts.allowedOrigins ?? [], maxSockets: opts.maxSockets });
+  gw = createGateway({
+    kafka,
+    allowedOrigins: opts.allowedOrigins ?? [],
+    maxSockets: opts.maxSockets,
+    perClient: opts.perClient,
+    trustedProxies: opts.trustedProxies,
+  });
   const port = await gw.listen(0);
   return { kafka, port, url: `ws://127.0.0.1:${port}/ws` };
 }
@@ -113,6 +122,19 @@ describe('gateway server', () => {
     await opened(connect(url, undefined, '192.0.2.8')); // another client
   });
 
+  it('takes the per-client socket cap from options (MAX_SOCKETS_PER_CLIENT)', async () => {
+    const { url } = await start({ perClient: { maxSockets: 1 } });
+    await opened(connect(url, undefined, '192.0.2.7'));
+    expect(await closedWith(connect(url, undefined, '192.0.2.7'))).toBe(1013);
+  });
+
+  it('ignores X-Forwarded-For when the peer is not a trusted proxy', async () => {
+    // 127.0.0.1 is not in this list, so every socket counts as the peer itself.
+    const { url } = await start({ trustedProxies: '10.0.0.0/8', perClient: { maxSockets: 1 } });
+    await opened(connect(url, undefined, '192.0.2.7'));
+    expect(await closedWith(connect(url, undefined, '192.0.2.8'))).toBe(1013);
+  });
+
   it('survives a malformed request target on /ws upgrade (pre-auth DoS)', async () => {
     const { port } = await start();
     for (const target of ['//[', '/%zz', 'http://[::', '*']) {
@@ -162,16 +184,5 @@ describe('gateway server', () => {
     const closed = closedWith(ws);
     ws.send('x'.repeat(16 * 1024 + 1));
     expect(await closed).toBe(1009);
-  });
-});
-
-describe('clientIdOf', () => {
-  it('trusts X-Forwarded-For only from a loopback peer (Caddy on the host)', () => {
-    expect(clientIdOf('127.0.0.1', '192.0.2.7, 10.0.0.1')).toBe('192.0.2.7');
-    expect(clientIdOf('::1', ' 192.0.2.7 ')).toBe('192.0.2.7');
-    expect(clientIdOf('::ffff:127.0.0.1', '2001:db8::1')).toBe('2001:db8::1');
-    expect(clientIdOf('127.0.0.1', undefined)).toBe('127.0.0.1');
-    expect(clientIdOf('198.51.100.9', '192.0.2.7')).toBe('198.51.100.9'); // spoofed header from outside
-    expect(clientIdOf(undefined, undefined)).toBe('unknown');
   });
 });

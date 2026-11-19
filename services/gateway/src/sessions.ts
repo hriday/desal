@@ -11,7 +11,7 @@ import {
 } from '@desal/schema';
 import { FrameAssembler } from './frames.js';
 import type { GatewayTopic, SeenStatus } from './kafka.js';
-import { ClientLimits } from './limits.js';
+import { ClientLimits, type PerClientLimits } from './limits.js';
 import {
   CLOSE_TOO_LARGE,
   MAX_MSG_BYTES,
@@ -33,6 +33,8 @@ export interface SessionsDeps {
   latestStatus(gameId: string): SeenStatus | undefined;
   /** True if a gameEnd for this game was consumed (recently). */
   gameEnded?(gameId: string): boolean;
+  /** Per-client game caps (defaults: 3 live games, one newGame per 10 s). */
+  limits?: Pick<PerClientLimits, 'maxGames' | 'newGameIntervalMs'>;
   /** Run fn after ms; returns a cancel function. Injected so tests control time. */
   schedule?(fn: () => void, ms: number): () => void;
   /** Wall clock, ms. */
@@ -87,7 +89,7 @@ export class Sessions {
     this.newId = deps.newId ?? randomUUID;
     this.log = deps.log ?? ((m) => console.warn(`[gateway] ${m}`));
     this.schedule = deps.schedule ?? defaultSchedule;
-    this.limits = new ClientLimits(this.now);
+    this.limits = new ClientLimits(this.now, deps.limits);
   }
 
   clientSocketCount(clientId: string): number {
