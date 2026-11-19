@@ -224,6 +224,15 @@ These are my calls, keeping the approved flat-schematic monitor style (main spec
 - **Typography.** One display face for headings and labels (a technical sans from Google Fonts, e.g. Rajdhani or Barlow Semi Condensed), with numbers kept in the monospace.
 - **Tests.** Existing component tests keep passing. There are no pixel tests; I check the result visually on the live site.
 
+### 4.12 Operating temperature (user input, 2026-11-19)
+
+"at 108C the scaling is very high. It is better to be at 93-94C".
+- The plant's nominal top brine temperature becomes 93.5 °C, and it is recalibrated so the shift targets are met at 93–94 °C.
+- Scaling is low at ≤ 95 °C, rises above 100 °C and is severe above 105 °C. Above 105 °C, hard CaSO4 scale deposits directly, so it cannot be ball-cleaned away.
+- Running hotter still makes more water, so pushing TBT up is a real trade-off for catching up on quota, paid for in scale.
+- The TBT setpoint range is 85–112 °C, and the high-high trip moves from 118 to 115 °C.
+- An untouched game should still last about as many shifts as before.
+
 ## 5. Constraints
 
 - **The simulator stays deterministic and pure.** The director, draw, crew and new events live in `tick()` and the seeded RNG. Interlocks still act immediately.

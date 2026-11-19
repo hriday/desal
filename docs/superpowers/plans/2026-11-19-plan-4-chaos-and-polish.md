@@ -358,6 +358,48 @@ export type SensorFault = { kind: 'freeze'; value: number } | { kind: 'noise'; a
 - [ ] **Step 4:** Run `pnpm --filter @desal/simulator test` and `pnpm --filter @desal/simulator test:int`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(sim): maintenance crew command`.
 
+### Task 8b: Recalibrate the plant to a 93–94 °C top brine temperature
+
+User input (2026-11-19): "at 108C the scaling is very high. It is better to be at 93-94C". Spec §4.12.
+
+**Files:**
+- Modify: `services/simulator/src/state.ts` (`TBT_C`), `services/simulator/src/constants.ts` (TBT loop range, `TBT_HH_C`, scaling constants, any recirc/heater/pump constants the recalibration needs), `services/simulator/src/units/stages.ts` (`softScaleRate`, direct hard scale above 105 °C), `apps/web/src/limits.ts` (mirror the TBT range)
+- Test: `services/simulator/test/calibration.test.ts`, `services/simulator/test/units/` (a scaling test file), plus whatever existing tests pin 108/118
+
+**Exact values:**
+- Nominal TBT setpoint: **93.5 °C**.
+- TBT loop setpoint range: **85–112 °C** (simulator and web `limits.ts`).
+- `TBT_HH_C`: **115**.
+- Scaling: soft scale is low at ≤ 95 °C, rises noticeably above 100 °C and is severe above 105 °C. Above 105 °C some scale also deposits **directly as hard scale** (CaSO4), at a rate that grows with temperature above 105. Pick the curve's constants; the tests below pin its shape.
+- Running hotter still makes more water (product follows TBT − bottom temperature), so higher TBT is a real trade-off and not just a penalty.
+
+**Recalibration (the builder's call, constrained by the existing calibration tests):** at 93.5 °C the flash range drops by about 20 % compared with 108 °C. Every assertion in `test/calibration.test.ts` must still hold unchanged at the new nominal:
+- product 3,900–4,300 m³ and at or above target;
+- salinity < 25 ppm with no off-spec time;
+- no trip;
+- fuel < 12,000 USD;
+- GOR 7–9;
+- levels 0.15–0.6 m.
+
+Targets (`BASE_TARGET_M3`) and budgets stay as they are. Likely levers:
+- nominal recirculation, together with `RECIRC_PUMP_MAX_M3H` and the recirc loop range so the nominal sits comfortably inside them;
+- `HEATER_DT0_C`, which sets heat recovery and hence GOR.
+
+Keep the tick-0 equilibrium (state.ts derives NOMINAL/BALANCE from the physics). `DESIGN_PRODUCT_M3H` (Task 9, web) is derived from the recalibrated nominal; record the new value in the report.
+
+- [ ] **Step 1: Failing tests:**
+  - Scaling rate at 93.5 °C is at most 0.25× the rate at 100 °C.
+  - The rate at 105 °C is at least 3× the rate at 100 °C.
+  - Hard-scale growth from 1 hour at 108 °C (same chemistry) is greater than 0.
+  - With the same exposure at 95 °C, hard-scale growth comes only from soft-scale hardening (no direct term).
+  - Nominal state `tbtC === 93.5`; the TBT setpoint out of range at 84 and 113 is rejected.
+  - A plant held at TBT 108 for one shift has more total scale than at 93.5 by a factor of at least 5, and produces more water.
+  - The calibration suite passes at 93.5.
+- [ ] **Step 2:** Run. Expected: FAIL.
+- [ ] **Step 3:** Implement and recalibrate.
+- [ ] **Step 4: Rebalance check.** Run an untouched auto game (no player commands) to game over, before the change (at BASE) and after it. Report the number of shifts survived and the shift of the first acid-clean need for each. The untouched run should last about as long as before (within ±1 shift); if not, tune scaling constants rather than targets. Then run `pnpm --filter @desal/simulator test`, `pnpm --filter @desal/simulator test:int` and `pnpm --filter @desal/web test`. Expected: PASS.
+- [ ] **Step 5:** Commit `feat(sim): run at 93.5 C TBT; scaling severe above 105 C`.
+
 ### Task 9: Web — quota bar and radio pop-ups
 
 **Files:**
