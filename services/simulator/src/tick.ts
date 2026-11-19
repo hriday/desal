@@ -16,8 +16,9 @@ import { applyTrip, checkInterlocks } from './safety/interlocks.js';
 import { stepAcidClean, stepRestart } from './safety/restart.js';
 import { stepScenario } from './scenario/engine.js';
 import { stepFaults } from './scenario/sharp.js';
+import { measured } from './sensors.js';
 import { endShift } from './shift.js';
-import type { Loop, PlantState, SimEvent } from './state.js';
+import type { Loop, LoopSensorId, PlantState, SimEvent } from './state.js';
 import { stepFuel } from './units/fuel.js';
 import { heaterDemandMW, stepHeater } from './units/heater.js';
 import { stepIntake, stepOverhauls } from './units/intake.js';
@@ -55,17 +56,18 @@ function stepLoop(loop: Loop, kind: Kind, measured: number): Loop {
  * and recirc; while tripped or acid cleaning, the burner is locked out (tbt is not stepped).
  */
 function stepLoops(s: PlantState): PlantState {
+  const m = (loop: LoopSensorId, trueValue: number): number => measured(s, loop, trueValue);
   const restarting = s.status === 'restarting';
   const burnerOff = s.status === 'tripped' || s.status === 'acidCleaning';
   const l = s.loops;
   return {
     ...s,
     loops: {
-      tbt: restarting || burnerOff ? l.tbt : stepLoop(l.tbt, 'tbt', s.heater.tbtC),
-      intakeFlow: stepLoop(l.intakeFlow, 'intakeFlow', s.intake.flowM3h),
-      recirc: restarting ? l.recirc : stepLoop(l.recirc, 'recirc', s.brine.recircM3h),
-      blowdown: stepLoop(l.blowdown, 'blowdown', s.brine.concentrationFactor),
-      vacuum: restarting ? l.vacuum : stepLoop(l.vacuum, 'vacuum', s.vacuum.quality),
+      tbt: restarting || burnerOff ? l.tbt : stepLoop(l.tbt, 'tbt', m('tbt', s.heater.tbtC)),
+      intakeFlow: stepLoop(l.intakeFlow, 'intakeFlow', m('intakeFlow', s.intake.flowM3h)),
+      recirc: restarting ? l.recirc : stepLoop(l.recirc, 'recirc', m('recirc', s.brine.recircM3h)),
+      blowdown: stepLoop(l.blowdown, 'blowdown', m('blowdown', s.brine.concentrationFactor)),
+      vacuum: restarting ? l.vacuum : stepLoop(l.vacuum, 'vacuum', m('vacuum', s.vacuum.quality)),
       levels: l.levels.map((loop, i) => stepLoop(loop, 'level', s.stages[i]?.levelM ?? loop.setpoint)),
     },
   };

@@ -27,6 +27,7 @@ import {
   VACUUM_QUALITY_MIN,
   VACUUM_TAU_S,
 } from '../constants.js';
+import { ejectorLoadFactor } from '../scenario/sharp.js';
 import type { PlantState, Stage } from '../state.js';
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
@@ -86,12 +87,18 @@ export function stepStages(
   // Actuators.
   const prevRecirc = s.brine.recircM3h;
   const recircM3h = lag(prevRecirc, Math.min(RECIRC_PUMP_MAX_M3H * pct(s.loops.recirc.output), recircCapM3h(s)), dtS, RECIRC_TAU_S);
-  const quality = lag(
-    s.vacuum.quality,
-    VACUUM_QUALITY_MIN + (1 - VACUUM_QUALITY_MIN) * pct(s.loops.vacuum.output),
-    dtS,
-    VACUUM_TAU_S,
-  );
+  // A failed ejector gives no steam to pull vacuum, so the vacuum loop cannot recover it: it only falls, more slowly at low load.
+  const quality = s.faults.ejectorFailed
+    ? Math.max(
+        0,
+        s.vacuum.quality - (s.faults.ejectorRatePerMin * ejectorLoadFactor(s.heater.tbtC, s.heater.firingPct) * dtS) / 60,
+      )
+    : lag(
+        s.vacuum.quality,
+        VACUUM_QUALITY_MIN + (1 - VACUUM_QUALITY_MIN) * pct(s.loops.vacuum.output),
+        dtS,
+        VACUUM_TAU_S,
+      );
   const blowdownPct = pct(s.loops.blowdown.output);
   const concentrationFactor = lag(
     s.brine.concentrationFactor,
@@ -119,7 +126,7 @@ export function stepStages(
   let carryover = 0;
   const stages: Stage[] = s.stages.map((st, i) => {
     const tempC = tbt - (tbt - bottom) * ((i + 0.5) / n);
-    distillateKgS += ((massKgS * CP_BRINE * stageDtC) / LATENT_J_kg) * stageEffectiveness(st);
+    distillateKgS += ((massKgS * CP_BRINE * stageDtC) / LATENT_J_kg) * stageEffectiveness(st) * (s.faults.stageDerate[i] ?? 1);
 
     const grown = st.softScaleMm + softScaleRate(tempC, antiscalantMgL, s.brine.concentrationFactor) * dtS;
     const hardened = grown * (1 - Math.exp(-SOFT_TO_HARD_PER_S * dtS));

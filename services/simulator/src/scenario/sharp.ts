@@ -1,9 +1,23 @@
 import type { PumpId, ScenarioKind } from '@desal/schema';
-import { POWER_DIP_RECIRC_FACTOR, PUMP_TRIP_WEAR, STORM_FOULING_PER_TICK, TICK_PLANT_S } from '../constants.js';
-import type { PlantState } from '../state.js';
+import {
+  EJECTOR_HALVE_FIRING_FRAC,
+  EJECTOR_HALVE_TBT_C,
+  EJECTOR_MIN_LOAD_FACTOR,
+  POWER_DIP_RECIRC_FACTOR,
+  PUMP_TRIP_WEAR,
+  SENSOR_NOISE_AMPLITUDE,
+  STORM_FOULING_PER_TICK,
+  TICK_PLANT_S,
+  TUBE_LEAK_GROWTH_PPM_PER_MIN,
+} from '../constants.js';
+import { nextRandom } from '../rng.js';
+import { trueLoopValue } from '../sensors.js';
+import { NOMINAL, type LoopSensorId, type PlantState } from '../state.js';
 
 /** The sharp kinds (SHARP_KINDS) as a type, for exhaustive dispatch. */
 export type SharpKind = Extract<ScenarioKind, 'pumpTrip' | 'tubeLeak' | 'vacuumLoss' | 'powerDip' | 'storm' | 'sensorFailure'>;
+
+const SENSOR_LOOPS: Record<LoopSensorId, true> = { tbt: true, intakeFlow: true, recirc: true, blowdown: true, vacuum: true };
 
 type Params = Record<string, number | string>;
 
@@ -28,9 +42,18 @@ function addStormFouling(s: PlantState, amount: number): PlantState {
 }
 
 /**
- * Apply a sharp event's effect to the plant. pumpTrip, powerDip and storm are here; Task 7 adds the
- * rest, until then those kinds only leave their fired record.
+ * How much of a failed ejector's vacuum loss a load leaves: 1 at or above nominal, falling linearly to
+ * a half at EJECTOR_HALVE_TBT_C below nominal TBT or EJECTOR_HALVE_FIRING_FRAC below nominal firing
+ * (whichever cut is deeper), and never below EJECTOR_MIN_LOAD_FACTOR.
  */
+export function ejectorLoadFactor(tbtC: number, firingPct: number): number {
+  const tbtCut = (NOMINAL.tbtC - tbtC) / EJECTOR_HALVE_TBT_C;
+  const firingCut = (NOMINAL.firingPct - firingPct) / (NOMINAL.firingPct * EJECTOR_HALVE_FIRING_FRAC);
+  const cut = Math.max(0, tbtCut, firingCut);
+  return Math.max(EJECTOR_MIN_LOAD_FACTOR, 1 - 0.5 * cut);
+}
+
+/** Apply a sharp event's effect to the plant. */
 export function applySharpEffect(s: PlantState, kind: SharpKind, p: Params): PlantState {
   switch (kind) {
     case 'pumpTrip':
@@ -56,13 +79,25 @@ export function applySharpEffect(s: PlantState, kind: SharpKind, p: Params): Pla
       };
     }
     case 'tubeLeak':
+      return { ...s, faults: { ...s.faults, tubeLeak: { stage: Number(p.stage), ppm: Number(p.ppm) } } };
     case 'vacuumLoss':
-    case 'sensorFailure':
-      return s;
+      return { ...s, faults: { ...s.faults, ejectorFailed: true, ejectorRatePerMin: Number(p.ratePerMin) } };
+    case 'sensorFailure': {
+      const loop = p.loop as LoopSensorId;
+      if (!(loop in SENSOR_LOOPS)) return s;
+      const fault =
+        p.mode === 'freeze'
+          ? ({ kind: 'freeze', value: trueLoopValue(s, loop) } as const)
+          : ({ kind: 'noise', amplitude: SENSOR_NOISE_AMPLITUDE } as const);
+      return { ...s, faults: { ...s.faults, sensors: { ...s.faults.sensors, [loop]: fault } } };
+    }
   }
 }
 
-/** Advance the per-shift faults by `dt` plant seconds. Task 7 adds the leak, ejector and sensor faults. */
+/**
+ * Advance the per-shift faults by `dt` plant seconds. The ejector's vacuum loss is applied in
+ * stepStages (it needs the load); here the leak grows and the seed advances while any sensor is noisy.
+ */
 export function stepFaults(s: PlantState, dt: number): PlantState {
   const k = dt / TICK_PLANT_S;
   const f = s.faults;
@@ -73,6 +108,14 @@ export function stepFaults(s: PlantState, dt: number): PlantState {
   }
   if (f.powerDipRemainingTicks > 0) {
     next = { ...next, faults: { ...next.faults, powerDipRemainingTicks: Math.max(0, f.powerDipRemainingTicks - k) } };
+  }
+  if (f.tubeLeak) {
+    const ppm = f.tubeLeak.ppm + TUBE_LEAK_GROWTH_PPM_PER_MIN * (dt / 60);
+    next = { ...next, faults: { ...next.faults, tubeLeak: { ...f.tubeLeak, ppm: Math.max(0, ppm) } } };
+  }
+  // Noise is a function of the seed, so a noisy sensor needs a fresh seed each tick (and it is saved).
+  if (Object.values(f.sensors).some((x) => x.kind === 'noise')) {
+    next = { ...next, seed: nextRandom(next.seed)[1] };
   }
   return next;
 }

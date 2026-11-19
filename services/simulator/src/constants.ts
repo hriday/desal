@@ -258,3 +258,16 @@ export const STORM_FOULING_PER_TICK = 0.0005;
 export const POWER_DIP_RECIRC_FACTOR = 0.6;
 /** Longest power dip the draw may make, in plant minutes, however hard the shift. */
 export const POWER_DIP_MAX_MINUTES = 60;
+
+/** Salinity a tube leak adds per plant minute while the tubes are unplugged (ppm). */
+export const TUBE_LEAK_GROWTH_PPM_PER_MIN = 0.1;
+/** Capacity multiplier of a stage whose tubes the crew has plugged. */
+export const TUBE_PLUG_DERATE = 0.6;
+/** TBT drop below nominal (degC) that halves the failed ejector's vacuum loss. */
+export const EJECTOR_HALVE_TBT_C = 5;
+/** Firing drop below nominal (fraction of nominal) that halves the failed ejector's vacuum loss. */
+export const EJECTOR_HALVE_FIRING_FRAC = 0.2;
+/** Smallest share of the vacuum loss that cutting load can leave. */
+export const EJECTOR_MIN_LOAD_FACTOR = 0.25;
+/** Reading noise a noise-mode sensor failure adds, as a fraction of the loop's setpoint span (peak). */
+export const SENSOR_NOISE_AMPLITUDE = 0.1;

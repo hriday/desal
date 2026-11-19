@@ -1,11 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { POWER_DIP_MAX_MINUTES, PUMP_TRIP_WEAR, RECIRC_PUMP_MAX_M3H, STORM_FOULING_PER_TICK } from '../../src/constants.js';
+import {
+  BASE_SALINITY_PPM,
+  EJECTOR_MIN_LOAD_FACTOR,
+  POWER_DIP_MAX_MINUTES,
+  PUMP_TRIP_WEAR,
+  RECIRC_PUMP_MAX_M3H,
+  SENSOR_NOISE_AMPLITUDE,
+  STORM_FOULING_PER_TICK,
+  TICK_PLANT_S,
+  TUBE_LEAK_GROWTH_PPM_PER_MIN,
+  TUBE_PLUG_DERATE,
+  VACUUM_TRIP,
+} from '../../src/constants.js';
 import type { FiredEvent } from '../../src/scenario/chaosTypes.js';
 import { isCleared } from '../../src/scenario/director.js';
 import { applyEffect } from '../../src/scenario/effects.js';
 import { drawEvent } from '../../src/scenario/library.js';
+import { ejectorLoadFactor } from '../../src/scenario/sharp.js';
 import { startShift } from '../../src/shift.js';
-import { createInitialState, type PlantState } from '../../src/state.js';
+import { createInitialState, NOMINAL, type PlantState } from '../../src/state.js';
 import { tick } from '../../src/tick.js';
 import { GAME_ID } from '../envelope.js';
 
@@ -128,5 +141,113 @@ describe('interlock', () => {
     let s = applyEffect(settle(), 'storm', { fouling: 0.4, deltaC: 0, minutes: 120 });
     s = applyEffect(s, 'pumpTrip', { pumpId: 'P-101' });
     run(s, 60, (x) => expect(x.status).not.toBe('tripped'));
+  });
+});
+
+describe('tubeLeak', () => {
+  it('adds the ppm to salinity at once, then grows while unplugged', () => {
+    const s0 = settle();
+    expect(s0.product.salinityPpm).toBeCloseTo(BASE_SALINITY_PPM, 0);
+    const hit = applyEffect(s0, 'tubeLeak', { stage: 2, ppm: 15 });
+    expect(hit.faults.tubeLeak).toEqual({ stage: 2, ppm: 15 });
+    const next = run(hit, 1);
+    expect(next.product.salinityPpm).toBeGreaterThanOrEqual(s0.product.salinityPpm + 15);
+    const later = run(hit, 30);
+    expect(later.faults.tubeLeak!.ppm).toBeCloseTo(15 + 30 * TUBE_LEAK_GROWTH_PPM_PER_MIN * (TICK_PLANT_S / 60));
+    expect(later.product.salinityPpm).toBeGreaterThan(next.product.salinityPpm);
+  });
+
+  it('a stage derate scales distillate', () => {
+    const s0 = settle();
+    const derated: PlantState = { ...s0, faults: { ...s0.faults, stageDerate: s0.faults.stageDerate.map((d, i) => (i === 1 ? TUBE_PLUG_DERATE : d)) } };
+    expect(tick(derated, []).state.product.flowM3h).toBeLessThan(tick(s0, []).state.product.flowM3h);
+  });
+});
+
+describe('vacuumLoss', () => {
+  const RATE = 0.012;
+  const tripTick = (s: PlantState, n: number): number | null => {
+    for (let i = 1; i <= n; i++) {
+      s = tick(s, []).state;
+      if (s.status === 'tripped') return i;
+    }
+    return null;
+  };
+
+  it('sets the ejector failure and trips lossOfVacuum in 20-30 plant minutes at nominal load', () => {
+    const hit = applyEffect(settle(), 'vacuumLoss', { ratePerMin: RATE });
+    expect(hit.faults.ejectorFailed).toBe(true);
+    const t = tripTick(hit, 60);
+    expect(t).not.toBeNull();
+    const expected = ((hit.vacuum.quality - VACUUM_TRIP) / RATE) * (60 / TICK_PLANT_S);
+    expect(Math.abs(t! - expected)).toBeLessThanOrEqual(2);
+    expect(t!).toBeGreaterThanOrEqual(30);
+    expect(t!).toBeLessThanOrEqual(45);
+  });
+
+  it('cutting firing by 25 % at the fault stops the trip within 45 ticks', () => {
+    const hit = applyEffect(settle(), 'vacuumLoss', { ratePerMin: RATE });
+    const manual = { ...hit.loops.tbt, mode: 'manual' as const, output: hit.loops.tbt.output * 0.75 };
+    expect(tripTick({ ...hit, loops: { ...hit.loops, tbt: manual } }, 45)).toBeNull();
+  });
+
+  it('load factor: 1 at nominal, about a half for 5 degC or 20 % less firing, bounded below', () => {
+    const f = NOMINAL.firingPct;
+    expect(ejectorLoadFactor(NOMINAL.tbtC, f)).toBe(1);
+    expect(ejectorLoadFactor(NOMINAL.tbtC + 3, f * 1.1)).toBe(1);
+    expect(ejectorLoadFactor(NOMINAL.tbtC - 5, f)).toBeCloseTo(0.5);
+    expect(ejectorLoadFactor(NOMINAL.tbtC, f * 0.8)).toBeCloseTo(0.5);
+    expect(ejectorLoadFactor(NOMINAL.tbtC - 2.5, f)).toBeCloseTo(0.75);
+    expect(ejectorLoadFactor(NOMINAL.tbtC - 50, 0)).toBe(EJECTOR_MIN_LOAD_FACTOR);
+  });
+
+  it('is cleared when the ejector is repaired', () => {
+    const ev = { eventId: 1, kind: 'vacuumLoss', atMinute: 0, params: {}, cleared: false, how: null } as unknown as FiredEvent;
+    const hit = applyEffect(settle(), 'vacuumLoss', { ratePerMin: RATE });
+    expect(isCleared(hit, ev)).toBeNull();
+    expect(isCleared({ ...hit, faults: { ...hit.faults, ejectorFailed: false } }, ev)).toBe('crew');
+  });
+});
+
+describe('sensorFailure', () => {
+  it('freeze stores the true value at failure; noise stores the amplitude', () => {
+    const s0 = settle();
+    const f = applyEffect(s0, 'sensorFailure', { loop: 'tbt', mode: 'freeze' });
+    expect(f.faults.sensors.tbt).toEqual({ kind: 'freeze', value: s0.heater.tbtC });
+    const n = applyEffect(s0, 'sensorFailure', { loop: 'vacuum', mode: 'noise' });
+    expect(n.faults.sensors.vacuum).toEqual({ kind: 'noise', amplitude: SENSOR_NOISE_AMPLITUDE });
+  });
+
+  /** The player raises the setpoint 3 degC; the loop reads the frozen value forever and keeps heating. */
+  const frozenRun = (): PlantState => {
+    const s0 = settle();
+    const hit = applyEffect(s0, 'sensorFailure', { loop: 'tbt', mode: 'freeze' });
+    return { ...hit, loops: { ...hit.loops, tbt: { ...hit.loops.tbt, setpoint: s0.heater.tbtC + 3 } } };
+  };
+
+  it('a frozen tbt sensor holds the telemetry reading while the Auto loop drives the true TBT off setpoint', () => {
+    const s0 = frozenRun();
+    const frozen = s0.faults.sensors.tbt as { value: number };
+    let s = s0;
+    let drifted = false;
+    for (let i = 0; i < 60 && !drifted; i++) {
+      const r = tick(s, []);
+      s = r.state;
+      expect(r.telemetry.find((t) => t.sensorId === 'heater.tbtC')!.value).toBe(frozen.value);
+      drifted = Math.abs(s.heater.tbtC - s0.loops.tbt.setpoint) > 2;
+    }
+    expect(drifted).toBe(true);
+    expect(s.status).toBe('online');
+  });
+
+  it('switching the loop to Manual at a balanced output stops the drift', () => {
+    let s = run(frozenRun(), 15);
+    const rising = s.heater.tbtC;
+    expect(rising).toBeGreaterThan(frozenRun().heater.tbtC + 0.5);
+    s = { ...s, loops: { ...s.loops, tbt: { ...s.loops.tbt, mode: 'manual', output: NOMINAL.firingPct } } };
+    s = run(s, 40);
+    const a = s.heater.tbtC;
+    expect(s.status).toBe('online');
+    expect(Math.abs(run(s, 5).heater.tbtC - a)).toBeLessThan(0.1);
   });
 });

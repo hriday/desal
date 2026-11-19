@@ -163,6 +163,8 @@ export interface PlantState {
   faults: {
     tubeLeak: { stage: number; ppm: number } | null;
     ejectorFailed: boolean;
+    /** Vacuum quality the failed ejector loses per plant minute at nominal load. */
+    ejectorRatePerMin: number;
     powerDipRemainingTicks: number;
     /** Recirculation pump cap while a power dip lasts, as a fraction of its normal maximum. */
     powerDipRecircFactor: number;
@@ -191,7 +193,7 @@ const RECIRC_KGS = (RECIRC_NOMINAL_M3H * BRINE_DENSITY) / 3600;
 const HEAT_MW = (RECIRC_KGS * CP_BRINE * HEATER_DT0_C) / 1e6;
 
 // Nominal steady state, derived from the unit physics so tick 0 -> 1 starts at equilibrium.
-const NOMINAL = {
+export const NOMINAL = {
   tbtC: TBT_C,
   recircM3h: RECIRC_NOMINAL_M3H,
   intakeM3h: INTAKE_SP_M3H,
@@ -229,6 +231,7 @@ export function noFaults(): PlantState['faults'] {
   return {
     tubeLeak: null,
     ejectorFailed: false,
+    ejectorRatePerMin: 0,
     powerDipRemainingTicks: 0,
     powerDipRecircFactor: 1,
     stormRemainingTicks: 0,

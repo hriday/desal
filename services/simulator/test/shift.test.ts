@@ -209,6 +209,7 @@ describe('chaos plan lifecycle', () => {
       faults: {
         tubeLeak: { stage: 2, ppm: 10 },
         ejectorFailed: true,
+        ejectorRatePerMin: 0.01,
         powerDipRemainingTicks: 5,
         powerDipRecircFactor: 0.5,
         stormRemainingTicks: 9,

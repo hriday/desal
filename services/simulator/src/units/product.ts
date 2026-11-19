@@ -18,7 +18,8 @@ export function stepProduct(
   const salinityPpm =
     BASE_SALINITY_PPM +
     carryover * CARRYOVER_SALINITY_PPM +
-    (cf > CF_SALINITY_KNEE ? (cf - CF_SALINITY_KNEE) * CF_SALINITY_PPM : 0);
+    (cf > CF_SALINITY_KNEE ? (cf - CF_SALINITY_KNEE) * CF_SALINITY_PPM : 0) +
+    (s.faults.tubeLeak?.ppm ?? 0);
   const limit = s.shift?.target.maxSalinityPpm ?? DEFAULT_MAX_SALINITY_PPM;
   const divert = s.product.divertToDrain;
   return {

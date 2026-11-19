@@ -1,8 +1,9 @@
 import type { LoopId, PlantStatus, PumpId, TelemetryReading, UnitId } from '@desal/schema';
 import { PUMP_WEAR_FLOW_LOSS, SHIFT_TICKS, STAGE_COUNT } from './constants.js';
-import type { Loop, PlantState } from './state.js';
+import { measured } from './sensors.js';
+import type { Loop, LoopSensorId, PlantState } from './state.js';
 
-type Sensor = { id: string; unitId: UnitId; read: (s: PlantState) => number };
+type Sensor = { id: string; unitId: UnitId; read: (s: PlantState) => number; loop?: LoopSensorId };
 
 const PUMP_IDS: readonly PumpId[] = ['P-101', 'P-102', 'P-103'];
 
@@ -36,19 +37,19 @@ const SENSORS: readonly Sensor[] = [
     { id: `intake.${id}.wear`, unitId: 'intake', read: (s) => s.intake.pumps[id].wear },
     { id: `intake.${id}.cavitation`, unitId: 'intake', read: (s) => s.intake.pumps[id].cavitation },
   ]),
-  { id: 'intake.flowM3h', unitId: 'intake', read: (s) => s.intake.flowM3h },
+  { id: 'intake.flowM3h', unitId: 'intake', read: (s) => s.intake.flowM3h, loop: 'intakeFlow' },
   { id: 'intake.screenFouling', unitId: 'intake', read: (s) => s.intake.screenFouling },
   { id: 'intake.seawaterTempC', unitId: 'intake', read: (s) => s.seawater.tempC },
   { id: 'pretreat.chlorophyllUgL', unitId: 'pretreat', read: (s) => s.seawater.chlorophyllUgL },
-  { id: 'heater.tbtC', unitId: 'heater', read: (s) => s.heater.tbtC },
+  { id: 'heater.tbtC', unitId: 'heater', read: (s) => s.heater.tbtC, loop: 'tbt' },
   { id: 'heater.firingPct', unitId: 'heater', read: (s) => s.heater.firingPct },
   { id: 'heater.heatMW', unitId: 'heater', read: (s) => s.heater.heatMW },
   { id: 'heater.burnerCondition', unitId: 'heater', read: (s) => s.heater.burnerCondition },
   ...Array.from({ length: STAGE_COUNT }, (_, i) => stageSensors(i)).flat(),
-  { id: 'brine.recircM3h', unitId: 'brine', read: (s) => s.brine.recircM3h },
-  { id: 'brine.concentrationFactor', unitId: 'brine', read: (s) => s.brine.concentrationFactor },
+  { id: 'brine.recircM3h', unitId: 'brine', read: (s) => s.brine.recircM3h, loop: 'recirc' },
+  { id: 'brine.concentrationFactor', unitId: 'brine', read: (s) => s.brine.concentrationFactor, loop: 'blowdown' },
   { id: 'brine.blowdownM3h', unitId: 'brine', read: (s) => s.brine.blowdownM3h },
-  { id: 'vacuum.quality', unitId: 'vacuum', read: (s) => s.vacuum.quality },
+  { id: 'vacuum.quality', unitId: 'vacuum', read: (s) => s.vacuum.quality, loop: 'vacuum' },
   { id: 'product.flowM3h', unitId: 'product', read: (s) => s.product.flowM3h },
   { id: 'product.salinityPpm', unitId: 'product', read: (s) => s.product.salinityPpm },
   { id: 'product.shiftProductM3', unitId: 'product', read: (s) => s.shift?.acc.productM3 ?? 0 },
@@ -65,7 +66,7 @@ export const SENSOR_IDS: readonly string[] = Object.freeze(SENSORS.map((x) => x.
 /** One reading per SENSOR_IDS entry for the current state. Requires a shift (telemetry is emitted only while running). */
 export function toTelemetry(s: PlantState): TelemetryReading[] {
   const shiftId = s.shift?.id ?? 0;
-  return SENSORS.map(({ id, unitId, read }) => ({
+  return SENSORS.map(({ id, unitId, read, loop }) => ({
     gameId: s.run.gameId,
     epoch: s.run.epoch,
     sensorId: id,
@@ -73,7 +74,7 @@ export function toTelemetry(s: PlantState): TelemetryReading[] {
     shiftId,
     tick: s.tick,
     plantTime: s.plantTime,
-    value: read(s),
+    value: loop ? measured(s, loop, read(s)) : read(s),
   }));
 }
 
