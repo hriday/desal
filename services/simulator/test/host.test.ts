@@ -123,6 +123,41 @@ describe('GameHost', () => {
     expect(h2.games().get(gid(2))!.state.tick).toBe(good.tick + 1);
   });
 
+  it('a state that breaks tick and toStatus still ends only that game, with a gameEnd and the error message', () => {
+    const h = started([gid(1), gid(2)]);
+    h.step(
+      [gid(1), gid(2)].map((g) => cmd(g, { type: 'startShift', mode: 'auto' })),
+      1000,
+    );
+    const good = h.games().get(gid(2))!.state;
+    const bad = { ...h.games().get(gid(1))!.state, fuel: undefined } as unknown as PlantState;
+    const h2 = new GameHost();
+    h2.restore([bad, good], 1000);
+    const r = h2.step([], 2000);
+    expect(r.ended).toEqual([gid(1)]);
+    const out = r.perGame.get(gid(1))!;
+    expect(out.status).toBeNull();
+    expect(out.snapshotDue).toBe(false);
+    expect(out.events.filter((e) => e.type === 'gameEnd')).toMatchObject([{ reason: 'error' }]);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({ gameId: gid(1) });
+    expect(r.errors[0]!.message.length).toBeGreaterThan(0);
+    expect(r.perGame.get(gid(2))!.status).not.toBeNull();
+    expect(h2.games().has(gid(1))).toBe(false);
+  });
+
+  it('an abandoned game whose status cannot be rendered still ends with a gameEnd', () => {
+    const h = started([gid(1)]);
+    const bad = { ...h.games().get(gid(1))!.state, fuel: undefined } as unknown as PlantState;
+    const h2 = new GameHost();
+    h2.restore([bad], 0);
+    const r = h2.step([], 90_001);
+    expect(r.ended).toEqual([gid(1)]);
+    expect(r.perGame.get(gid(1))!.events).toMatchObject([{ type: 'gameEnd', reason: 'abandoned' }]);
+    expect(r.perGame.get(gid(1))!.snapshotDue).toBe(false);
+    expect(r.errors).toEqual([]);
+  });
+
   it('restore then step continues the restored games', () => {
     const h = started([gid(1)]);
     h.step([cmd(gid(1), { type: 'startShift', mode: 'auto' })], 1000);

@@ -14,7 +14,8 @@ const DEFAULT_HOST_SEED = 0x5eed1234;
 
 export interface GameTickOut {
   telemetry: TelemetryReading[];
-  status: PlantStatus;
+  /** Null only when the plant state was too broken to render a status (error/abandoned fallback). */
+  status: PlantStatus | null;
   events: PlantEvent[];
   snapshotDue: boolean;
 }
@@ -25,6 +26,8 @@ export interface HostTick {
   ended: string[];
   /** Events with no plant to stamp from (rejections for unknown or unparseable games). */
   hostEvents: PlantEvent[];
+  /** Why games ended with reason 'error' (for the runner to log). */
+  errors: { gameId: string; message: string }[];
 }
 
 export interface GameHostOptions {
@@ -134,6 +137,7 @@ export class GameHost {
 
     const perGame = new Map<string, GameTickOut>();
     const ended: string[] = [];
+    const errors: { gameId: string; message: string }[] = [];
 
     for (const [gameId, entry] of [...this.entries]) {
       const first = lead.get(gameId) ?? [];
@@ -146,8 +150,9 @@ export class GameHost {
           entry.state = r.state;
           out = { telemetry: r.telemetry, status: r.status, events: [...first, ...r.events], snapshotDue: r.snapshotDue };
         }
-      } catch {
+      } catch (e) {
         // Failure isolation: end this game from its last good state; the others carry on.
+        errors.push({ gameId, message: e instanceof Error ? e.message : String(e) });
         out = this.finish(entry, 'error', first);
       }
       perGame.set(gameId, out);
@@ -156,14 +161,28 @@ export class GameHost {
         this.entries.delete(gameId);
       }
     }
-    return { perGame, ended, hostEvents };
+    return { perGame, ended, hostEvents, errors };
   }
 
-  /** End a game outside tick() (abandoned or error) through the same endGame path as quitGame. */
+  /**
+   * End a game outside tick() (abandoned or error) through the same endGame path as quitGame. This
+   * runs on a state that may be the very thing that broke, so it must never throw: the status is
+   * best-effort (null if it cannot be rendered), and if even the gameEnd cannot be built the game
+   * is dropped with its lead events only. snapshotDue is false: the runner tombstones ended games.
+   */
   private finish(entry: Entry, reason: 'abandoned' | 'error', first: PlantEvent[]): GameTickOut {
-    const over = endGame(entry.state, reason);
-    const out = stamped(over.events, over.state);
-    entry.state = out.state;
-    return { telemetry: [], status: toStatus(out.state), events: [...first, ...out.events], snapshotDue: true };
+    const events = [...first];
+    let status: PlantStatus | null = null;
+    try {
+      const over = endGame(entry.state, reason);
+      const out = stamped(over.events, over.state);
+      entry.state = out.state;
+      events.push(...out.events);
+      status = toStatus(out.state);
+    } catch {
+      // Mark over so the host still drops the game even if nothing could be rendered.
+      entry.state = { ...entry.state, phase: 'over' };
+    }
+    return { telemetry: [], status, events, snapshotDue: false };
   }
 }
