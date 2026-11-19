@@ -193,6 +193,37 @@ The existing shift-end summary gains a list of the shift's events, each with its
   - It already has `shiftTarget` and `shiftTicksRemaining`.
   - The maximum rate for "out of reach" is a constant: the plant's design product flow.
 
+### 4.11 Visual polish
+
+The user asked to "make the overall game a little more pretty" (2026-11-19). In the live game (1440×900):
+- The wall uses only the top two-thirds of the screen.
+- Nothing moves except numbers.
+- The handover and start screens are plain forms.
+- There is no sense of place.
+
+These are my calls, keeping the approved flat-schematic monitor style (main spec §4) and its colours:
+- **Fill the room.** The wall's 3×2 grid stretches to the viewport height, and the drawings scale with their monitors.
+- **Monitors look like monitors.** Each gets a thin bezel with a slight inner glow and a faint scanline texture, and a status LED that pulses amber/red with that monitor's worst alarm. The texture is subtle and must not reduce text contrast.
+- **Things move:**
+  - pipes show flow as moving dashes, with speed proportional to flow and stopped when there's none;
+  - running pump rotors spin;
+  - the burner flame flickers with its size following the firing rate;
+  - the intake sea surface ripples;
+  - flash stage levels wobble slightly;
+  - a tripped unit's drawing goes still and dims.
+
+  All of this is CSS/SVG animation driven by the existing props. Under `prefers-reduced-motion` it is turned off.
+- **Alarms feel urgent.** On a new alarm the alarm strip flashes once and the monitor frame pulses. Unacknowledged high alarms keep pulsing until the monitor is opened. There's no sound in this plan.
+- **Handover becomes a shift log.** A card styled like a paper clipboard sheet holds:
+  - the shift orders (§4.5);
+  - the plant condition (as today);
+  - the mode choice;
+  - a large Start button.
+- **Start screen.** It gets a title, a small animated plant illustration reusing the equipment drawings, a two-line pitch, and the Start button.
+- **Game over.** It's shown as a final report card in the same style as the shift log.
+- **Typography.** One display face for headings and labels (a technical sans from Google Fonts, e.g. Rajdhani or Barlow Semi Condensed), with numbers kept in the monospace.
+- **Tests.** Existing component tests keep passing. There are no pixel tests; I check the result visually on the live site.
+
 ## 5. Constraints
 
 - **The simulator stays deterministic and pure.** The director, draw, crew and new events live in `tick()` and the seeded RNG. Interlocks still act immediately.
