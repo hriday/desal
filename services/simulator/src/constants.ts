@@ -73,3 +73,18 @@ export const FLAMEOUT_FIRING_PCT = 60;
 export const LHV_STANDARD_MJkg = 42.5;
 /** Lower heating value of off-grade backup fuel (MJ/kg). */
 export const LHV_OFFGRADE_MJkg = 38;
+
+/** Specific heat of brine (J/kg/K). */
+export const CP_BRINE = 4000;
+/** Brine heater thermal time constant (s). */
+export const HEATER_TAU_S = 600;
+/** Burner condition lost per tick on gas (about 0.01 per 8-hour shift of 720 ticks). */
+export const BURNER_WEAR_GAS = 1.4e-5;
+/** Burner wear multiplier on standard-grade backup fuel. */
+export const BURNER_WEAR_STANDARD_MULT = 3;
+/** Burner wear multiplier on off-grade backup fuel. */
+export const BURNER_WEAR_OFFGRADE_MULT = 6;
+/** Brine density (kg/m3). */
+export const BRINE_DENSITY = 1025;
+/** Floor on brine recirculation mass flow (kg/s) so zero flow stays finite. */
+export const MIN_RECIRC_KGS = 1;
