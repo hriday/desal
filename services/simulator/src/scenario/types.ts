@@ -1,5 +1,4 @@
 import type { ScenarioKind } from '@desal/schema';
-import type { ShiftTarget } from '../state.js';
 
 export type { ScenarioKind };
 
@@ -25,7 +24,7 @@ export interface ScenarioEvent {
 
 export interface Scenario {
   id: string;
-  target: ShiftTarget;
+  target: { productM3: number; maxSalinityPpm: number; fuelBudgetUsd: number };
   initial: { seawaterTempC: number; chlorophyllUgL: number };
   events: ScenarioEvent[];
   randomPerHour: { kind: ScenarioKind; p: number }[];
