@@ -7,7 +7,8 @@
     "test": "vitest run",
     "test:int": "vitest run --config vitest.int.config.ts",
     "typecheck": "tsc --noEmit",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "play": "tsx src/cli/play.ts"
   },
   "dependencies": {
     "@confluentinc/kafka-javascript": "^1.11.0",
@@ -16,6 +17,7 @@
     "zod": "^4"
   },
   "devDependencies": {
+    "@desal/simulator": "workspace:*",
     "@types/node": "^22.20.5",
     "@types/ws": "^8.18.1",
     "tsx": "^4.23.15",
