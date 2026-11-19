@@ -1,4 +1,4 @@
-import type { ServerMsg } from '@desal/schema';
+import type { ClientMsg, ServerMsg } from '@desal/schema';
 import { createSocket, GAME_ID_KEY } from '../src/net/socket';
 
 const gameId = '11111111-1111-4111-8111-111111111111';
@@ -8,14 +8,14 @@ class FakeWS {
   readyState = 0;
   sent: string[] = [];
   onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((e: { code: number }) => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   constructor(public url: string) { FakeWS.instances.push(this); }
   send(d: string) { this.sent.push(d); }
-  close() { this.readyState = 3; this.onclose?.(); }
+  close() { this.readyState = 3; this.onclose?.({ code: 1005 }); }
   open() { this.readyState = 1; this.onopen?.(); }
-  drop() { this.readyState = 3; this.onclose?.(); }
+  drop(code = 1006) { this.readyState = 3; this.onclose?.({ code }); }
   recv(m: unknown) { this.onmessage?.({ data: typeof m === 'string' ? m : JSON.stringify(m) }); }
 }
 
@@ -26,10 +26,10 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-const make = () => {
+const make = (hello?: () => ClientMsg | null) => {
   const msgs: ServerMsg[] = [];
   const conns: string[] = [];
-  const sock = createSocket('ws://x/ws', (m) => msgs.push(m), (c) => conns.push(c), { factory: (u) => new FakeWS(u) as unknown as WebSocket });
+  const sock = createSocket('ws://x/ws', (m) => msgs.push(m), (c) => conns.push(c), { factory: (u) => new FakeWS(u) as unknown as WebSocket, hello });
   return { msgs, conns, sock, ws: () => FakeWS.instances.at(-1)! };
 };
 
@@ -63,14 +63,82 @@ describe('socket', () => {
       expect(FakeWS.instances).toHaveLength(n + 1);
       ws().drop(); // never opened: backoff keeps growing
     }
-    // a successful open resets the backoff and resumes again
+    // the first valid server message (not the open) resets the backoff; it resumes again on open
     vi.advanceTimersByTime(10000);
     ws().open();
     expect(ws().sent).toEqual([JSON.stringify({ t: 'resume', gameId })]);
+    ws().recv({ t: 'pong' });
     ws().drop();
     const n = FakeWS.instances.length;
     vi.advanceTimersByTime(1000);
     expect(FakeWS.instances).toHaveLength(n + 1);
+    sock.close();
+  });
+
+  it('resets the backoff only after a valid server message, not on open', () => {
+    const { sock, ws } = make();
+    const nextAfter = (d: number) => {
+      const n = FakeWS.instances.length;
+      vi.advanceTimersByTime(d - 1);
+      expect(FakeWS.instances).toHaveLength(n);
+      vi.advanceTimersByTime(1);
+      expect(FakeWS.instances).toHaveLength(n + 1);
+    };
+    for (const d of [1000, 2000, 4000]) {
+      ws().open(); // the gateway accepts the socket ...
+      ws().drop(); // ... and closes it at once: not a recovery
+      nextAfter(d);
+    }
+    ws().open();
+    ws().recv({ t: 'nope' }); // invalid: does not count
+    ws().drop();
+    nextAfter(8000);
+    ws().open();
+    ws().recv({ t: 'pong' });
+    ws().drop();
+    nextAfter(1000);
+    sock.close();
+  });
+
+  it('a 1013 close (gateway full) reports full and slows down: 8, 16, then 30 s at most', () => {
+    const { sock, ws, conns } = make();
+    ws().open();
+    ws().drop(1013);
+    expect(conns.at(-1)).toBe('full');
+    for (const d of [8000, 16000, 30000, 30000]) {
+      const n = FakeWS.instances.length;
+      vi.advanceTimersByTime(d - 1);
+      expect(FakeWS.instances).toHaveLength(n);
+      vi.advanceTimersByTime(1);
+      expect(FakeWS.instances).toHaveLength(n + 1);
+      ws().drop(1013);
+    }
+    sock.close();
+  });
+
+  it('retryNow() reconnects at once instead of waiting out the backoff', () => {
+    const { sock, ws } = make();
+    ws().drop(1013);
+    expect(FakeWS.instances).toHaveLength(1);
+    sock.retryNow();
+    expect(FakeWS.instances).toHaveLength(2);
+    vi.advanceTimersByTime(60000);
+    expect(FakeWS.instances).toHaveLength(2); // the cancelled timer does not fire as well
+    ws().open();
+    sock.retryNow(); // connected: nothing to do
+    expect(FakeWS.instances).toHaveLength(2);
+    sock.close();
+  });
+
+  it('sends hello() on every open instead of the default resume', () => {
+    const hellos: (ClientMsg | null)[] = [{ t: 'newGame' }, null];
+    const { sock, ws } = make(() => hellos.shift() ?? null);
+    ws().open();
+    expect(ws().sent).toEqual([JSON.stringify({ t: 'newGame' })]);
+    ws().drop();
+    vi.advanceTimersByTime(1000);
+    ws().open();
+    expect(ws().sent).toEqual([]);
     sock.close();
   });
 

@@ -95,23 +95,48 @@ describe('GameOver', () => {
 });
 
 describe('Screens with provider', () => {
-  it('shows start, and sends newGame through the socket', async () => {
-    const socks: FakeWS[] = [];
-    class FakeWS {
-      readyState = 1; sent: string[] = [];
-      onopen: (() => void) | null = null; onmessage: unknown; onclose: unknown; onerror: unknown;
-      send(m: string) { this.sent.push(m); }
-      close() {}
-      constructor() { socks.push(this); setTimeout(() => this.onopen?.(), 0); }
-    }
-    const { getByRole, container } = render(
-      <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
-    );
+  const socks: FakeWS[] = [];
+  class FakeWS {
+    readyState = 0; sent: string[] = [];
+    onopen: (() => void) | null = null; onmessage: unknown; onclose: unknown; onerror: unknown;
+    closed = false;
+    send(m: string) { this.sent.push(m); }
+    close() { this.closed = true; }
+    constructor() { socks.push(this); }
+    open() { this.readyState = 1; act(() => this.onopen?.()); }
+  }
+  beforeEach(() => { socks.length = 0; sessionStorage.clear(); });
+  const mount = () => render(
+    <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
+  );
+
+  it('the Start screen holds no socket (and shows no connection overlay); Start opens one and sends newGame', () => {
+    const { getByRole, queryByRole, container } = mount();
     expect(container.querySelector('[data-screen="start"]')).not.toBeNull();
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); // the socket opens (the overlay blocks clicks until then)
+    expect(socks).toHaveLength(0);
+    expect(queryByRole('alert')).toBeNull();
     fireEvent.click(getByRole('button', { name: 'Start a run' }));
-    expect(socks[0]!.sent.map((s) => JSON.parse(s).t)).toContain('newGame');
-    expect(container.querySelector('[data-screen="start"]')).not.toBeNull(); // still waiting for the plant
+    expect(socks).toHaveLength(1);
     expect(getByRole('button', { name: 'Starting…' })).toBeTruthy();
+    socks[0]!.open();
+    expect(socks[0]!.sent.map((m) => JSON.parse(m).t)).toEqual(['newGame']);
+    expect(container.querySelector('[data-screen="start"]')).not.toBeNull(); // still waiting for the plant
+  });
+
+  it('a stored game opens the socket at once, to resume', () => {
+    sessionStorage.setItem(GAME_ID_KEY, '11111111-1111-4111-8111-111111111111');
+    mount();
+    expect(socks).toHaveLength(1);
+    socks[0]!.open();
+    expect(socks[0]!.sent.map((m) => JSON.parse(m).t)).toEqual(['resume']);
+  });
+
+  it('closes the socket when the session returns to Start', () => {
+    sessionStorage.setItem(GAME_ID_KEY, '11111111-1111-4111-8111-111111111111');
+    const { container } = mount();
+    socks[0]!.open();
+    act(() => (socks[0]!.onmessage as (e: { data: string }) => void)({ data: JSON.stringify({ t: 'error', reason: 'no game' }) }));
+    expect(container.querySelector('[data-screen="start"]')).not.toBeNull();
+    expect(socks[0]!.closed).toBe(true);
   });
 });

@@ -14,19 +14,21 @@ class FakeWS {
   sent: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((e: { code: number }) => void) | null = null;
   onerror: unknown;
   constructor() { FakeWS.all.push(this); }
   send(m: string) { this.sent.push(m); }
   close() {}
   open() { this.readyState = 1; act(() => this.onopen?.()); }
-  drop() { this.readyState = 3; act(() => this.onclose?.()); }
+  drop(code = 1006) { this.readyState = 3; act(() => this.onclose?.({ code })); }
   push(msg: ServerMsg) { act(() => this.onmessage?.({ data: JSON.stringify(msg) })); }
   sentTypes() { return this.sent.map((s) => JSON.parse(s)).map((m) => (m.t === 'cmd' ? m.command.type : m.t)); }
 }
 
+/** A provider resuming a stored game (only then, or after Start, is there a socket). */
 function mount(status?: PlantStatus) {
   FakeWS.all = [];
+  sessionStorage.setItem(GAME_ID_KEY, status?.gameId ?? DEMO_GAME_ID);
   const r = render(
     <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
   );
@@ -127,6 +129,7 @@ describe('ControlRoom', () => {
 describe('Connection overlay', () => {
   it('says Connecting… before the first open and Reconnecting… after a drop, blocking the page', () => {
     FakeWS.all = [];
+    sessionStorage.setItem(GAME_ID_KEY, DEMO_GAME_ID);
     const { getByRole, queryByRole } = render(
       <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
     );
@@ -157,6 +160,43 @@ describe('Connection overlay', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('Gateway at capacity (close 1013)', () => {
+  it('in a game: says the plant is at capacity, with a Retry button that reconnects at once', () => {
+    const { getByRole, ws } = mount(running());
+    ws.drop(1013);
+    const overlay = getByRole('alert');
+    expect(overlay.textContent).toContain('The plant is at capacity, try again shortly');
+    const n = FakeWS.all.length;
+    fireEvent.click(getByRole('button', { name: 'Retry' }));
+    expect(FakeWS.all).toHaveLength(n + 1);
+    FakeWS.all.at(-1)!.open();
+    expect(FakeWS.all.at(-1)!.sentTypes()).toEqual(['resume']);
+  });
+
+  it('while starting: back to Start with the capacity message and Try again, holding no socket', () => {
+    sessionStorage.clear();
+    FakeWS.all = [];
+    const { getByRole, container, queryByRole } = render(
+      <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
+    );
+    fireEvent.click(getByRole('button', { name: 'Start a run' }));
+    FakeWS.all[0]!.open();
+    FakeWS.all[0]!.drop(1013);
+    expect(container.querySelector('[data-screen="start"]')).not.toBeNull();
+    expect(container.textContent).toContain('The plant is at capacity, try again shortly');
+    expect(queryByRole('button', { name: 'Retry' })).toBeNull(); // no overlay on Start
+    vi.useFakeTimers();
+    try {
+      act(() => { vi.advanceTimersByTime(60_000); });
+      expect(FakeWS.all).toHaveLength(1); // closed: no retries behind the Start screen
+    } finally {
+      vi.useRealTimers();
+    }
+    fireEvent.click(getByRole('button', { name: 'Try again' }));
+    expect(FakeWS.all).toHaveLength(2);
   });
 });
 

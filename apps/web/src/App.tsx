@@ -43,9 +43,9 @@ function Demo({ open }: { open: MonitorId | null }) {
 const swallow = (e: SyntheticEvent) => { e.preventDefault(); e.stopPropagation(); };
 
 export function Screens() {
-  const { state, dispatch, send, newGame } = useGame();
+  const { state, dispatch, send, newGame, retry } = useGame();
   const capacity = state.toast?.kind === 'capacity' ? state.toast.message : null;
-  const blocked = state.conn !== 'open';
+  const blocked = state.conn !== 'open' && state.conn !== 'idle';
   let body;
   switch (state.session) {
     case 'start':
@@ -74,7 +74,7 @@ export function Screens() {
       {/* Under the connection overlay nothing can be focused (inert) or clicked (the capture guard
           also covers synthetic clicks and browsers without inert). */}
       <div className="app" inert={blocked} onClickCapture={blocked ? swallow : undefined}>{body}</div>
-      <ConnOverlay conn={state.conn} everOpen={state.everOpen} />
+      <ConnOverlay conn={state.conn} everOpen={state.everOpen} onRetry={retry} />
       <Toast toast={capacity ? null : state.toast} onDismiss={() => dispatch({ type: 'dismissToast' })} />
     </>
   );

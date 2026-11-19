@@ -4,8 +4,8 @@ import { DASH, fmt, label, plantClock, ticksToHm, usd } from '../equipment/forma
 import type { Conn } from '../state/store';
 
 const MODE_TEXT: Record<string, string> = { auto: 'Auto', manual: 'Manual' };
-const CONN_TEXT: Record<Conn, string> = { open: 'Connected', connecting: 'Connecting', closed: 'Disconnected' };
-const CONN_TONE: Record<Conn, 'ok' | 'warn' | 'bad'> = { open: 'ok', connecting: 'warn', closed: 'bad' };
+const CONN_TEXT: Record<Conn, string> = { open: 'Connected', connecting: 'Connecting', closed: 'Disconnected', full: 'At capacity', idle: 'Not connected' };
+const CONN_TONE: Record<Conn, 'ok' | 'warn' | 'bad'> = { open: 'ok', connecting: 'warn', closed: 'bad', full: 'bad', idle: 'warn' };
 
 export interface TopBarProps {
   status: PlantStatus | null;

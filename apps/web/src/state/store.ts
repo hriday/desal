@@ -1,10 +1,12 @@
 import type { Command, GameEndReason, GameScore, PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
 import { commandKey } from '../commands';
+import type { ConnState } from '../net/socket';
 import { pushFrame, type Trends } from './trends';
 
 /** 'resuming': a stored game is being resumed; it ends with the first status, a 'no game' error, or a timeout. */
 export type Session = 'start' | 'starting' | 'resuming' | 'handover' | 'room' | 'over';
-export type Conn = 'connecting' | 'open' | 'closed';
+/** 'idle': no socket (the Start screen holds none); 'full': the gateway closed it with 1013. */
+export type Conn = 'idle' | ConnState;
 export type Toast = { kind: 'rejected' | 'capacity' | 'error'; message: string };
 
 /** A command awaiting confirmation; `age` counts statuses received since it was sent. */
@@ -48,11 +50,15 @@ export type Action =
 
 export const MAX_EVENTS = 200;
 
+export const CAPACITY_MESSAGE = 'The plant is at capacity, try again in a minute';
+/** The gateway itself is full (close 1013). */
+export const GATEWAY_FULL_MESSAGE = 'The plant is at capacity, try again shortly';
+
 /** `resuming`: a gameId is stored, so the socket will try to resume it. */
 export function initialState(resuming = false): State {
   return {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
-    pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: 'connecting', everOpen: false,
+    pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
     epoch: 0,
   };
 }
@@ -116,7 +122,7 @@ function addEvent(s: State, e: PlantEvent): State {
         ...next,
         session: 'start',
         toast: e.reason === 'capacity'
-          ? { kind: 'capacity', message: 'The plant is at capacity, try again in a minute' }
+          ? { kind: 'capacity', message: CAPACITY_MESSAGE }
           : { kind: 'error', message: 'You already have a game running in another tab' },
       };
       break;
@@ -150,7 +156,7 @@ function onServer(s: State, msg: ServerMsg): State {
         case 'no game':
           return { ...s, session: s.score ? 'over' : 'start', gameId: null };
         case 'capacity':
-          return { ...s, session: 'start', toast: { kind: 'capacity', message: 'The plant is at capacity, try again in a minute' } };
+          return { ...s, session: 'start', toast: { kind: 'capacity', message: CAPACITY_MESSAGE } };
         default:
           return { ...s, toast: { kind: 'error', message: msg.reason } };
       }
@@ -163,10 +169,22 @@ export function reducer(s: State, a: Action): State {
   switch (a.type) {
     case 'server': return onServer(s, a.msg);
     case 'conn':
-      // On a drop, fall back to plant-reported values; anything in flight is unknowable.
-      return a.conn === 'closed'
-        ? { ...s, conn: a.conn, pending: new Map(), commandKeys: new Map() }
-        : { ...s, conn: a.conn, everOpen: s.everOpen || a.conn === 'open' };
+      switch (a.conn) {
+        case 'idle': return { ...s, conn: 'idle', everOpen: false };
+        case 'connecting':
+        case 'open': return { ...s, conn: a.conn, everOpen: s.everOpen || a.conn === 'open' };
+        case 'closed':
+        case 'full': {
+          // On a drop, fall back to plant-reported values; anything in flight is unknowable.
+          const dropped: State = { ...s, conn: a.conn, pending: new Map(), commandKeys: new Map() };
+          // Full before any game was assigned: back to Start (which holds no socket) to try again.
+          if (a.conn === 'full' && s.session === 'starting' && s.gameId === null) {
+            return { ...dropped, session: 'start', toast: { kind: 'capacity', message: GATEWAY_FULL_MESSAGE } };
+          }
+          return dropped;
+        }
+      }
+      return s;
     case 'resumeTimeout': return s.session === 'resuming' ? { ...s, session: 'start' } : s;
     case 'reset': return { ...initialState(), conn: s.conn, everOpen: s.everOpen };
     case 'startClicked': return { ...initialState(), conn: s.conn, everOpen: s.everOpen, session: 'starting' };
