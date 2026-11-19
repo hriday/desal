@@ -2,15 +2,18 @@ import { CommandEnvelopeSchema, type AccountCause, type Command, type LoopId } f
 import {
   ACID_CLEAN_COST_USD,
   CHANGEOVER_TICKS,
+  CREW_JOBS,
   LOOP_RANGES,
   PUMP_OVERHAUL_COST_USD,
   PUMP_OVERHAUL_TICKS,
+  TICK_PLANT_S,
 } from './constants.js';
 import { loopKind } from './control/loops.js';
 import { backupOrderCostUsd, canAfford, charge } from './economy.js';
 import { endGame } from './gameover.js';
 import { applyTrip } from './safety/interlocks.js';
 import { beginAcidClean, beginRestart, restartStep, type Result } from './safety/restart.js';
+import { crewJobHasFault } from './scenario/sharp.js';
 import { startShift } from './shift.js';
 import type { Loop, PlantState, SimEvent } from './state.js';
 
@@ -88,8 +91,14 @@ function apply(s: PlantState, id: string, c: Command): Out {
     case 'startGame':
     case 'heartbeat':
       return no('not implemented');
-    case 'dispatchCrew':
-      return no('not implemented'); // Plan 4 Task 7 replaces
+    case 'dispatchCrew': {
+      if (s.phase !== 'running') return no('not running');
+      if (s.crew) return no('crew busy');
+      if (!crewJobHasFault(s, c.job)) return no('nothing to repair');
+      const job = CREW_JOBS[c.job];
+      const crew = { job: c.job, remainingTicks: (job.minutes * 60) / TICK_PLANT_S };
+      return paid(s, id, job.costUsd, 'crew', ok({ ...s, crew }));
+    }
     case 'overhaulPump': {
       const p = s.intake.pumps[c.pumpId];
       if (p.overhaulRemainingTicks > 0) return no('under overhaul');
@@ -190,7 +199,8 @@ export function applyCommand(s: PlantState, env: unknown): Out {
     command.type === 'startGame' ||
     command.type === 'quitGame' ||
     command.type === 'heartbeat';
-  if (!exempt && s.phase === 'handover') return reject(s, commandId, 'not allowed during handover');
+  // dispatchCrew answers its own 'not running' during handover.
+  if (!exempt && command.type !== 'dispatchCrew' && s.phase === 'handover') return reject(s, commandId, 'not allowed during handover');
   if (!exempt && shiftId !== (s.shift?.id ?? null)) return reject(s, commandId, 'stale shift');
   return apply(s, commandId, command);
 }

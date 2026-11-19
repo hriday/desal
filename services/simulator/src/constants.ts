@@ -261,6 +261,13 @@ export const POWER_DIP_MAX_MINUTES = 60;
 
 /** Salinity a tube leak adds per plant minute while the tubes are unplugged (ppm). */
 export const TUBE_LEAK_GROWTH_PPM_PER_MIN = 0.1;
+/** What each maintenance crew job costs (USD) and takes (plant minutes); one crew, one job at a time. */
+export const CREW_JOBS = {
+  plugTubes: { costUsd: 3000, minutes: 60 },
+  repairEjector: { costUsd: 4000, minutes: 45 },
+  replaceSensor: { costUsd: 1500, minutes: 30 },
+  cleanScreens: { costUsd: 1000, minutes: 30 },
+} as const;
 /** Capacity multiplier of a stage whose tubes the crew has plugged. */
 export const TUBE_PLUG_DERATE = 0.6;
 /** TBT drop below nominal (degC) that halves the failed ejector's vacuum loss. */

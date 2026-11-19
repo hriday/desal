@@ -1,4 +1,4 @@
-import type { PumpId, ScenarioKind } from '@desal/schema';
+import type { CrewJob, PumpId, ScenarioKind } from '@desal/schema';
 import {
   POWER_DIP_RECIRC_FACTOR,
   PUMP_TRIP_WEAR,
@@ -6,6 +6,7 @@ import {
   STORM_FOULING_PER_TICK,
   TICK_PLANT_S,
   TUBE_LEAK_GROWTH_PPM_PER_MIN,
+  TUBE_PLUG_DERATE,
 } from '../constants.js';
 import { nextRandom } from '../rng.js';
 import { isLoopSensor, trueLoopValue } from '../sensors.js';
@@ -101,4 +102,50 @@ export function stepFaults(s: PlantState, dt: number): PlantState {
     next = { ...next, seed: nextRandom(next.seed)[1] };
   }
   return next;
+}
+
+/** Whether `job` has a fault to fix. cleanScreens needs a storm running or storm fouling still on the screens. */
+export function crewJobHasFault(s: PlantState, job: CrewJob): boolean {
+  const f = s.faults;
+  switch (job) {
+    case 'plugTubes':
+      return f.tubeLeak !== null;
+    case 'repairEjector':
+      return f.ejectorFailed;
+    case 'replaceSensor':
+      return Object.keys(f.sensors).length > 0;
+    case 'cleanScreens':
+      return f.stormRemainingTicks > 0 || f.stormFouling > 0;
+  }
+}
+
+/** Undo the fault `job` fixes. */
+function finishCrewJob(s: PlantState, job: CrewJob): PlantState {
+  const f = s.faults;
+  switch (job) {
+    case 'plugTubes': {
+      if (!f.tubeLeak) return s;
+      const stageDerate = f.stageDerate.map((d, i) => (i === f.tubeLeak!.stage ? TUBE_PLUG_DERATE : d));
+      return { ...s, faults: { ...f, tubeLeak: null, stageDerate } };
+    }
+    case 'repairEjector':
+      return { ...s, faults: { ...f, ejectorFailed: false, ejectorRatePerMin: 0 } };
+    case 'replaceSensor':
+      return { ...s, faults: { ...f, sensors: {} } };
+    case 'cleanScreens':
+      // Only the storm's fouling comes off; the screens then relax toward biofouling alone.
+      return {
+        ...s,
+        intake: { ...s.intake, screenFouling: Math.max(0, s.intake.screenFouling - f.stormFouling) },
+        faults: { ...f, stormFouling: 0, stormCleanedByCrew: true },
+      };
+  }
+}
+
+/** Count the crew job down one tick and, when it ends, clear its fault and free the crew. */
+export function stepCrew(s: PlantState): PlantState {
+  if (!s.crew) return s;
+  const remainingTicks = s.crew.remainingTicks - 1;
+  if (remainingTicks > 0) return { ...s, crew: { ...s.crew, remainingTicks } };
+  return { ...finishCrewJob(s, s.crew.job), crew: null };
 }

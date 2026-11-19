@@ -15,7 +15,7 @@ import { checkGameOver, endGame } from './gameover.js';
 import { applyTrip, checkInterlocks } from './safety/interlocks.js';
 import { stepAcidClean, stepRestart } from './safety/restart.js';
 import { stepScenario } from './scenario/engine.js';
-import { stepFaults } from './scenario/sharp.js';
+import { stepCrew, stepFaults } from './scenario/sharp.js';
 import { measured } from './sensors.js';
 import { endShift } from './shift.js';
 import type { Loop, LoopSensorId, PlantState, SimEvent } from './state.js';
@@ -84,8 +84,8 @@ export function stepPlant(s0: PlantState): PlantStep {
 
   const sc = stepScenario(s0);
   events.push(...sc.events);
-  // Faults run after the scenario, so a crew completion (also after it) is seen by the director next tick.
-  let s = stepOverhauls(stepIntake(stepLoops(stepFaults(sc.state, dt)), dt));
+  // Faults and the crew run after the scenario, so a crew completion (also after it) is seen by the director next tick.
+  let s = stepOverhauls(stepIntake(stepLoops(stepCrew(stepFaults(sc.state, dt))), dt));
 
   const fuel = stepFuel(s, heaterDemandMW(s), dt);
   s = fuel.state;

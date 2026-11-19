@@ -17,6 +17,7 @@ import {
 import type { FiredEvent } from '../../src/scenario/chaosTypes.js';
 import { isCleared } from '../../src/scenario/director.js';
 import { applyEffect } from '../../src/scenario/effects.js';
+import { applyCommand } from '../../src/commands.js';
 import { drawEvent } from '../../src/scenario/library.js';
 import { ejectorLoadFactor } from '../../src/units/stages.js';
 import { startShift } from '../../src/shift.js';
@@ -281,5 +282,61 @@ describe('sensorFailure', () => {
     const a = s.heater.tbtC;
     expect(s.status).toBe('online');
     expect(Math.abs(run(s, 5).heater.tbtC - a)).toBeLessThan(0.1);
+  });
+});
+
+describe('crew jobs', () => {
+  const cmd = (s: PlantState, command: Record<string, unknown>) =>
+    applyCommand(s, {
+      commandId: '123e4567-e89b-42d3-a456-426614174000',
+      issuedAt: 0,
+      gameId: GAME_ID,
+      shiftId: s.shift?.id ?? null,
+      command,
+    });
+  const dispatchJob = (s: PlantState, job: 'repairEjector' | 'cleanScreens'): PlantState => {
+    const r = cmd(s, { type: 'dispatchCrew', job });
+    expect(r.events.map((e) => e.type)).toEqual(['accountChange']);
+    return r.state;
+  };
+
+  it('after vacuumLoss trips the plant, repairEjector lets a restart reach online', () => {
+    let s = applyEffect(settle(), 'vacuumLoss', { ratePerMin: 0.012 });
+    s = run(s, 60);
+    expect(s.status).toBe('tripped');
+    s = run(dispatchJob(s, 'repairEjector'), 68); // 45 min = 67.5 ticks
+    expect(s.crew).toBeNull();
+    expect(s.faults.ejectorFailed).toBe(false);
+    expect(s.faults.ejectorRatePerMin).toBe(0);
+    s = run(s, 60);
+    s = cmd(s, { type: 'restart' }).state;
+    expect(s.status).toBe('restarting');
+    s = run(s, 400);
+    expect(s.status).toBe('online');
+  });
+
+  it('cleanScreens during a storm clears as crew and fouling ends near its pre-storm level', () => {
+    const s0 = settle();
+    const pre = s0.intake.screenFouling;
+    const storm = applyEffect(s0, 'storm', { fouling: 0.2, deltaC: 2, minutes: 40 });
+    const ev = { eventId: 1, kind: 'storm', atMinute: 0, params: {}, cleared: false, how: null } as unknown as FiredEvent;
+    let s = run(storm, 30);
+    expect(s.faults.stormRemainingTicks).toBeGreaterThan(0);
+    expect(s.intake.screenFouling).toBeGreaterThan(pre + 0.1);
+    expect(isCleared(s, ev)).toBeNull();
+    s = run(dispatchJob(s, 'cleanScreens'), 45);
+    expect(s.crew).toBeNull();
+    expect(s.faults.stormFouling).toBe(0);
+    expect(s.faults.stormCleanedByCrew).toBe(true);
+    expect(isCleared(s, ev)).toBe('crew');
+    s = run(s, 100);
+    expect(s.faults.stormRemainingTicks).toBe(0);
+    expect(Math.abs(s.intake.screenFouling - pre)).toBeLessThan(0.02);
+  });
+
+  it('a crew job cannot carry into the next shift', () => {
+    const s = dispatchJob(applyEffect(settle(), 'vacuumLoss', { ratePerMin: 0.012 }), 'repairEjector');
+    expect(s.crew).not.toBeNull();
+    expect(startShift({ ...s, phase: 'handover' }, 'auto').state.crew).toBeNull();
   });
 });
