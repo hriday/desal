@@ -46,6 +46,8 @@ export interface SessionsDeps {
   now?: () => number;
   /** UUID v4 source (game ids and command ids). */
   newId?: () => string;
+  /** Readings in a complete telemetry frame (default TELEMETRY_SENSOR_COUNT). */
+  frameReadings?: number;
   log?: (msg: string) => void;
 }
 
@@ -84,7 +86,7 @@ export class Sessions {
   private readonly games = new Map<string, Set<string>>();
   /** gameId -> sockets whose resume waits for that game's first status. */
   private readonly resuming = new Map<string, Set<string>>();
-  private readonly frames = new FrameAssembler();
+  private readonly frames: FrameAssembler;
   private readonly limits: ClientLimits;
   private readonly schedule: (fn: () => void, ms: number) => () => void;
   private readonly now: () => number;
@@ -97,6 +99,7 @@ export class Sessions {
     this.log = deps.log ?? ((m) => console.warn(`[gateway] ${m}`));
     this.schedule = deps.schedule ?? defaultSchedule;
     this.limits = new ClientLimits(this.now, deps.limits);
+    this.frames = new FrameAssembler(deps.frameReadings);
   }
 
   clientSocketCount(clientId: string): number {
@@ -215,7 +218,7 @@ export class Sessions {
       const r = PlantStatusSchema.safeParse(value);
       if (!r.success) return;
       this.endWait(gameId, true);
-      // Frame N before status N: the status closes its tick's frame.
+      // Frame N before status N: the status closes its tick's frame if complete (else it follows).
       const frame = this.frames.flush(gameId, r.data.tick, r.data.epoch);
       if (frame) this.broadcast(gameId, frame);
       this.broadcast(gameId, { t: 'status', status: r.data });

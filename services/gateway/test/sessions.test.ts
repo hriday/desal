@@ -68,6 +68,7 @@ beforeEach(() => {
       return () => (t.cancelled = true);
     },
     now: () => clock,
+    frameReadings: 2,
     // The first generated id becomes the game id for newGame; later ones are command ids.
     newId: () => (ids++ === 0 ? GAME_A : `00000000-0000-4000-8000-${(ids).toString(16).padStart(12, '0')}`),
   });
@@ -358,6 +359,15 @@ describe('routing', () => {
     deliver(TOPICS.telemetry, GAME_A, reading(GAME_A, 6, 'TBT', 92));
     expect(a.at(-1)).toEqual({ t: 'frame', tick: 5, plantTime: 200, readings: { TBT: 91 } });
     expect(b).toEqual([]);
+  });
+
+  it('a status that overtakes its tick goes out at once; the frame follows when complete', () => {
+    const a = bound('s1');
+    deliver(TOPICS.telemetry, GAME_A, reading(GAME_A, 4, 'TBT', 90));
+    deliver(TOPICS.status, GAME_A, status(GAME_A, 4));
+    expect(a).toEqual([{ t: 'status', status: status(GAME_A, 4) }]);
+    deliver(TOPICS.telemetry, GAME_A, reading(GAME_A, 4, 'FLOW', 5));
+    expect(a.at(-1)).toEqual({ t: 'frame', tick: 4, plantTime: 160, readings: { TBT: 90, FLOW: 5 } });
   });
 
   it('ignores records that fail the schema', () => {

@@ -1,4 +1,4 @@
-import { PlantEventSchema, PlantStatusSchema, TelemetryReadingSchema, type PlantEvent } from '@desal/schema';
+import { PlantEventSchema, PlantStatusSchema, TELEMETRY_SENSOR_COUNT, TelemetryReadingSchema, type PlantEvent } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
 import { SHIFT_TICKS, TICK_PLANT_S } from '../src/constants.js';
 import { SENSOR_IDS } from '../src/emit.js';
@@ -226,6 +226,10 @@ describe('emission', () => {
     for (const e of r.events) expect(e.epoch).toBe(4);
     expect(r.telemetry.every((t) => t.epoch === 4)).toBe(true);
     expect(r.status.epoch).toBe(4);
+  });
+
+  it('emits TELEMETRY_SENSOR_COUNT readings per tick (the gateway assembles frames of that size)', () => {
+    expect(SENSOR_IDS.length).toBe(TELEMETRY_SENSOR_COUNT);
   });
 
   it('emits every SENSOR_IDS entry exactly once per tick, as valid readings', () => {
