@@ -9,7 +9,7 @@ import {
   TICK_PLANT_S,
 } from './constants.js';
 import { pidStep } from './control/pid.js';
-import { settleTick, tickRevenue } from './economy.js';
+import { spendPerTick } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
 import { checkGameOver, endGame } from './gameover.js';
 import { applyTrip, checkInterlocks } from './safety/interlocks.js';
@@ -116,14 +116,11 @@ export function stepPlant(s0: PlantState): PlantStep {
   };
 }
 
-type StepTotals = Pick<PlantStep, 'deliveredM3' | 'offSpec' | 'fuelCostUsd'> & {
-  trips: number;
-  revenueUsd: number;
-  finesUsd: number;
-};
+type StepTotals = Pick<PlantStep, 'deliveredM3' | 'offSpec' | 'fuelCostUsd'> & { trips: number };
 
-const NO_STEP: Omit<StepTotals, 'trips'> = { deliveredM3: 0, offSpec: false, fuelCostUsd: 0, revenueUsd: 0, finesUsd: 0 };
+const NO_STEP: Omit<StepTotals, 'trips'> = { deliveredM3: 0, offSpec: false, fuelCostUsd: 0 };
 
+/** Shift accumulators. Only in-spec water is progress; off-spec water is tallied apart. spentUsd is kept by economy. */
 function withAccumulators(s: PlantState, x: StepTotals): PlantState {
   if (!s.shift) return s;
   const acc = s.shift.acc;
@@ -132,12 +129,12 @@ function withAccumulators(s: PlantState, x: StepTotals): PlantState {
     shift: {
       ...s.shift,
       acc: {
-        productM3: acc.productM3 + x.deliveredM3,
+        ...acc,
+        productM3: acc.productM3 + (x.offSpec ? 0 : x.deliveredM3),
+        offSpecM3: acc.offSpecM3 + (x.offSpec ? x.deliveredM3 : 0),
         offSpecTicks: acc.offSpecTicks + (x.offSpec ? 1 : 0),
         fuelCostUsd: acc.fuelCostUsd + x.fuelCostUsd,
         trips: acc.trips + x.trips,
-        revenueUsd: acc.revenueUsd + x.revenueUsd,
-        finesUsd: acc.finesUsd + x.finesUsd,
       },
     },
   };
@@ -188,10 +185,8 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   const step = stepPlant(s);
   events.push(...step.events);
   const trips = commandTrips + countTrips(step.events);
-  // The operating account: water revenue in; gas burned and off-spec fines out.
-  const money = tickRevenue(step.deliveredM3, step.offSpec);
-  s = settleTick(step.state, money.revenueUsd, money.fineUsd + step.fuelCostUsd);
-  s = withAccumulators(s, { ...step, trips, revenueUsd: money.revenueUsd, finesUsd: money.fineUsd });
+  // The operating account pays for the gas burned (backup fuel was paid on order).
+  s = withAccumulators(spendPerTick(step.state, step.fuelCostUsd), { ...step, trips });
   s = { ...s, tick: s.tick + 1, plantTime: s.plantTime + TICK_PLANT_S * 1000 };
   const telemetry = toTelemetry(s);
 

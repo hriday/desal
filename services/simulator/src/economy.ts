@@ -1,26 +1,16 @@
 import type { AccountCause } from '@desal/schema';
-import {
-  LHV_OFFGRADE_MJkg,
-  LHV_STANDARD_MJkg,
-  OFFSPEC_FINE_PER_M3,
-  REVENUE_PER_M3,
-  SHORTFALL_FINE_PER_M3,
-} from './constants.js';
+import { ALLOC_BASE_USD, ALLOC_DECAY_PER_SHIFT, LHV_OFFGRADE_MJkg, LHV_STANDARD_MJkg } from './constants.js';
 import type { PlantState, SimEvent } from './state.js';
 
 /**
- * Money from one tick's delivered product: in-spec water earns revenue, off-spec water earns nothing
- * and is fined. The caller passes 0 m3 unless the plant was online.
+ * Operating allocation for shift `n`, credited at its start: ALLOC_BASE_USD x (1 - 0.03(n - 1)),
+ * and from shift 2 also x min(1, previous shift's in-spec m3 / its target). Floored at 0. With no
+ * previous shift on record the performance factor is 1.
  */
-export function tickRevenue(deliveredM3: number, offSpec: boolean): { revenueUsd: number; fineUsd: number } {
-  return offSpec
-    ? { revenueUsd: 0, fineUsd: deliveredM3 * OFFSPEC_FINE_PER_M3 }
-    : { revenueUsd: deliveredM3 * REVENUE_PER_M3, fineUsd: 0 };
-}
-
-/** Fine for ending a shift short of its product target. */
-export function shortfallFineUsd(targetM3: number, productM3: number): number {
-  return Math.max(0, targetM3 - productM3) * SHORTFALL_FINE_PER_M3;
+export function allocationUsd(n: number, prev: { productM3: number; targetM3: number } | null): number {
+  const base = ALLOC_BASE_USD * Math.max(0, 1 - ALLOC_DECAY_PER_SHIFT * (n - 1));
+  if (n < 2 || !prev || prev.targetM3 <= 0) return base;
+  return base * Math.min(1, Math.max(0, prev.productM3 / prev.targetM3));
 }
 
 /**
@@ -34,27 +24,34 @@ export function backupOrderCostUsd(s: PlantState, tonnes: number): number {
 
 export const canAfford = (s: PlantState, usd: number): boolean => s.run.balanceUsd >= usd;
 
-/**
- * Apply a per-tick movement (revenue in, gas and off-spec fines out) to the balance. Per-tick
- * amounts emit no event (they show in status); only discrete charges do, via charge().
- */
-export function settleTick(s: PlantState, creditUsd: number, debitUsd: number): PlantState {
-  return { ...s, run: { ...s.run, balanceUsd: s.run.balanceUsd + creditUsd - debitUsd } };
+/** Take spending off the balance and add it to the running shift's spentUsd. */
+function spend(s: PlantState, usd: number): PlantState {
+  const run = { ...s.run, balanceUsd: s.run.balanceUsd - usd };
+  if (!s.shift) return { ...s, run };
+  return { ...s, run, shift: { ...s.shift, acc: { ...s.shift.acc, spentUsd: s.shift.acc.spentUsd + usd } } };
 }
 
-/** Debit a discrete charge (delivery, repair, shortfall fine) and report it as an accountChange. */
+/** Pay for gas burned this tick. Per-tick spending emits no event (the balance shows in status). */
+export const spendPerTick = (s: PlantState, usd: number): PlantState => (usd === 0 ? s : spend(s, usd));
+
+const accountChange = (s: PlantState, deltaUsd: number, cause: AccountCause): SimEvent => ({
+  type: 'accountChange',
+  tick: s.tick,
+  plantTime: s.plantTime,
+  shiftId: s.shift?.id ?? null,
+  deltaUsd,
+  balanceUsd: s.run.balanceUsd,
+  cause,
+});
+
+/** Debit a discrete charge (delivery, repair), count it as shift spending, and report it. */
 export function charge(s: PlantState, usd: number, cause: AccountCause): { state: PlantState; event: SimEvent } {
-  const balanceUsd = s.run.balanceUsd - usd;
-  return {
-    state: { ...s, run: { ...s.run, balanceUsd } },
-    event: {
-      type: 'accountChange',
-      tick: s.tick,
-      plantTime: s.plantTime,
-      shiftId: s.shift?.id ?? null,
-      deltaUsd: -usd,
-      balanceUsd,
-      cause,
-    },
-  };
+  const state = spend(s, usd);
+  return { state, event: accountChange(state, -usd, cause) };
+}
+
+/** Credit an allocation and report it. */
+export function credit(s: PlantState, usd: number, cause: AccountCause): { state: PlantState; event: SimEvent } {
+  const state: PlantState = { ...s, run: { ...s.run, balanceUsd: s.run.balanceUsd + usd } };
+  return { state, event: accountChange(state, usd, cause) };
 }

@@ -1,6 +1,6 @@
 import type { PumpId, ShiftSummary } from '@desal/schema';
 import { TICK_PLANT_S } from './constants.js';
-import { charge, shortfallFineUsd } from './economy.js';
+import { allocationUsd, credit } from './economy.js';
 import { nextRandom } from './rng.js';
 import { loadScenario } from './scenario/engine.js';
 import { scenarioForShift } from './scenario/library.js';
@@ -28,16 +28,22 @@ function abandonCarriedRestart(s: PlantState): PlantState {
   return { ...s, status: 'tripped', restart: null, loops: { ...s.loops, tbt: { ...s.loops.tbt, output: 0 } } };
 }
 
+/** The previous shift's in-spec water against its target, if there was one. */
+const previousResult = (s: PlantState): { productM3: number; targetM3: number } | null =>
+  s.shift ? { productM3: s.shift.acc.productM3, targetM3: s.shift.target.productM3 } : null;
+
 /**
  * Begin a shift: draw its scenario, reset shift accumulators, abandon any restart left in progress,
- * and set the loop modes for the chosen control mode.
+ * set the loop modes for the chosen control mode, and credit the shift's allocation (scaled by how
+ * much in-spec water the previous shift delivered against its target).
  */
 export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: PlantState; events: SimEvent[] } {
   const shiftNumber = s.run.shiftNumber + 1;
   const [value, seed] = nextRandom(s.seed);
   const scenario = scenarioForShift(shiftNumber, Math.floor(value * 4294967296));
   const loaded = loadScenario(abandonCarriedRestart({ ...s, seed }), scenario);
-  const state: PlantState = {
+  const allocation = allocationUsd(shiftNumber, previousResult(s));
+  const started: PlantState = {
     ...loaded,
     run: { ...s.run, shiftNumber },
     controlMode: mode,
@@ -48,11 +54,12 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
       startTick: s.tick,
       mode,
       target: { ...scenario.target },
-      acc: { productM3: 0, offSpecTicks: 0, fuelCostUsd: 0, trips: 0, revenueUsd: 0, finesUsd: 0 },
+      acc: { productM3: 0, offSpecM3: 0, offSpecTicks: 0, fuelCostUsd: 0, trips: 0, spentUsd: 0 },
     },
   };
+  const funded = credit(started, allocation, 'allocation');
   return {
-    state,
+    state: funded.state,
     events: [
       {
         type: 'shiftStart',
@@ -63,27 +70,19 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
         mode,
         target: { ...scenario.target },
       },
+      funded.event,
     ],
   };
 }
 
 /**
- * End the running shift: charge any shortfall fine, emit `shiftEnd` with its summary and return to
- * handover. All plant state is kept, and so is `shift` (its id and final accumulators) until the
- * next startShift.
+ * End the running shift: emit `shiftEnd` with its summary and return to handover. There is no fine
+ * for a shortfall; it shows up as a smaller next allocation. All plant state is kept, and so is
+ * `shift` (its id and final accumulators) until the next startShift.
  */
-export function endShift(s0: PlantState): { state: PlantState; events: SimEvent[] } {
-  if (!s0.shift) return { state: { ...s0, phase: 'handover' }, events: [] };
-  const events: SimEvent[] = [];
-  let shift = s0.shift;
-  let s = s0;
-  const fine = shortfallFineUsd(shift.target.productM3, shift.acc.productM3);
-  if (fine > 0) {
-    const c = charge(s0, fine, 'shortfallFine');
-    shift = { ...shift, acc: { ...shift.acc, finesUsd: shift.acc.finesUsd + fine } };
-    s = { ...c.state, shift };
-    events.push(c.event);
-  }
+export function endShift(s: PlantState): { state: PlantState; events: SimEvent[] } {
+  const shift = s.shift;
+  if (!shift) return { state: { ...s, phase: 'handover' }, events: [] };
   const { acc, target } = shift;
   const pumpWear = Object.fromEntries(
     Object.entries(s.intake.pumps).map(([id, p]) => [id, p.wear]),
@@ -92,11 +91,12 @@ export function endShift(s0: PlantState): { state: PlantState; events: SimEvent[
     productM3: acc.productM3,
     targetM3: target.productM3,
     offSpecMinutes: (acc.offSpecTicks * TICK_PLANT_S) / 60,
+    offSpecM3: acc.offSpecM3,
     fuelCostUsd: acc.fuelCostUsd,
     fuelBudgetUsd: target.fuelBudgetUsd,
     trips: acc.trips,
-    revenueUsd: acc.revenueUsd,
-    finesUsd: acc.finesUsd,
+    spentUsd: acc.spentUsd,
+    nextAllocationUsd: allocationUsd(shift.id + 1, { productM3: acc.productM3, targetM3: target.productM3 }),
     balanceUsd: s.run.balanceUsd,
     damage: {
       maxHardScaleMm: s.stages.reduce((m, st) => Math.max(m, st.hardScaleMm), 0),
@@ -110,6 +110,6 @@ export function endShift(s0: PlantState): { state: PlantState; events: SimEvent[
       phase: 'handover',
       run: { ...s.run, totalProductM3: s.run.totalProductM3 + acc.productM3, shiftsCompleted: s.run.shiftsCompleted + 1 },
     },
-    events: [...events, { type: 'shiftEnd', tick: s.tick, plantTime: s.plantTime, shiftId: shift.id, summary }],
+    events: [{ type: 'shiftEnd', tick: s.tick, plantTime: s.plantTime, shiftId: shift.id, summary }],
   };
 }

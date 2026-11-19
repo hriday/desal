@@ -5,7 +5,7 @@ import type { PlantState, SimEvent } from './state.js';
 /** Backup tonnes below this count as an empty tank (draining leaves float dust). */
 const EMPTY_TANK_T = 1e-9;
 
-/** The run's final score, ranked shifts completed, then water delivered, then balance. */
+/** The run's final score: ranked by in-spec water delivered, then shifts completed; the balance is informational. */
 export function scoreOf(s: PlantState): GameScore {
   return { shiftsCompleted: s.run.shiftsCompleted, totalProductM3: s.run.totalProductM3, balanceUsd: s.run.balanceUsd };
 }

@@ -7,15 +7,19 @@ const num = z.number().finite();
 export const ShiftTargetSchema = z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num });
 export type ShiftTarget = z.infer<typeof ShiftTargetSchema>;
 
+// Water first: productM3 is in-spec water only (off-spec is offSpecM3 and counts for nothing).
+// spentUsd = gas burned + backup ordered + repairs this shift; nextAllocationUsd is what the next
+// shift will be allocated given this shift's in-spec water against its target.
 export const ShiftSummarySchema = z.object({
   productM3: num,
   targetM3: num,
   offSpecMinutes: num,
+  offSpecM3: num,
   fuelCostUsd: num,
   fuelBudgetUsd: num,
   trips: num,
-  revenueUsd: num,
-  finesUsd: num,
+  spentUsd: num,
+  nextAllocationUsd: num,
   balanceUsd: num,
   damage: z.object({
     maxHardScaleMm: num,
@@ -28,10 +32,11 @@ export type ShiftSummary = z.infer<typeof ShiftSummarySchema>;
 export const GameEndReasonSchema = z.enum(['bankrupt', 'outOfFuel', 'burnerFailed', 'noIntakePumps', 'quit', 'abandoned', 'error']);
 export type GameEndReason = z.infer<typeof GameEndReasonSchema>;
 
+// Ranked by totalProductM3 (in-spec water), then shiftsCompleted; balanceUsd is informational.
 export const GameScoreSchema = z.object({ shiftsCompleted: num, totalProductM3: num, balanceUsd: num });
 export type GameScore = z.infer<typeof GameScoreSchema>;
 
-export const AccountCauseSchema = z.enum(['revenue', 'fuel', 'delivery', 'acidClean', 'overhaul', 'offSpecFine', 'shortfallFine']);
+export const AccountCauseSchema = z.enum(['allocation', 'fuel', 'delivery', 'acidClean', 'overhaul']);
 export type AccountCause = z.infer<typeof AccountCauseSchema>;
 
 export const ScenarioKindSchema = z.enum([

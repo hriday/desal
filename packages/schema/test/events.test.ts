@@ -3,7 +3,7 @@ import { PlantEventSchema, type PlantEvent } from '../src/index.js';
 const G = '3f2b8c1e-5d4a-4e7b-9a10-2c6d8e4f1a7b';
 const base = { gameId: G, seq: 0, tick: 10, plantTime: 600, shiftId: 3 };
 const summary = {
-  productM3: 1200, targetM3: 1500, offSpecMinutes: 4, fuelCostUsd: 900, fuelBudgetUsd: 1000, trips: 1, revenueUsd: 100, finesUsd: 10, balanceUsd: 40090,
+  productM3: 1200, targetM3: 1500, offSpecMinutes: 4, fuelCostUsd: 900, fuelBudgetUsd: 1000, trips: 1, spentUsd: 900, offSpecM3: 12, nextAllocationUsd: 7760, balanceUsd: 14100,
   damage: { maxHardScaleMm: 0.4, pumpWear: { 'P-101': 0.1, 'P-102': 0.2, 'P-103': 0.3 }, burnerCondition: 0.9 },
 };
 
@@ -23,6 +23,7 @@ const events: PlantEvent[] = [
   { ...base, type: 'gameRejected', reason: 'capacity' },
   { ...base, type: 'gameEnd', reason: 'bankrupt', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: -5 } },
   { ...base, type: 'accountChange', deltaUsd: -6000, balanceUsd: 34000, cause: 'acidClean' },
+  { ...base, type: 'accountChange', deltaUsd: 9700, balanceUsd: 24000, cause: 'allocation' },
 ];
 
 test.each(events.map((e) => [e.type, e] as const))('round-trips %s through JSON', (_t, ev) => {
@@ -31,6 +32,14 @@ test.each(events.map((e) => [e.type, e] as const))('round-trips %s through JSON'
 
 test('covers every event type', () => {
   expect(new Set(events.map((e) => e.type)).size).toBe(14);
+});
+
+test('the account has no revenue or fines: those causes and summary fields are gone', () => {
+  for (const cause of ['revenue', 'offSpecFine', 'shortfallFine']) {
+    expect(PlantEventSchema.safeParse({ ...base, type: 'accountChange', deltaUsd: 1, balanceUsd: 1, cause }).success).toBe(false);
+  }
+  const { spentUsd: _s, ...noSpent } = summary;
+  expect(PlantEventSchema.safeParse({ ...base, type: 'shiftEnd', summary: noSpent }).success).toBe(false);
 });
 
 test('rejects unknown trip cause and missing envelope fields', () => {

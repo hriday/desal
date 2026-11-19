@@ -73,7 +73,7 @@ export function drawEvent(kind: ScenarioKind, atMinute: number, seed: number, n:
     case 'pumpBearing': {
       let pumpId: string;
       [pumpId, s] = pick(s, PUMPS);
-      params = { pumpId, mult: tidy(1 + 0.5 * n) };
+      params = { pumpId, mult: tidy(Math.min(6, 1 + 0.5 * n)) };
       break;
     }
     case 'gasCurtailNotice': {
@@ -86,10 +86,10 @@ export function drawEvent(kind: ScenarioKind, atMinute: number, seed: number, n:
       params = { mult: tidy(1.2 + 0.05 * n) };
       break;
     case 'deliveryDelay':
-      params = { ticks: 15 * n };
+      params = { ticks: Math.min(180, 15 * n) };
       break;
     case 'demandChange':
-      params = { deltaM3: 25 * n };
+      params = { deltaM3: Math.min(600, 25 * n) };
       break;
     case 'controllerFault': {
       let loop: string, fkind: string;

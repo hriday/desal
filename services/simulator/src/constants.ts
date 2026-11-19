@@ -226,15 +226,14 @@ export const ONLINE_MARGIN_C = 2;
 /** Acid clean duration (ticks): 2 plant hours. */
 export const ACID_CLEAN_TICKS = 180;
 
-// Operating account (spec 3.1): tunable placeholders.
+// Operating account (spec 3.1): tunable placeholders. Water output is the point; the account only
+// limits spending. There is no revenue and there are no fines.
 /** Balance a new game starts with (USD). */
-export const START_BALANCE_USD = 40000;
-/** Revenue per m3 of product delivered in spec while online (USD). */
-export const REVENUE_PER_M3 = 3;
-/** Fine per m3 of product delivered off spec (USD); off-spec water earns nothing. */
-export const OFFSPEC_FINE_PER_M3 = 10;
-/** Fine per m3 short of the shift's product target, charged at shift end (USD). */
-export const SHORTFALL_FINE_PER_M3 = 4;
+export const START_BALANCE_USD = 15000;
+/** Shift 1's operating allocation, credited at startShift (USD). */
+export const ALLOC_BASE_USD = 10000;
+/** Cut of the base allocation per shift: shift n gets 1 - ALLOC_DECAY_PER_SHIFT x (n - 1) of it. */
+export const ALLOC_DECAY_PER_SHIFT = 0.03;
 /** Cost of an acid clean, charged when it starts (USD). */
 export const ACID_CLEAN_COST_USD = 6000;
 /** Cost of a pump overhaul, charged when it starts (USD). */

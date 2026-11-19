@@ -44,6 +44,17 @@ describe('escalating difficulty', () => {
     expect(drawEvent('bloom', 0, 1, 20)[0].params.peakUgL).toBeGreaterThan(drawEvent('bloom', 0, 1, 10)[0].params.peakUgL as number);
   });
 
+  it('severity is capped: delivery delay <= 180 ticks, bearing x6, demand +600 m3', () => {
+    for (const n of [4, 12, 24, 40, 100]) {
+      expect(drawEvent('deliveryDelay', 0, 1, n)[0].params.ticks).toBeLessThanOrEqual(180);
+      expect(drawEvent('pumpBearing', 0, 1, n)[0].params.mult).toBeLessThanOrEqual(6);
+      expect(drawEvent('demandChange', 0, 1, n)[0].params.deltaM3).toBeLessThanOrEqual(600);
+    }
+    expect(drawEvent('deliveryDelay', 0, 1, 40)[0].params.ticks).toBe(180);
+    expect(drawEvent('pumpBearing', 0, 1, 40)[0].params.mult).toBe(6);
+    expect(drawEvent('demandChange', 0, 1, 40)[0].params.deltaM3).toBe(600);
+  });
+
   it('controller faults appear only from shift 5', () => {
     for (const seed of SEEDS) {
       const s4 = scenarioForShift(4, seed);

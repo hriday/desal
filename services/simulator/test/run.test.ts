@@ -59,6 +59,7 @@ describe('run state', () => {
   it('status carries the new fields and validates', () => {
     let s = fresh();
     s = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]).state;
+    const beforeOrder = s.run.balanceUsd;
     s = tick(s, [env(s, { type: 'orderFuel', tonnes: 20 })]).state;
     const last = tick(s, []);
     const status = last.status;
@@ -76,7 +77,7 @@ describe('run state', () => {
     expect(status.deliveries[0]).toMatchObject({ tonnes: 20, grade: 'standard' });
     expect(status.deliveries[0]!.arrivesInTicks).toBeGreaterThan(0);
     // The 20 t order (20 x 42.5 x 14 = $11,900) was paid when placed.
-    expect(status.balanceUsd).toBeLessThan(START_BALANCE_USD - 11900 + 100);
+    expect(status.balanceUsd).toBeLessThan(beforeOrder - 11900);
   });
 
   it('shiftNumber advances across two shifts and the run totals accumulate', () => {
