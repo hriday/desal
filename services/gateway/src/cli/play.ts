@@ -26,6 +26,7 @@ let latest: PlantStatus | undefined;
 let flow: number | undefined;
 let tbt: number | undefined;
 let ended = false;
+let inGame = false;
 
 ws.on('open', () => ws.send(JSON.stringify({ t: 'newGame' })));
 ws.on('error', (e) => {
@@ -40,11 +41,18 @@ ws.on('close', () => {
 });
 
 ws.on('message', (data) => {
-  const parsed = ServerMsgSchema.safeParse(JSON.parse(data.toString()));
+  let json: unknown;
+  try {
+    json = JSON.parse(data.toString());
+  } catch {
+    return;
+  }
+  const parsed = ServerMsgSchema.safeParse(json);
   if (!parsed.success) return;
   const m = parsed.data;
   switch (m.t) {
     case 'game':
+      inGame = true;
       console.log(`game ${m.gameId}\n${HELP}`);
       break;
     case 'status':
@@ -66,6 +74,8 @@ ws.on('message', (data) => {
       break;
     case 'error':
       console.error(`error: ${m.reason}`);
+      // Before the game starts (e.g. capacity) there is nothing to play: give up.
+      if (!inGame) process.exit(1);
       break;
     case 'pong':
       break;

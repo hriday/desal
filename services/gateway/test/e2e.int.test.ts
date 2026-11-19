@@ -15,6 +15,8 @@ type Of<T extends ServerMsg['t']> = Extract<ServerMsg, { t: T }>;
 const kafka = createKafka();
 const simKafka = simClient.createKafka();
 const host = new simHost.GameHost({ idleMs: 3000 });
+/** gameEnd reasons by gameId, spied from the records the runner produces to plant.events. */
+const endReasons = new Map<string, string>();
 let runner: InstanceType<typeof simRunner.SimRunner>;
 let gwKafka: InstanceType<typeof GatewayKafka>;
 let gateway: ReturnType<typeof createGateway>;
@@ -66,7 +68,18 @@ beforeAll(async () => {
   await simClient.waitForTopics(simKafka);
   // idleMs 3 s: an unattended game is abandoned quickly. The gateway heartbeats every 1 s, so a
   // connected game stays alive well inside that window.
-  runner = new simRunner.SimRunner(simKafka, host, { tickMs: 250, log: () => {} });
+  const io = simRunner.kafkaIO(simKafka);
+  const send = io.send.bind(io);
+  io.send = async (record) => {
+    await send(record);
+    if (record.topic === simClient.topicName(TOPICS.events)) {
+      for (const m of record.messages) {
+        const ev = JSON.parse(String(m.value)) as { type: string; reason?: string };
+        if (ev.type === 'gameEnd') endReasons.set(String(m.key), String(ev.reason));
+      }
+    }
+  };
+  runner = new simRunner.SimRunner(io, host, { tickMs: 250, log: () => {} });
   await runner.start([]);
   gwKafka = new GatewayKafka(kafka, { log: () => {} });
   gateway = createGateway({ kafka: gwKafka, heartbeatMs: 1000, log: () => {} });
@@ -107,6 +120,8 @@ describe('full stack: simulator + gateway + two ws clients', () => {
     await a.until(() => (a.of('frame').length >= 3 ? true : undefined), 20_000, '3 frames');
     for (const f of a.of('frame').slice(0, 3)) {
       const n = Object.keys(f.readings).length;
+      // The simulator emits 109 sensors per tick; a frame closed by its status can be one reading short (108),
+      // because the status may be consumed before the tick's last telemetry record.
       expect(n).toBeGreaterThanOrEqual(108);
       expect(n).toBeLessThanOrEqual(109);
     }
@@ -131,12 +146,24 @@ describe('full stack: simulator + gateway + two ws clients', () => {
       if (Date.now() > deadline) throw new Error('B was never abandoned');
       await sleep(100);
     }
-    await sleep(1500); // let the gameEnd reach the gateway through Kafka
+    // The reason is what the simulator produced to plant.events (the runner's spy above).
+    expect(endReasons.get(bId)).toBe('abandoned');
 
-    const c = new Client();
-    await c.opened();
-    c.send({ t: 'resume', gameId: bId });
-    const err = await c.until(() => c.of('error')[0], 10_000, 'resume error');
-    expect(err.reason).toBe('game ended');
+    // The gateway forgets the game once it consumes the gameEnd, a moment later (and may hold a
+    // resume for up to ~5 s while warming up): retry on fresh sockets until 'game ended'.
+    const resumeDeadline = Date.now() + 15_000;
+    for (;;) {
+      const c = new Client();
+      await c.opened();
+      c.send({ t: 'resume', gameId: bId });
+      const reply = await c.until(() => c.of('error')[0] ?? c.of('game')[0], 10_000, 'resume reply');
+      c.ws.close();
+      if (reply.t === 'error') {
+        expect(reply.reason).toBe('game ended');
+        break;
+      }
+      if (Date.now() > resumeDeadline) throw new Error('resume of an abandoned game still succeeds');
+      await sleep(500);
+    }
   });
 });
