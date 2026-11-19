@@ -365,8 +365,9 @@ export class SimRunner {
   }
 
   /**
-   * The records one host step produces, one batch per topic in the order events, status,
-   * telemetry, state; so per game the order is events, status, telemetry, then its save.
+   * The records one host step produces, one batch per topic in the order events, telemetry,
+   * status, state; so per game the order is events, telemetry, status, then its save.
+   * Telemetry before status so a consumer can treat status N as "tick N complete".
    */
   private stepRecords(r: HostTick): OutRecord[] {
     const events: Message[] = [];
@@ -398,8 +399,8 @@ export class SimRunner {
     const out: OutRecord[] = [];
     for (const [base, messages] of [
       [TOPICS.events, events],
-      [TOPICS.status, status],
       [TOPICS.telemetry, telemetry],
+      [TOPICS.status, status],
       [TOPICS.state, state],
     ] as const) {
       if (messages.length > 0) out.push({ topic: topicName(base), messages });

@@ -23,6 +23,7 @@ let gateway: ReturnType<typeof createGateway>;
 let url: string;
 const sockets: WebSocket[] = [];
 
+let clientSeq = 0;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A ws client that records every server message. */
@@ -31,7 +32,9 @@ class Client {
   readonly ws: WebSocket;
   gameId = '';
   constructor() {
-    this.ws = new WebSocket(url); // no Origin header, like the play CLI (R2)
+    // No Origin header, like the play CLI (R2). The gateway limits games per client IP and trusts
+    // X-Forwarded-For from a loopback peer, so each test client presents its own address.
+    this.ws = new WebSocket(url, { headers: { 'x-forwarded-for': `10.0.0.${++clientSeq}` } });
     sockets.push(this.ws);
     this.ws.on('message', (d) => this.msgs.push(ServerMsgSchema.parse(JSON.parse(d.toString()))));
   }
@@ -118,13 +121,9 @@ describe('full stack: simulator + gateway + two ws clients', () => {
     );
     expect(running.status.gameId).toBe(a.gameId);
     await a.until(() => (a.of('frame').length >= 3 ? true : undefined), 20_000, '3 frames');
-    for (const f of a.of('frame').slice(0, 3)) {
-      const n = Object.keys(f.readings).length;
-      // The simulator emits 109 sensors per tick; a frame closed by its status can be one reading short (108),
-      // because the status may be consumed before the tick's last telemetry record.
-      expect(n).toBeGreaterThanOrEqual(108);
-      expect(n).toBeLessThanOrEqual(109);
-    }
+    // Telemetry is produced before status, so a frame is complete: every one of the simulator's 109 sensors
+    // (SENSOR_IDS.length, measured; not 108).
+    for (const f of a.of('frame').slice(0, 3)) expect(Object.keys(f.readings)).toHaveLength(109);
     expect(JSON.stringify(b.msgs)).not.toContain(a.gameId);
 
     a.send({ t: 'cmd', command: { type: 'quitGame' } });
@@ -147,6 +146,11 @@ describe('full stack: simulator + gateway + two ws clients', () => {
       await sleep(100);
     }
     // The reason is what the simulator produced to plant.events (the runner's spy above).
+    const reasonDeadline = Date.now() + 10_000;
+    while (!endReasons.has(bId)) {
+      if (Date.now() > reasonDeadline) throw new Error('no gameEnd produced for B');
+      await sleep(50);
+    }
     expect(endReasons.get(bId)).toBe('abandoned');
 
     // The gateway forgets the game once it consumes the gameEnd, a moment later (and may hold a

@@ -113,14 +113,14 @@ describe('SimRunner on GameHost (fake I/O)', () => {
     expect(c.io.messages(TOPICS.telemetry)[0]!.timestamp).toBeUndefined();
   });
 
-  it('produces each tick in the order events, status, telemetry', async () => {
+  it('produces each tick in the order events, telemetry, status, state', async () => {
     const before = c.io.sent.length;
     await vi.advanceTimersByTimeAsync(1000); // applies the startShifts: shiftStart events, and saves
     const order = c.io.sent.slice(before).map((r) => r.topic);
     expect(order).toEqual([
       topicName(TOPICS.events),
-      topicName(TOPICS.status),
       topicName(TOPICS.telemetry),
+      topicName(TOPICS.status),
       topicName(TOPICS.state),
     ]);
   });
