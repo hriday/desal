@@ -60,6 +60,8 @@ site (generating credentials the first time), reloads Caddy and runs `docker com
 `curl http://127.0.0.1:8081/healthz` to return `ok` on the server and prints the URL. The simulator gets SIGTERM on
 redeploy and writes final snapshots first (30 s grace), so a redeploy resumes every game where it was.
 
+A redeploy that changes the snapshot version (it is 3 since the chaos events) is the exception: older saves are skipped, so games in flight at that deploy end.
+
 **One-off, after the first deploy of this version:** `plant.state` may still hold single-career (v1) records from before
 games existed. The simulator's `loadGames` skips records it does not recognise, so this is harmless. Also run once on
 the server, so snapshots and tombstones in `plant.state` compact within about an hour (the simulator only sets these
