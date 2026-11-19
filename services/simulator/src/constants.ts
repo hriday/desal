@@ -225,3 +225,6 @@ export const RAMP_SCALE_MM = 0.005;
 export const ONLINE_MARGIN_C = 2;
 /** Acid clean duration (ticks): 2 plant hours. */
 export const ACID_CLEAN_TICKS = 180;
+
+// Operating account (spec 3.1): tunable placeholders. Later tasks charge and credit against these.
+export const START_BALANCE_USD = 40000;

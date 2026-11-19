@@ -3,6 +3,7 @@ import { loopKind } from '../../src/control/loops.js';
 import { pidStep } from '../../src/control/pid.js';
 import { createInitialState, type Loop } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
+import { GAME_ID } from '../envelope.js';
 
 /**
  * Gains for the toy first-order test plant below (dt = 1). Kept local: the plant loops' LOOP_GAINS are
@@ -110,7 +111,7 @@ describe('controller action', () => {
 
 describe('initial loop state', () => {
   it('holds every initial output for one step at zero error', () => {
-    const s = createInitialState(1, 0);
+    const s = createInitialState(1, 0, GAME_ID);
     const named = (['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum'] as const).map((k) => [k, s.loops[k]] as const);
     const all = [...named, ...s.loops.levels.map((l) => ['level', l] as const)];
     for (const [kind, l] of all) {

@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { PLANT_KEY, TOPICS } from '@desal/schema';
+import { TOPICS } from '@desal/schema';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { PLANT_KEY } from '../../src/kafka/runner.js';
 import { createInitialState } from '../../src/state.js';
+import { GAME_ID } from '../envelope.js';
 
 // Each test gets its own topic suffix (set before anything calls topicName, which
 // reads the env var at call time), so tests never see each other's records or the
@@ -76,7 +78,7 @@ async function sendCommand(value: string): Promise<void> {
 }
 
 const startShift = (shiftId: number | null = null) =>
-  JSON.stringify({ commandId: randomUUID(), issuedAt: Date.now(), shiftId, command: { type: 'startShift', mode: 'auto' } });
+  JSON.stringify({ commandId: randomUUID(), issuedAt: Date.now(), gameId: GAME_ID, shiftId, command: { type: 'startShift', mode: 'auto' } });
 
 type Status = { phase: string; tick: number; shiftId: number | null };
 type Event = { type: string; reason?: string };
@@ -87,7 +89,7 @@ describe('SimRunner + Kafka', () => {
     const status = await collect<Status>(TOPICS.status);
     const telemetry = await collect<Reading>(TOPICS.telemetry);
     const events = await collect<Event>(TOPICS.events);
-    const runner = new SimRunner(kafka, createInitialState(42, Date.now()), { log: () => {} });
+    const runner = new SimRunner(kafka, createInitialState(42, Date.now(), GAME_ID), { log: () => {} });
     await runner.start();
     try {
       await sendCommand(startShift());
@@ -110,7 +112,7 @@ describe('SimRunner + Kafka', () => {
   it('resume: a new runner continues from the last snapshot with the same shift and no second shiftStart', async () => {
     const events = await collect<Event>(TOPICS.events);
     const status = await collect<Status>(TOPICS.status);
-    const r1 = new SimRunner(kafka, createInitialState(7, Date.now()), { tickMs: 50, log: () => {} });
+    const r1 = new SimRunner(kafka, createInitialState(7, Date.now(), GAME_ID), { tickMs: 50, log: () => {} });
     await r1.start();
     await sendCommand(startShift());
     await waitFor(() => r1.state.tick >= 40, 30_000, '40 ticks');
@@ -151,7 +153,7 @@ describe('SimRunner + Kafka', () => {
   });
 
   it('fallback: a good save followed by garbage → loadCareer returns the good save and reports the skip', async () => {
-    const good = { ...createInitialState(5, Date.now()), tick: 42 };
+    const good = { ...createInitialState(5, Date.now(), GAME_ID), tick: 42 };
     const { serialize } = await import('../../src/snapshot.js');
     await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: serialize(good) }] });
     await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: '{not json' }] });
@@ -165,7 +167,7 @@ describe('SimRunner + Kafka', () => {
 
   it('bad command: {"nonsense":true} → commandRejected, and the runner keeps ticking', async () => {
     const events = await collect<Event>(TOPICS.events);
-    const runner = new SimRunner(kafka, createInitialState(3, Date.now()), { tickMs: 100, log: () => {} });
+    const runner = new SimRunner(kafka, createInitialState(3, Date.now(), GAME_ID), { tickMs: 100, log: () => {} });
     await runner.start();
     try {
       await sendCommand(startShift());

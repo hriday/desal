@@ -1,11 +1,11 @@
-import { PLANT_KEY, TOPICS } from '@desal/schema';
+import { TOPICS } from '@desal/schema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as tickModule from '../../src/tick.js';
 import { topicName } from '../../src/kafka/client.js';
-import { commandsGroup, SimRunner, type OutRecord, type SimIO } from '../../src/kafka/runner.js';
+import { commandsGroup, PLANT_KEY, SimRunner, type OutRecord, type SimIO } from '../../src/kafka/runner.js';
 import { restore } from '../../src/snapshot.js';
 import { createInitialState } from '../../src/state.js';
-import { env } from '../envelope.js';
+import { env, GAME_ID } from '../envelope.js';
 
 /** In-memory stand-in for Kafka: records every send and fails while `down` is set. */
 class FakeIO implements SimIO {
@@ -29,7 +29,7 @@ class FakeIO implements SimIO {
   }
 }
 
-const initial = createInitialState(1, 1_700_000_000_000);
+const initial = createInitialState(1, 1_700_000_000_000, GAME_ID);
 
 describe('SimRunner (fake I/O)', () => {
   let io: FakeIO;
@@ -67,12 +67,12 @@ describe('SimRunner (fake I/O)', () => {
     expect(telemetry.messages.length).toBeGreaterThan(100);
     const m = telemetry.messages[0]!;
     const reading = JSON.parse(String(m.value));
-    expect(m.key).toBe(reading.sensorId);
+    expect(m.key).toBe(reading.gameId);
     // Event time travels in the payload; the broker stamps LogAppendTime.
     expect(m.timestamp).toBeUndefined();
     expect(typeof reading.plantTime).toBe('number');
     const status = io.on(TOPICS.status)[0]!.messages[0]!;
-    expect(status.key).toBe(PLANT_KEY);
+    expect(status.key).toBe(GAME_ID);
   });
 
   it('freezes the plant while Kafka is down, retries every 2 s, and resumes on success', async () => {

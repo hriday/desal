@@ -3,11 +3,12 @@ import { BURNER_MAX_MW } from '../../src/constants.js';
 import { createInitialState, type PlantState } from '../../src/state.js';
 import { heaterDemandMW, stepHeater } from '../../src/units/heater.js';
 import { allFinite } from '../helpers.js';
+import { GAME_ID } from '../envelope.js';
 
 const DT = 40;
 
 function base(): PlantState {
-  const s = createInitialState(1, 0);
+  const s = createInitialState(1, 0, GAME_ID);
   return { ...s, brine: { ...s.brine, recircM3h: 4180 }, heater: { ...s.heater, tbtC: 100, burnerCondition: 1 } };
 }
 

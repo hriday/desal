@@ -7,7 +7,7 @@ import { restartStep } from '../src/safety/restart.js';
 import { startShift } from '../src/shift.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
-import { env } from './envelope.js';
+import { env, GAME_ID } from './envelope.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 
@@ -28,7 +28,7 @@ const allLoops = (s: PlantState) => [
 describe('startShift resets per-shift supply conditions and controller faults', () => {
   it('shift 3 curtailment and price spike do not carry into shift 4; damage does', () => {
     // A career that has played shifts 1 and 2: shift 3 (pipeline-notice) is next.
-    const career = { ...createInitialState(1, T0), careerShiftCount: 2 };
+    const career = { ...createInitialState(1, T0, GAME_ID), run: { ...createInitialState(1, T0, GAME_ID).run, shiftNumber: 2 } };
     const shift3 = startShift(career, 'auto').state;
     expect(shift3.scenario.id).toBe('pipeline-notice');
     const ended = runShift(shift3);
@@ -61,7 +61,7 @@ describe('startShift resets per-shift supply conditions and controller faults', 
   });
 
   it('keeps bearingWearMult across shifts (persistent damage by design)', () => {
-    const s = createInitialState(1, T0);
+    const s = createInitialState(1, T0, GAME_ID);
     const worn: PlantState = {
       ...s,
       intake: { ...s.intake, pumps: { ...s.intake.pumps, 'P-102': { ...s.intake.pumps['P-102'], bearingWearMult: 4 } } },
@@ -72,14 +72,14 @@ describe('startShift resets per-shift supply conditions and controller faults', 
   it('lets Scenario.initial override the starting gas cap and price', () => {
     const base = scenarioForShift(1, 0);
     const scenario = { ...base, initial: { ...base.initial, gasCapMW: 30, gasPriceUsdPerGJ: 11 } };
-    const s = loadScenario(createInitialState(1, T0), scenario);
+    const s = loadScenario(createInitialState(1, T0, GAME_ID), scenario);
     expect(s.fuel.gas).toEqual({ capMW: 30, priceUsdPerGJ: 11, curtailmentNotice: null });
   });
 });
 
 describe('startShift with a restart in progress', () => {
   it('drops a Manual restart carried over handover back to tripped, so an Auto shift can restart', () => {
-    const s0 = { ...createInitialState(1, T0), controlMode: 'manual' as const };
+    const s0 = { ...createInitialState(1, T0, GAME_ID), controlMode: 'manual' as const };
     const tripped = applyTrip(s0, 'manual').state;
     const r = restartStep(tripped, 'vacuum');
     if ('rejected' in r) throw new Error(r.rejected);
@@ -102,7 +102,7 @@ describe('startShift with a restart in progress', () => {
   });
 
   it('leaves an online or tripped plant as it is', () => {
-    const online = createInitialState(1, T0);
+    const online = createInitialState(1, T0, GAME_ID);
     expect(startShift(online, 'auto').state.status).toBe('online');
     const tripped = applyTrip(online, 'manual').state;
     const started = startShift(tripped, 'auto').state;

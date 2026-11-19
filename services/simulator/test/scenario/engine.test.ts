@@ -2,9 +2,10 @@ import { loadScenario, stepScenario } from '../../src/scenario/engine.js';
 import { scenarioForShift } from '../../src/scenario/library.js';
 import { createInitialState, type PlantState } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
+import { GAME_ID } from '../envelope.js';
 
 function running(shift: number, seed = 1): PlantState {
-  let s = createInitialState(seed, 0);
+  let s = createInitialState(seed, 0, GAME_ID);
   const sc = scenarioForShift(shift, seed);
   s = loadScenario(s, sc);
   return {
@@ -34,7 +35,7 @@ function run(s: PlantState, toTick: number, onTick?: (s: PlantState, firedCount:
 
 describe('scenario engine', () => {
   it('does nothing unless running with a loaded scenario', () => {
-    const s = createInitialState(1, 0);
+    const s = createInitialState(1, 0, GAME_ID);
     expect(stepScenario(s)).toEqual({ state: s, events: [] });
     const idle = { ...running(2), phase: 'handover' as const };
     expect(stepScenario(idle).state).toBe(idle);

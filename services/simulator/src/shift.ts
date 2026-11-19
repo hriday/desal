@@ -1,9 +1,9 @@
-import type { PlantEvent, PumpId, ShiftSummary } from '@desal/schema';
+import type { PumpId, ShiftSummary } from '@desal/schema';
 import { TICK_PLANT_S } from './constants.js';
 import { nextRandom } from './rng.js';
 import { loadScenario } from './scenario/engine.js';
 import { scenarioForShift } from './scenario/library.js';
-import type { Loop, PlantState } from './state.js';
+import type { Loop, PlantState, SimEvent } from './state.js';
 
 function withModes(loops: PlantState['loops'], mode: 'auto' | 'manual'): PlantState['loops'] {
   const nonLevel: Loop['mode'] = mode === 'manual' ? 'manual' : 'auto';
@@ -31,19 +31,19 @@ function abandonCarriedRestart(s: PlantState): PlantState {
  * Begin a shift: draw its scenario, reset shift accumulators, abandon any restart left in progress,
  * and set the loop modes for the chosen control mode.
  */
-export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: PlantState; events: PlantEvent[] } {
-  const careerShiftCount = s.careerShiftCount + 1;
+export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: PlantState; events: SimEvent[] } {
+  const shiftNumber = s.run.shiftNumber + 1;
   const [value, seed] = nextRandom(s.seed);
-  const scenario = scenarioForShift(careerShiftCount, Math.floor(value * 4294967296));
+  const scenario = scenarioForShift(shiftNumber, Math.floor(value * 4294967296));
   const loaded = loadScenario(abandonCarriedRestart({ ...s, seed }), scenario);
   const state: PlantState = {
     ...loaded,
-    careerShiftCount,
+    run: { ...s.run, shiftNumber },
     controlMode: mode,
     phase: 'running',
     loops: withModes(loaded.loops, mode),
     shift: {
-      id: careerShiftCount,
+      id: shiftNumber,
       startTick: s.tick,
       mode,
       target: { ...scenario.target },
@@ -57,7 +57,7 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
         type: 'shiftStart',
         tick: s.tick,
         plantTime: s.plantTime,
-        shiftId: careerShiftCount,
+        shiftId: shiftNumber,
         scenarioId: scenario.id,
         mode,
         target: { ...scenario.target },
@@ -70,7 +70,7 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
  * End the running shift: emit `shiftEnd` with its summary and return to handover. All plant state
  * is kept, and so is `shift` (its id and final accumulators) until the next startShift.
  */
-export function endShift(s: PlantState): { state: PlantState; events: PlantEvent[] } {
+export function endShift(s: PlantState): { state: PlantState; events: SimEvent[] } {
   const shift = s.shift;
   if (!shift) return { state: { ...s, phase: 'handover' }, events: [] };
   const { acc, target } = shift;
@@ -84,6 +84,9 @@ export function endShift(s: PlantState): { state: PlantState; events: PlantEvent
     fuelCostUsd: acc.fuelCostUsd,
     fuelBudgetUsd: target.fuelBudgetUsd,
     trips: acc.trips,
+    revenueUsd: 0,
+    finesUsd: 0,
+    balanceUsd: s.run.balanceUsd,
     damage: {
       maxHardScaleMm: s.stages.reduce((m, st) => Math.max(m, st.hardScaleMm), 0),
       pumpWear,
@@ -91,7 +94,11 @@ export function endShift(s: PlantState): { state: PlantState; events: PlantEvent
     },
   };
   return {
-    state: { ...s, phase: 'handover' },
+    state: {
+      ...s,
+      phase: 'handover',
+      run: { ...s.run, totalProductM3: s.run.totalProductM3 + acc.productM3, shiftsCompleted: s.run.shiftsCompleted + 1 },
+    },
     events: [{ type: 'shiftEnd', tick: s.tick, plantTime: s.plantTime, shiftId: shift.id, summary }],
   };
 }

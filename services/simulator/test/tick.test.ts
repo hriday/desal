@@ -5,12 +5,12 @@ import { SENSOR_IDS } from '../src/emit.js';
 import { startShift } from '../src/shift.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
-import { env } from './envelope.js';
+import { env, GAME_ID } from './envelope.js';
 import { allFinite } from './helpers.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 
-const running = (mode: 'auto' | 'manual' = 'auto'): PlantState => startShift(createInitialState(1, T0), mode).state;
+const running = (mode: 'auto' | 'manual' = 'auto'): PlantState => startShift(createInitialState(1, T0, GAME_ID), mode).state;
 
 function runTicks(s: PlantState, n: number): { state: PlantState; events: PlantEvent[] } {
   const events: PlantEvent[] = [];
@@ -24,7 +24,7 @@ function runTicks(s: PlantState, n: number): { state: PlantState; events: PlantE
 
 describe('non-running phases', () => {
   it('in handover, ticks emit status only and do not advance the plant', () => {
-    const s = createInitialState(1, T0);
+    const s = createInitialState(1, T0, GAME_ID);
     const r = tick(s, []);
     expect(r.state.tick).toBe(0);
     expect(r.state.plantTime).toBe(T0);
@@ -49,7 +49,7 @@ describe('non-running phases', () => {
   });
 
   it('applies commands in handover and runs the first tick once a shift starts', () => {
-    const s = createInitialState(1, T0);
+    const s = createInitialState(1, T0, GAME_ID);
     const r = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]);
     expect(r.events[0]).toMatchObject({ type: 'shiftStart', shiftId: 1 });
     expect(r.state.phase).toBe('running');
@@ -169,7 +169,7 @@ describe('record stamps', () => {
   });
 
   it('shiftStart is stamped like the first tick of the shift it starts', () => {
-    const s = createInitialState(1, T0);
+    const s = createInitialState(1, T0, GAME_ID);
     const r = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]);
     expect(r.events[0]).toMatchObject({ type: 'shiftStart', tick: 1, plantTime: T0 + TICK_PLANT_S * 1000 });
     expect(new Set(stamps(r).map((x) => x.join()))).toEqual(new Set([`1,${T0 + TICK_PLANT_S * 1000}`]));

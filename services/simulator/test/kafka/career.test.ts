@@ -1,11 +1,11 @@
-import { PLANT_KEY } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
-import { pickCareer } from '../../src/kafka/runner.js';
+import { PLANT_KEY, pickCareer } from '../../src/kafka/runner.js';
 import type { ReadRecord } from '../../src/kafka/read.js';
 import { serialize } from '../../src/snapshot.js';
 import { createInitialState } from '../../src/state.js';
+import { GAME_ID } from '../envelope.js';
 
-const at = (tick: number) => ({ ...createInitialState(1, 0), tick });
+const at = (tick: number) => ({ ...createInitialState(1, 0, GAME_ID), tick });
 let offset = 0;
 const rec = (value: string | null, key: string | null = PLANT_KEY): ReadRecord => ({ partition: 0, offset: offset++, key, value });
 /** A save whose state had a NaN: JSON turns it into null, which restore rejects. */

@@ -14,7 +14,7 @@ import { applyTrip, checkInterlocks } from './safety/interlocks.js';
 import { stepAcidClean, stepRestart } from './safety/restart.js';
 import { stepScenario } from './scenario/engine.js';
 import { endShift } from './shift.js';
-import type { Loop, PlantState } from './state.js';
+import type { Loop, PlantState, SimEvent } from './state.js';
 import { stepFuel } from './units/fuel.js';
 import { heaterDemandMW, stepHeater } from './units/heater.js';
 import { stepIntake } from './units/intake.js';
@@ -32,7 +32,7 @@ export interface TickResult {
 /** One plant step's outputs, before the shift accumulators and the clock are advanced. */
 export interface PlantStep {
   state: PlantState;
-  events: PlantEvent[];
+  events: SimEvent[];
   /** Product delivered this step (m3); 0 unless the plant was online. */
   deliveredM3: number;
   /** Delivered product was off spec this step. */
@@ -75,7 +75,7 @@ function stepLoops(s: PlantState): PlantState {
  */
 export function stepPlant(s0: PlantState): PlantStep {
   const dt = TICK_PLANT_S;
-  const events: PlantEvent[] = [];
+  const events: SimEvent[] = [];
 
   const sc = stepScenario(s0);
   events.push(...sc.events);
@@ -133,11 +133,20 @@ function withAccumulators(s: PlantState, x: StepTotals): PlantState {
   };
 }
 
-const countTrips = (events: PlantEvent[]): number => events.filter((e) => e.type === 'trip').length;
+const countTrips = (events: SimEvent[]): number => events.filter((e) => e.type === 'trip').length;
 
-/** Stamp events with the tick and plant time of the state the tick() call returns. */
-const stamped = (events: PlantEvent[], s: PlantState): PlantEvent[] =>
-  events.map((e) => ({ ...e, tick: s.tick, plantTime: s.plantTime }));
+/**
+ * Stamp events with the game, the tick and plant time of the state the tick() call returns, and a
+ * per-game seq in emission order (consumers de-duplicate at-least-once deliveries on it). Returns the
+ * state with the seq counter advanced.
+ */
+function stamped(events: SimEvent[], s: PlantState): { state: PlantState; events: PlantEvent[] } {
+  const seq0 = s.run.eventSeq;
+  const out = events.map(
+    (e, i) => ({ ...e, gameId: s.run.gameId, seq: seq0 + i, tick: s.tick, plantTime: s.plantTime }) as PlantEvent,
+  );
+  return { state: { ...s, run: { ...s.run, eventSeq: seq0 + events.length } }, events: out };
+}
 
 /**
  * Advance the simulation one tick. Commands are applied first; outside a running shift
@@ -149,7 +158,7 @@ const stamped = (events: PlantEvent[], s: PlantState): PlantEvent[] =>
  */
 export function tick(s0: PlantState, commands: unknown[]): TickResult {
   let s = s0;
-  let events: PlantEvent[] = [];
+  let events: SimEvent[] = [];
   for (const c of commands) {
     const r = applyCommand(s, c);
     s = r.state;
@@ -160,7 +169,8 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   if (s.phase !== 'running') {
     // A manual trip while paused still counts against the shift.
     s = withAccumulators(s, { deliveredM3: 0, offSpec: false, fuelCostUsd: 0, trips: commandTrips });
-    return { state: s, telemetry: [], status: toStatus(s), events: stamped(events, s), snapshotDue: commandTrips > 0 };
+    const out = stamped(events, s);
+    return { state: out.state, telemetry: [], status: toStatus(out.state), events: out.events, snapshotDue: commandTrips > 0 };
   }
 
   const step = stepPlant(s);
@@ -169,8 +179,6 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   s = withAccumulators(step.state, { ...step, trips });
   s = { ...s, tick: s.tick + 1, plantTime: s.plantTime + TICK_PLANT_S * 1000 };
   const telemetry = toTelemetry(s);
-  // Commands and the plant step stamped their events with the pre-advance clock.
-  events = stamped(events, s);
 
   let ended = false;
   if (s.shift && s.tick - s.shift.startTick >= SHIFT_TICKS) {
@@ -180,5 +188,8 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
     ended = true;
   }
   const snapshotDue = s.tick % SNAPSHOT_EVERY_TICKS === 0 || ended || trips > 0;
-  return { state: s, telemetry, status: toStatus(s), events, snapshotDue };
+  // Commands and the plant step used the pre-advance clock; stamping here (after the shift-end
+  // events) gives every record of the tick the post-tick clock and a gap-free seq.
+  const out = stamped(events, s);
+  return { state: out.state, telemetry, status: toStatus(out.state), events: out.events, snapshotDue };
 }

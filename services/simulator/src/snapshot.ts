@@ -1,5 +1,6 @@
 import {
   FuelGradeSchema,
+  GameEndReasonSchema,
   FuelKindSchema,
   LoopModeSchema,
   PhaseSchema,
@@ -22,7 +23,7 @@ const LoopSchema = z.object({
   prevError: num,
   fault: z.object({ kind: z.enum(['stuck', 'drift', 'oscillate']), bias: num }).nullable(),
 });
-const PumpSchema = z.object({ running: z.boolean(), wear: num, cavitation: num, bearingWearMult: num });
+const PumpSchema = z.object({ running: z.boolean(), wear: num, cavitation: num, bearingWearMult: num, overhaulRemainingTicks: num });
 const StageSchema = z.object({ tempC: num, levelM: num, softScaleMm: num, hardScaleMm: num });
 const TargetSchema = z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num });
 const ScenarioSchema = z.object({
@@ -122,7 +123,15 @@ export const PlantStateSchema = z.object({
       chlorophyllRampPerTick: num,
     }),
   }),
-  careerShiftCount: num,
+  run: z.object({
+    gameId: z.uuid(),
+    balanceUsd: num,
+    shiftNumber: num,
+    totalProductM3: num,
+    shiftsCompleted: num,
+    eventSeq: num,
+    over: z.object({ reason: GameEndReasonSchema, atTick: num }).nullable(),
+  }),
 });
 
 // Compile-time drift guard: the schema's type and PlantState must be mutually assignable.

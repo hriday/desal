@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { PLANT_KEY, PlantStatusSchema, TOPICS } from '@desal/schema';
+import { PlantStatusSchema, TOPICS } from '@desal/schema';
 import { createKafka, topicName } from '../kafka/client.js';
 import { readToEnd } from '../kafka/read.js';
 
-function shiftIdOf(statusJson: string): number | null {
+/** The game and shift the latest status describes, or null when it is unreadable. */
+function liveOf(statusJson: string): { gameId: string; shiftId: number | null } | null {
   try {
     const parsed = PlantStatusSchema.safeParse(JSON.parse(statusJson));
-    return parsed.success ? parsed.data.shiftId : null;
+    return parsed.success ? { gameId: parsed.data.gameId, shiftId: parsed.data.shiftId } : null;
   } catch {
     return null;
   }
@@ -37,18 +38,21 @@ async function main(): Promise<void> {
   // The latest status says which shift is live; commands for any other shift are
   // rejected as stale. lastOnly seeks straight to the final record.
   const [latest] = await readToEnd(kafka, topicName(TOPICS.status), { lastOnly: true });
-  const shiftId = latest?.value ? shiftIdOf(latest.value) : null;
+  const live = latest?.value ? liveOf(latest.value) : null;
+  if (!live) {
+    console.error('no live game: plant.status has no readable status yet');
+    process.exit(1);
+  }
 
   // Not validated here: the simulator is the single place commands are validated.
-  const envelope = { commandId: randomUUID(), issuedAt: Date.now(), shiftId, command };
+  const envelope = { commandId: randomUUID(), issuedAt: Date.now(), gameId: live.gameId, shiftId: live.shiftId, command };
   const producer = kafka.producer();
   await producer.connect();
   try {
-    // plant.commands has one partition, so the key does not pick a partition here;
-    // keying by plant keeps it correct if more plants (partitions) are ever added.
+    // Keyed by gameId like every topic: one game's commands stay ordered on one partition.
     await producer.send({
       topic: topicName(TOPICS.commands),
-      messages: [{ key: PLANT_KEY, value: JSON.stringify(envelope) }],
+      messages: [{ key: live.gameId, value: JSON.stringify(envelope) }],
     });
   } finally {
     await producer.disconnect();

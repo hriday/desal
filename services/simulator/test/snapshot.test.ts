@@ -3,6 +3,7 @@ import { startShift } from '../src/shift.js';
 import { restore, serialize } from '../src/snapshot.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
+import { GAME_ID } from './envelope.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 
@@ -17,11 +18,11 @@ function run(s: PlantState, n: number) {
 }
 
 function midShift2(): PlantState {
-  const s0 = { ...createInitialState(7, T0), careerShiftCount: 1 };
+  const s0 = { ...createInitialState(7, T0, GAME_ID), run: { ...createInitialState(7, T0, GAME_ID).run, shiftNumber: 1 } };
   return run(startShift(s0, 'auto').state, 300).state;
 }
 
-const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0)));
+const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0, GAME_ID)));
 
 function wrap(state: unknown, over: Record<string, unknown> = {}): string {
   return JSON.stringify({ format: 'desal-snapshot', version: 1, savedAt: 0, state, ...over });
@@ -39,7 +40,7 @@ describe('snapshots', () => {
   });
 
   it('rejects garbage, wrong format and unknown version', () => {
-    const s = createInitialState(1, T0);
+    const s = createInitialState(1, T0, GAME_ID);
     for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 2 })]) {
       const r = restore(bad);
       expect(r.ok).toBe(false);

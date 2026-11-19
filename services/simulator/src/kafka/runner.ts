@@ -1,10 +1,17 @@
-import { PLANT_KEY, TOPICS } from '@desal/schema';
+import { TOPICS } from '@desal/schema';
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import { restore, serialize, snapshotIssue } from '../snapshot.js';
 import type { PlantState } from '../state.js';
 import { tick, type TickResult } from '../tick.js';
 import { topicName, type KafkaInstance } from './client.js';
 import { readToEnd, type ReadRecord } from './read.js';
+
+/**
+ * Key of the single-plant save in plant.state. Interim (until the multi-game host in Task 6): one
+ * fixed key lets career load find the one game whatever its gameId. Events, status, telemetry and
+ * commands are keyed by gameId.
+ */
+export const PLANT_KEY = 'plant-1';
 
 // ---------------------------------------------------------------------------
 // Career load
@@ -215,23 +222,23 @@ function tickRecords(r: TickResult): OutRecord[] {
   const out: OutRecord[] = [];
   // No producer timestamps: these topics use LogAppendTime (the broker stamps
   // wall-clock time); plant time, the event time, travels in each payload.
-  // Events and status are keyed by the plant: one partition, one total order.
+  // Everything but the save is keyed by gameId: one game's records stay in order on one partition.
   if (r.events.length > 0) {
     out.push({
       topic: topicName(TOPICS.events),
-      messages: r.events.map((e) => ({ key: PLANT_KEY, value: JSON.stringify(e) })),
+      messages: r.events.map((e) => ({ key: e.gameId, value: JSON.stringify(e) })),
     });
   }
   out.push({
     topic: topicName(TOPICS.status),
-    messages: [{ key: PLANT_KEY, value: JSON.stringify(r.status) }],
+    messages: [{ key: r.status.gameId, value: JSON.stringify(r.status) }],
   });
   if (r.telemetry.length > 0) {
-    // One batched send for all ~108 readings. Key = sensorId, so each sensor's
-    // readings hash to one partition and stay in order for that sensor.
+    // One batched send for all ~108 readings. Key = gameId, so one game's
+    // readings stay on one partition, in order (and Flink can keyBy(gameId)).
     out.push({
       topic: topicName(TOPICS.telemetry),
-      messages: r.telemetry.map((t) => ({ key: t.sensorId, value: JSON.stringify(t) })),
+      messages: r.telemetry.map((t) => ({ key: t.gameId, value: JSON.stringify(t) })),
     });
   }
   if (r.snapshotDue) out.push(snapshotRecord(r.state));

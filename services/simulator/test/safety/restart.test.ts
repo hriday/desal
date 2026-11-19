@@ -1,13 +1,14 @@
-import type { PlantEvent, RestartStep } from '@desal/schema';
+import type { RestartStep } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
 import { RESTART_STEP_TIMEOUT_TICKS } from '../../src/constants.js';
 import { applyTrip } from '../../src/safety/interlocks.js';
 import { beginAcidClean, beginRestart, restartStep, stepAcidClean, stepRestart, type Result } from '../../src/safety/restart.js';
-import { createInitialState, type PlantState } from '../../src/state.js';
+import { createInitialState, type PlantState, type SimEvent } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
 import { runUntil, tickOnce } from './harness.js';
+import { GAME_ID } from '../envelope.js';
 
-function ok(r: Result): { state: PlantState; events: PlantEvent[] } {
+function ok(r: Result): { state: PlantState; events: SimEvent[] } {
   if ('rejected' in r) throw new Error(`unexpected rejection: ${r.rejected}`);
   return r;
 }
@@ -19,7 +20,7 @@ function rejected(r: Result): string {
 
 /** Nominal plant tripped, then left to cool for `coolTicks`. */
 function tripped(mode: 'auto' | 'manual' = 'auto', coolTicks = 20): PlantState {
-  const s0 = createInitialState(1, 0);
+  const s0 = createInitialState(1, 0, GAME_ID);
   const s = applyTrip({ ...s0, controlMode: mode }, 'manual').state;
   return runUntil(s, coolTicks).state;
 }
@@ -27,7 +28,7 @@ function tripped(mode: 'auto' | 'manual' = 'auto', coolTicks = 20): PlantState {
 /** Deep copy for unchanged-state checks (PlantState is plain JSON data). */
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const isOnline = (s: PlantState): boolean => s.status === 'online';
-const progressSteps = (events: PlantEvent[]): RestartStep[] =>
+const progressSteps = (events: SimEvent[]): RestartStep[] =>
   events.flatMap((e) => (e.type === 'restartProgress' && e.ok ? [e.step] : []));
 
 /** The operator's setOutput on the firing (tbt) loop, which is manual in Manual mode. */
@@ -50,9 +51,9 @@ function manualRamp(prevFiringPct: number, firingPct: number): PlantState {
 }
 
 /** Walk a tripped Manual plant through vacuum, recirc, ignition (burner lit), and ramp. */
-function manualAtRamp(): { state: PlantState; events: PlantEvent[] } {
+function manualAtRamp(): { state: PlantState; events: SimEvent[] } {
   let s = tripped('manual');
-  const events: PlantEvent[] = [];
+  const events: SimEvent[] = [];
   for (const step of ['vacuum', 'recirc', 'ignition'] as const) {
     const r = ok(restartStep(s, step));
     s = r.state;
@@ -65,11 +66,11 @@ function manualAtRamp(): { state: PlantState; events: PlantEvent[] } {
   return { state: r.state, events };
 }
 
-const damageEvents = (events: PlantEvent[]) => events.filter((e) => e.type === 'damage');
+const damageEvents = (events: SimEvent[]) => events.filter((e) => e.type === 'damage');
 
 describe('a tripped plant left idle', () => {
   it('cools toward the bottom-stage temperature, never below seawater, over 500 ticks', () => {
-    const s0 = applyTrip(createInitialState(1, 0), 'manual').state;
+    const s0 = applyTrip(createInitialState(1, 0, GAME_ID), 'manual').state;
     let s = s0;
     let minTbt = Infinity;
     for (let i = 0; i < 500; i++) {
@@ -143,7 +144,7 @@ describe('beginRestart (Auto)', () => {
   });
 
   it('is rejected unless tripped', () => {
-    expect(rejected(beginRestart(createInitialState(1, 0)))).toMatch(/tripped/);
+    expect(rejected(beginRestart(createInitialState(1, 0, GAME_ID)))).toMatch(/tripped/);
     const cleaning = ok(beginAcidClean(tripped())).state;
     expect(rejected(beginRestart(cleaning))).toMatch(/acid/);
   });
@@ -258,7 +259,7 @@ describe('Auto restart: stall timeout and manual takeover', () => {
   it('times out a step whose precondition never comes (vacuum never pulls)', () => {
     const t = tripped('auto');
     let s = ok(beginRestart({ ...t, vacuum: { quality: 0.4 } })).state;
-    const events: PlantEvent[] = [];
+    const events: SimEvent[] = [];
     for (let i = 0; i <= RESTART_STEP_TIMEOUT_TICKS && s.status === 'restarting'; i++) {
       // Something keeps the ejector closed (e.g. a field fault the operator has to find).
       s = { ...s, loops: { ...s.loops, vacuum: { ...s.loops.vacuum, output: 0 } } };
@@ -346,7 +347,7 @@ describe('burner lock-out before ignition', () => {
 
 describe('restart from a loss-of-vacuum trip', () => {
   it('comes back online without re-tripping while vacuum is pulled down', () => {
-    const s0 = createInitialState(1, 0);
+    const s0 = createInitialState(1, 0, GAME_ID);
     const poor: PlantState = {
       ...s0,
       vacuum: { quality: 0.4 },
@@ -364,7 +365,7 @@ describe('restart from a loss-of-vacuum trip', () => {
 
 describe('acid clean', () => {
   it('is rejected while online', () => {
-    expect(rejected(beginAcidClean(createInitialState(1, 0)))).toMatch(/tripped/);
+    expect(rejected(beginAcidClean(createInitialState(1, 0, GAME_ID)))).toMatch(/tripped/);
   });
 
   it('zeroes hard scale after 180 ticks and leaves the plant tripped', () => {

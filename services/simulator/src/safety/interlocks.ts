@@ -1,4 +1,4 @@
-import type { PlantEvent, TripCause } from '@desal/schema';
+import type { TripCause } from '@desal/schema';
 import {
   INTAKE_TRIP_FRACTION,
   LEVEL_FLOOD_M,
@@ -8,7 +8,7 @@ import {
   TRIP_SCALE_STAGES,
   VACUUM_TRIP,
 } from '../constants.js';
-import type { PlantState } from '../state.js';
+import type { PlantState, SimEvent } from '../state.js';
 
 /**
  * True when the burner should be lit: online, or restarting from the tick after ignition began
@@ -41,7 +41,7 @@ export function checkInterlocks(s: PlantState, deliveredMW: number): TripCause |
  * Trip the plant: shut the burner, abandon any restart, and apply thermal-cycling damage
  * (hard scale on the hottest stages, burner condition). Emits `trip` then `damage` events.
  */
-export function applyTrip(s: PlantState, cause: TripCause): { state: PlantState; events: PlantEvent[] } {
+export function applyTrip(s: PlantState, cause: TripCause): { state: PlantState; events: SimEvent[] } {
   const base = { tick: s.tick, plantTime: s.plantTime, shiftId: s.shift?.id ?? null };
   const state: PlantState = {
     ...s,
@@ -59,7 +59,7 @@ export function applyTrip(s: PlantState, cause: TripCause): { state: PlantState;
       i < TRIP_SCALE_STAGES ? { ...st, hardScaleMm: st.hardScaleMm + TRIP_SCALE_MM } : st,
     ),
   };
-  const events: PlantEvent[] = [
+  const events: SimEvent[] = [
     { ...base, type: 'trip', cause },
     { ...base, type: 'damage', component: 'stageScale', value: TRIP_SCALE_MM },
     { ...base, type: 'damage', component: 'burner', value: TRIP_BURNER_DAMAGE },

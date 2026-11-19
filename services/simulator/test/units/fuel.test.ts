@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { createInitialState, type PlantState } from '../../src/state.js';
 import { stepFuel } from '../../src/units/fuel.js';
 import { allFinite } from '../helpers.js';
+import { GAME_ID } from '../envelope.js';
 
 const DT = 40;
 
 function base(): PlantState {
-  const s = createInitialState(1, 0);
+  const s = createInitialState(1, 0, GAME_ID);
   return {
     ...s,
     fuel: {

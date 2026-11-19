@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { applyTrip, checkInterlocks } from '../../src/safety/interlocks.js';
 import { createInitialState, type PlantState } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
+import { GAME_ID } from '../envelope.js';
 
 const NOMINAL_MW = 37.8;
 
 function online(): PlantState {
-  return createInitialState(1, 0);
+  return createInitialState(1, 0, GAME_ID);
 }
 
 function withTbt(s: PlantState, tbtC: number): PlantState {

@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { createKafka, ensureTopics } from './kafka/client.js';
 import { loadCareer, SimRunner } from './kafka/runner.js';
 import { createInitialState, type PlantState } from './state.js';
@@ -9,7 +9,7 @@ async function main(): Promise<void> {
   await ensureTopics(kafka);
 
   let state: PlantState;
-  const newCareer = () => createInitialState(randomInt(0, 2 ** 32), Date.now());
+  const newCareer = () => createInitialState(randomInt(0, 2 ** 32), Date.now(), randomUUID());
   if (process.argv.includes('--new-career')) {
     console.log('[sim] --new-career: starting a fresh career');
     state = newCareer();

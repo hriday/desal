@@ -1,4 +1,3 @@
-import type { PlantEvent } from '@desal/schema';
 import {
   BURNER_MAX_MW,
   CHANGEOVER_CAP_FRACTION,
@@ -7,13 +6,13 @@ import {
   LHV_STANDARD_MJkg,
   OFFGRADE_CAP_FRACTION,
 } from '../constants.js';
-import type { Delivery, PlantState } from '../state.js';
+import type { Delivery, PlantState, SimEvent } from '../state.js';
 
 export interface FuelStep {
   state: PlantState;
   deliveredMW: number;
   costUsd: number;
-  events: PlantEvent[];
+  events: SimEvent[];
 }
 
 /**
@@ -23,7 +22,7 @@ export interface FuelStep {
  */
 export function stepFuel(s: PlantState, demandMW: number, dtS: number): FuelStep {
   const base = { tick: s.tick, plantTime: s.plantTime, shiftId: s.shift?.id ?? null };
-  const events: PlantEvent[] = [];
+  const events: SimEvent[] = [];
 
   let gas = s.fuel.gas;
   if (gas.curtailmentNotice && gas.curtailmentNotice.atTick <= s.tick) {

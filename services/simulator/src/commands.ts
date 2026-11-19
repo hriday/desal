@@ -1,13 +1,12 @@
-import { CommandEnvelopeSchema, type Command, type LoopId, type PlantEvent } from '@desal/schema';
+import { CommandEnvelopeSchema, type Command, type LoopId } from '@desal/schema';
 import { CHANGEOVER_TICKS, LOOP_RANGES } from './constants.js';
 import { loopKind } from './control/loops.js';
-import { nextRandom } from './rng.js';
 import { applyTrip } from './safety/interlocks.js';
 import { beginAcidClean, beginRestart, restartStep, type Result } from './safety/restart.js';
 import { startShift } from './shift.js';
-import { createInitialState, type Loop, type PlantState } from './state.js';
+import type { Loop, PlantState, SimEvent } from './state.js';
 
-type Out = { state: PlantState; events: PlantEvent[] };
+type Out = { state: PlantState; events: SimEvent[] };
 
 /** Ticks between ordering backup fuel and its arrival. */
 export const DELIVERY_TICKS = 90;
@@ -51,17 +50,19 @@ function withLoop(s: PlantState, id: LoopId, patch: Partial<Loop>): PlantState {
 }
 
 function apply(s: PlantState, id: string, c: Command): Out {
-  const ok = (state: PlantState, events: PlantEvent[] = []): Out => ({ state, events });
+  const ok = (state: PlantState, events: SimEvent[] = []): Out => ({ state, events });
   const no = (reason: string): Out => reject(s, id, reason);
   const base = { tick: s.tick, plantTime: s.plantTime, shiftId: s.shift?.id ?? null };
 
   switch (c.type) {
     case 'startShift':
       return s.phase === 'handover' ? startShift(s, c.mode) : no('startShift only allowed during handover');
-    case 'newCareer': {
-      const [v] = nextRandom(s.seed);
-      return ok(createInitialState(Math.floor(v * 4294967296), s.plantTime));
-    }
+    // Game lifecycle and overhaul behaviour arrives with the economy and the multi-game host.
+    case 'startGame':
+    case 'quitGame':
+    case 'heartbeat':
+    case 'overhaulPump':
+      return no('not implemented');
     case 'setSetpoint': {
       const r = LOOP_RANGES[loopKind(c.loop)];
       if (c.value < r.spMin || c.value > r.spMax) return no(`setpoint ${c.value} out of range ${r.spMin}..${r.spMax}`);
@@ -144,8 +145,13 @@ export function applyCommand(s: PlantState, env: unknown): Out {
     const commandId = typeof raw === 'string' ? raw : 'unknown';
     return reject(s, commandId, `invalid: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
   }
-  const { commandId, shiftId, command } = parsed.data;
-  const exempt = command.type === 'startShift' || command.type === 'newCareer';
+  const { commandId, gameId, shiftId, command } = parsed.data;
+  if (gameId !== s.run.gameId) return reject(s, commandId, 'wrong game');
+  const exempt =
+    command.type === 'startShift' ||
+    command.type === 'startGame' ||
+    command.type === 'quitGame' ||
+    command.type === 'heartbeat';
   if (!exempt && s.phase === 'handover') return reject(s, commandId, 'not allowed during handover');
   if (!exempt && shiftId !== (s.shift?.id ?? null)) return reject(s, commandId, 'stale shift');
   return apply(s, commandId, command);
