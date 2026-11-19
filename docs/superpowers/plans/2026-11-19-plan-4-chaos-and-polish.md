@@ -395,6 +395,8 @@ Keep the tick-0 equilibrium (state.ts derives NOMINAL/BALANCE from the physics).
   - Nominal state `tbtC === 93.5`; the TBT setpoint out of range at 84 and 113 is rejected.
   - A plant held at TBT 108 for one shift has more total scale than at 93.5 by a factor of at least 5, and produces more water.
   - The calibration suite passes at 93.5.
+  - Lowering the TBT setpoint by 5 °C, and separately by 10 °C, in Auto at nominal does not trip the plant within 60 ticks: no `noFuel`, no `flameOut`, no trip at all. Today a −5 °C step drives firing to 0 and trips `noFuel`, which is exactly what the spec tells a player to do on a vacuum loss (Ruling R12a). Fix the cause in the TBT loop or the burner logic, for example a firing floor or turndown in Auto, rather than in the test.
+  - `test/gameover.test.ts`: the untouched-Auto-run cap goes back from 100 to 40 shifts. Task 7 widened it when real faults made seed 7 last 66 shifts (Ruling R12b). Rebalance with the scaling constants (and fault severity if needed) until it passes at 40.
 - [ ] **Step 2:** Run. Expected: FAIL.
 - [ ] **Step 3:** Implement and recalibrate.
 - [ ] **Step 4: Rebalance check.** Run an untouched auto game (no player commands) to game over, before the change (at BASE) and after it. Report the number of shifts survived and the shift of the first acid-clean need for each. The untouched run should last about as long as before (within ±1 shift); if not, tune scaling constants rather than targets. Then run `pnpm --filter @desal/simulator test`, `pnpm --filter @desal/simulator test:int` and `pnpm --filter @desal/web test`. Expected: PASS.
