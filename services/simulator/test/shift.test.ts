@@ -209,6 +209,7 @@ describe('chaos plan lifecycle', () => {
         tubeLeak: { stage: 2, ppm: 10 },
         ejectorFailed: true,
         powerDipRemainingTicks: 5,
+        powerDipRecircFactor: 0.5,
         stormRemainingTicks: 9,
         stormFouling: 0.2,
         sensors: { tbt: { kind: 'freeze', value: 100 } },

@@ -68,6 +68,12 @@ function softScaleRate(tempC: number, antiscalantMgL: number, cf: number): numbe
   return SCALE_K * Math.exp((tempC - 110) / 5) * inhibition * cfMult;
 }
 
+/** The recirculation pump's deliverable maximum: reduced to a fraction of normal during a power dip. */
+function recircCapM3h(s: PlantState): number {
+  const dipping = s.faults.powerDipRemainingTicks > 0;
+  return RECIRC_PUMP_MAX_M3H * (dipping ? s.faults.powerDipRecircFactor : 1);
+}
+
 /**
  * Advance the flash stages, vacuum and brine circuit one step. Reads recirc, vacuum, blowdown and
  * level loop outputs as actuator positions; does not step any PID. Returns the raw distillate
@@ -79,7 +85,7 @@ export function stepStages(
 ): { state: PlantState; distillateM3h: number; carryover: number } {
   // Actuators.
   const prevRecirc = s.brine.recircM3h;
-  const recircM3h = lag(prevRecirc, RECIRC_PUMP_MAX_M3H * pct(s.loops.recirc.output), dtS, RECIRC_TAU_S);
+  const recircM3h = lag(prevRecirc, Math.min(RECIRC_PUMP_MAX_M3H * pct(s.loops.recirc.output), recircCapM3h(s)), dtS, RECIRC_TAU_S);
   const quality = lag(
     s.vacuum.quality,
     VACUUM_QUALITY_MIN + (1 - VACUUM_QUALITY_MIN) * pct(s.loops.vacuum.output),

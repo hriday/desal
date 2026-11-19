@@ -164,6 +164,8 @@ export interface PlantState {
     tubeLeak: { stage: number; ppm: number } | null;
     ejectorFailed: boolean;
     powerDipRemainingTicks: number;
+    /** Recirculation pump cap while a power dip lasts, as a fraction of its normal maximum. */
+    powerDipRecircFactor: number;
     stormRemainingTicks: number;
     stormFouling: number;
     sensors: Partial<Record<LoopSensorId, SensorFault>>;
@@ -226,6 +228,7 @@ export function noFaults(): PlantState['faults'] {
     tubeLeak: null,
     ejectorFailed: false,
     powerDipRemainingTicks: 0,
+    powerDipRecircFactor: 1,
     stormRemainingTicks: 0,
     stormFouling: 0,
     sensors: {},

@@ -181,6 +181,7 @@ export const PlantStateSchema = z.object({
     tubeLeak: z.object({ stage: num, ppm: num }).nullable(),
     ejectorFailed: z.boolean(),
     powerDipRemainingTicks: num,
+    powerDipRecircFactor: num,
     stormRemainingTicks: num,
     stormFouling: num,
     sensors: z.object({

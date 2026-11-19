@@ -249,3 +249,12 @@ export const PUMP_OVERHAUL_TICKS = 90;
 
 /** Concurrency cap: live games per simulator; over it, startGame is answered with gameRejected capacity. */
 export const MAX_GAMES = 10;
+
+/** Wear a tripped pump takes (fraction of its life). */
+export const PUMP_TRIP_WEAR = 0.1;
+/** Screen fouling a storm adds per tick while it lasts. */
+export const STORM_FOULING_PER_TICK = 0.0005;
+/** Recirculation cap (fraction of the pump's maximum) when a power dip gives none. */
+export const POWER_DIP_RECIRC_FACTOR = 0.6;
+/** Longest power dip the draw may make, in plant minutes, however hard the shift. */
+export const POWER_DIP_MAX_MINUTES = 60;

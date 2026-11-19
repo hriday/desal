@@ -1,5 +1,11 @@
 import type { ScenarioKind } from '@desal/schema';
-import { BASE_FUEL_BUDGET_USD, BASE_TARGET_M3, STAGE_COUNT, TARGET_GROWTH_PER_SHIFT } from '../constants.js';
+import {
+  BASE_FUEL_BUDGET_USD,
+  BASE_TARGET_M3,
+  POWER_DIP_MAX_MINUTES,
+  STAGE_COUNT,
+  TARGET_GROWTH_PER_SHIFT,
+} from '../constants.js';
 import { nextRandom } from '../rng.js';
 import { radioLine } from './orders.js';
 import type { Scenario, ScenarioEvent } from './types.js';
@@ -135,7 +141,7 @@ export function drawEvent(
       let pumpId: string, minutes: number;
       [pumpId, s] = pick(s, hittablePumps);
       [minutes, s] = range(s, 20, 40, 5);
-      params = { pumpId, recircFactor: tidy(Math.max(0.35, 0.7 - 0.1 * d)), minutes: Math.round(minutes * d) };
+      params = { pumpId, recircFactor: tidy(Math.max(0.35, 0.7 - 0.1 * d)), minutes: Math.min(POWER_DIP_MAX_MINUTES, Math.round(minutes * d)) };
       break;
     }
     case 'storm': {
