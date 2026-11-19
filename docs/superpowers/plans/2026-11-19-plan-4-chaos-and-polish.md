@@ -200,7 +200,7 @@ export type SensorFault = { kind: 'freeze'; value: number } | { kind: 'noise'; a
   - At game creation and at every shift end, the simulator calls `drawChaosPlan` for shift `shiftNumber + 1` (game creation draws shift 1) and stores it in `chaos.pending`.
   - `startShift` moves `pending` → `active` (`fired: []`, `lastFiredMinute: null`, `nextEventId` = queue length + 1), sets `shift.target.productM3 = plan.targetM3`, sets `chaos.lastWasHell = plan.hell`, and clears `crew` and every per-shift fault (all `faults` fields reset; `stageDerate` all 1).
   - The `shiftStart` event carries `hell` and `orders`.
-  - At shift end, the summary's `events` come from `active.fired`, plus any never-fired queue entries listed as `{cleared:false, how:null, atMinute:-1}`? **No:** never-fired entries are omitted. `hell` = `plan.hell`. Then `active = null`.
+  - At shift end, the summary's `events` come from `active.fired`; never-fired queue entries are omitted. `hell` = `plan.hell`. Then `active = null`.
   - Status: `orders` = `pending.orders` in handover, `active.plan.orders` while running or paused, else null. `hell` = `active.plan.hell` while running, else null.
 
 - [ ] **Step 1: Failing tests:**
@@ -300,7 +300,7 @@ export type SensorFault = { kind: 'freeze'; value: number } | { kind: 'noise'; a
 ### Task 7: Sharp events — tubeLeak, vacuumLoss, sensorFailure
 
 **Files:**
-- Modify: `services/simulator/src/scenario/sharp.ts`, `services/simulator/src/units/product.ts` (adds `faults.tubeLeak.ppm` to salinity), `services/simulator/src/units/stages.ts` (multiplies stage distillate by `stageDerate`; ejector failure lowers vacuum quality by `ratePerMin` per plant minute, offset by load), `services/simulator/src/tick.ts` (`stepLoops` reads each loop's process value through `measured(s, loopId, trueValue)`)`), `services/simulator/src/emit.ts` (telemetry for faulted loop sensors goes through `measured`)
+- Modify: `services/simulator/src/scenario/sharp.ts`, `services/simulator/src/units/product.ts` (adds `faults.tubeLeak.ppm` to salinity), `services/simulator/src/units/stages.ts` (multiplies stage distillate by `stageDerate`; ejector failure lowers vacuum quality by `ratePerMin` per plant minute, offset by load), `services/simulator/src/tick.ts` (`stepLoops` reads each loop's process value through `measured(s, loopId, trueValue)`), `services/simulator/src/emit.ts` (telemetry for faulted loop sensors goes through `measured`)
 - Create: `services/simulator/src/sensors.ts` exporting `measured(s: PlantState, loop: LoopSensorId, trueValue: number): number`
 - Test: `services/simulator/src/scenario/sharp.test.ts`, `services/simulator/src/sensors.test.ts`
 
