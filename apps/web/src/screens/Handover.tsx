@@ -87,6 +87,7 @@ function Condition({ readings, summary }: { readings: Record<string, number>; su
 export function Handover({ status, readings, events, onStartShift, onQuit, busy = false }: HandoverProps) {
   const [mode, setMode] = useState<LoopMode>('auto');
   const titleId = useId();
+  const ordersId = useId();
   const summary = lastSummary(events);
   // status.shiftNumber is the last STARTED shift (0 before the first), so the shift about to start is one more.
   const n = (status?.shiftNumber ?? 0) + 1;
@@ -99,12 +100,12 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
     <main className="screen screen--board" data-screen="handover">
       <article className="sheet" aria-labelledby={titleId}>
         <SheetHead kicker="Shift log" title={`Shift ${n} handover`} id={titleId} />
-        <section aria-label="Next shift">
-          <h2>Orders for shift {n}</h2>
+        <section aria-labelledby={ordersId}>
+          <h2 id={ordersId}>Orders for shift {n}</h2>
           <dl>
             <dt>Water target</dt><dd>{target}</dd>
             {orders && <><dt>Salinity limit</dt><dd>{fmt(orders.maxSalinityPpm, 0, 'ppm')}</dd></>}
-            {orders && <><dt>Budget</dt><dd>{usd(orders.budgetUsd)}</dd></>}
+            {orders && <><dt>Fuel budget</dt><dd>{usd(orders.budgetUsd)}</dd></>}
             <dt>Balance</dt><dd>{usd(status?.balanceUsd)}</dd>
           </dl>
           {orders && orders.briefing.length > 0 && (

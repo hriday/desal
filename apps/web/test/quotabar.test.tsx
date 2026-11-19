@@ -57,6 +57,15 @@ describe('Radio', () => {
     expect(onOpen).toHaveBeenCalledWith('product');
     expect(onExpire).toHaveBeenCalled();
   });
+  it('is a real button inside a live status region, so assistive tech can both hear and click it', () => {
+    const radio = radioReducer(initialRadio, { type: 'push', eventId: 1, kind: 'storm', text: 'Storm surge' });
+    const { getByRole } = render(<Radio radio={radio} onExpire={() => {}} onOpen={() => {}} />);
+    const button = getByRole('button', { name: /Storm surge/ });
+    expect(getByRole('status').contains(button)).toBe(true);
+    cleanup();
+    // The live region stays mounted while there is no call, so the next call is announced.
+    expect(render(<Radio radio={initialRadio} onExpire={() => {}} onOpen={() => {}} />).getByRole('status').textContent).toBe('');
+  });
   it('expires after 6 s', () => {
     vi.useFakeTimers();
     const radio = radioReducer(initialRadio, { type: 'push', eventId: 1, kind: 'storm', text: 'x' });

@@ -36,8 +36,10 @@
 .quota__fill--bad { background: var(--bad); }
 .quota__pace { font-weight: 700; }
 
+/* The radio's live region is fixed out of the room's flow, so it adds no gap when empty. */
+.radio-live { position: fixed; right: 16px; bottom: 16px; z-index: 20; }
 .radio {
-  position: fixed; right: 16px; bottom: 16px; max-width: 360px; z-index: 20; text-align: left; cursor: pointer;
+  display: block; max-width: 360px; text-align: left; cursor: pointer;
   padding: 10px 12px; border: 1px solid var(--warn); border-radius: 4px; background: var(--panel); color: var(--text);
   font: 13px/1.4 var(--mono);
 }

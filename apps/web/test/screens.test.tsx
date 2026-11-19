@@ -67,6 +67,8 @@ describe('Handover', () => {
     expect(t).toContain('4,100 m³');
     expect(t).toContain('22 ppm');
     expect(t).toContain('$13,000');
+    // The orders' budget is fuel guidance, not the allocation the account is credited.
+    expect(getByRole('region', { name: 'Orders for shift 1' }).querySelector('dl')?.textContent).toContain('Fuel budget$13,000');
     expect(t).not.toContain('≈');
     const notes = getByRole('list', { name: "Supervisor's notes" });
     expect(notes.querySelectorAll('li')).toHaveLength(2);
@@ -102,7 +104,7 @@ describe('Handover', () => {
     expect(first.getByRole('button', { name: 'Start shift 1' })).toBeTruthy();
     // The whole handover is one shift-log sheet: orders, condition, mode and the Start button.
     const sheet = first.getByRole('article', { name: 'Shift 1 handover' });
-    for (const name of ['Plant condition', 'Next shift']) expect(sheet.contains(first.getByRole('region', { name }))).toBe(true);
+    for (const name of ['Plant condition', 'Orders for shift 1']) expect(sheet.contains(first.getByRole('region', { name }))).toBe(true);
     expect(sheet.contains(first.getByRole('group', { name: 'Control mode' }))).toBe(true);
     expect(sheet.contains(first.getByRole('button', { name: 'Start shift 1' }))).toBe(true);
     expect(first.container.textContent).toContain('≈ 3,900 m³');

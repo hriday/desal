@@ -179,6 +179,15 @@ describe('eventText', () => {
     const shiftId = standing.shiftId!;
     expect(shiftAccount([standing, standing, SAMPLES.accountChange], shiftId)).toMatchObject({ standingUsd: 180, repairsUsd: 8000 });
   });
+  it('crew charges count toward the shift spend, on their own line', () => {
+    const crew = { ...SAMPLES.accountChange, deltaUsd: -800, cause: 'crew' as const };
+    const shiftId = crew.shiftId!;
+    expect(shiftAccount([crew, crew, SAMPLES.accountChange], shiftId)).toMatchObject({ crewUsd: 1600, repairsUsd: 8000 });
+    const status = { ...demoStatus(), shiftId } as PlantStatus;
+    const { getByText } = render(<ShiftView {...empty} status={status} readings={{ 'fuel.shiftCostUsd': 1000 }} events={[crew]} />);
+    expect(getByText('of which crew').nextSibling?.textContent).toBe('$800');
+    expect(getByText('Spent this shift').nextSibling?.textContent).toBe('$1,800');
+  });
 
   it('reads the way an operator would say it', () => {
     expect(eventText(SAMPLES.scenario)).toBe('Algal bloom in the intake water: chlorophyll rising toward 8 µg/L.');

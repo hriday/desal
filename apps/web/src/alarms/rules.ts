@@ -23,6 +23,8 @@ export function requiredIntakeM3h(seawaterC: number | undefined): number {
   return INTAKE_REQUIRED_BASE_M3H * (1 + INTAKE_REQUIRED_PER_C * hot);
 }
 
+const PUMP_IDS = ['P-101', 'P-102', 'P-103'] as const;
+
 const stageKey = (i: number) => `s${String(i).padStart(2, '0')}`;
 
 /** The worst stage (1-based) for a per-stage reading, or null when none is known. */
@@ -65,6 +67,11 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
   }
   const fouling = r('intake.screenFouling');
   add('screen', 'intake', high(fouling, 0.3, 0.5), `Intake screen fouling ${fouling?.toFixed(2)}`);
+  // A fast pump on fouled screens cavitates and wears (e.g. a storm's stopgap of more pump speed).
+  for (const id of PUMP_IDS) {
+    const cav = r(`intake.${id}.cavitation`);
+    add(`cavitation-${id}`, 'intake', high(cav, 0.1, 0.5), `${id} cavitating ${cav?.toFixed(2)}: slow it or clean the screens`);
+  }
   const chl = r('pretreat.chlorophyllUgL');
   add('chlorophyll', 'intake', high(chl, 4, Infinity), `Intake chlorophyll ${chl?.toFixed(1)} µg/L`);
 

@@ -1,5 +1,6 @@
 import type { PlantStatus } from '@desal/schema';
 import { fmt, ticksToHm, usd } from '../equipment/format';
+import { CREW_JOBS } from '../plantConstants';
 import { crewMinutesLeft, paceState, progress, type Pace } from './quota';
 
 const PACE: Record<Pace, { text: string; tone: 'ok' | 'warn' | 'bad' }> = {
@@ -7,10 +8,6 @@ const PACE: Record<Pace, { text: string; tone: 'ok' | 'warn' | 'bad' }> = {
   behind: { text: 'BEHIND', tone: 'warn' },
   outOfReach: { text: 'OUT OF REACH', tone: 'bad' },
   done: { text: 'TARGET MET', tone: 'ok' },
-};
-
-const CREW_TEXT: Record<string, string> = {
-  plugTubes: 'Plugging tubes', repairEjector: 'Repairing ejector', replaceSensor: 'Replacing sensor', cleanScreens: 'Cleaning screens',
 };
 
 /** The shift quota: progress, pace, time left, balance, off-spec note and crew job. Only in a running or paused shift. */
@@ -35,7 +32,7 @@ export function QuotaBar({ status }: { status: PlantStatus | null }) {
       )}
       {status.crew && (
         <span className="quota__item">
-          Crew: {CREW_TEXT[status.crew.job] ?? status.crew.job}, {crewMinutesLeft(status.crew.remainingTicks)} min left
+          Crew: {CREW_JOBS[status.crew.job]?.doing ?? status.crew.job}, {crewMinutesLeft(status.crew.remainingTicks)} min left
         </span>
       )}
     </section>

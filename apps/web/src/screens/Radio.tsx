@@ -17,10 +17,14 @@ export function Radio({ radio, onExpire, onOpen }: RadioProps) {
     const t = setTimeout(onExpire, RADIO_MS);
     return () => clearTimeout(t);
   }, [id, onExpire]);
-  if (!cur) return null;
+  // The live region stays mounted so each new call is announced; the call itself is a plain button.
   return (
-    <button type="button" className="radio" role="status" data-kind={cur.kind} onClick={() => { onOpen(cur.monitor); onExpire(); }}>
-      <span className="radio__tag">RADIO</span> {cur.text}
-    </button>
+    <div role="status" className="radio-live">
+      {cur && (
+        <button type="button" className="radio" data-kind={cur.kind} onClick={() => { onOpen(cur.monitor); onExpire(); }}>
+          <span className="radio__tag">RADIO</span> {cur.text}
+        </button>
+      )}
+    </div>
   );
 }

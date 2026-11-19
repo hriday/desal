@@ -27,6 +27,15 @@ describe('alarmsFor', () => {
     expect(level('tbt', clean({ 'heater.tbtC': 113 }))).toBe('bad');
   });
 
+  it('cavitation: a pump at 0.1 is warn, at 0.5 bad, on the intake monitor, named by pump', () => {
+    expect(level('cavitation-P-102', clean({ 'intake.P-102.cavitation': 0.099 }))).toBeUndefined();
+    expect(level('cavitation-P-102', clean({ 'intake.P-102.cavitation': 0.1 }))).toBe('warn');
+    expect(level('cavitation-P-102', clean({ 'intake.P-102.cavitation': 0.5 }))).toBe('bad');
+    const a = alarmsFor(demoStatus(), clean({ 'intake.P-101.cavitation': 0.3 })).find((x) => x.id === 'cavitation-P-101');
+    expect(a).toMatchObject({ monitor: 'intake', level: 'warn' });
+    expect(a?.text).toBe('P-101 cavitating 0.30: slow it or clean the screens');
+  });
+
   it('stage level: any stage at 0.5 is warn, at 0.65 bad', () => {
     expect(level('stageLevel', clean({ 'stages.s07.levelM': 0.499 }))).toBeUndefined();
     expect(level('stageLevel', clean({ 'stages.s07.levelM': 0.5 }))).toBe('warn');
