@@ -1,6 +1,7 @@
 import type { Command, GameEndReason, GameScore, PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
 import { commandKey } from '../commands';
 import type { ConnState } from '../net/socket';
+import { initialRadio, radioReducer, type RadioState } from './radio';
 import { pushFrame, type Trends } from './trends';
 
 /** 'resuming': a stored game is being resumed; it ends with the first status, a 'no game' error, or a timeout. */
@@ -37,6 +38,9 @@ export interface State {
   epoch: number;
   /** No status for a while although the socket is open (the watchdog in GameProvider). */
   telemetryLost: boolean;
+  radio: RadioState;
+  /** plantTime of the session's first status: radio ignores scenario events older than this (a resume's replay). */
+  sessionStartPlantTime: number | null;
 }
 
 export type Action =
@@ -49,6 +53,7 @@ export type Action =
   // Dispatch only when socket.send() returned true; a command that was never sent must not show as pending.
   | { type: 'sent'; command: Command; commandId?: string }
   | { type: 'dismissToast' }
+  | { type: 'radioExpire' }
   // No gameStart answer within the start timeout.
   | { type: 'startTimeout' }
   // No status within the watchdog window while connected.
@@ -68,7 +73,7 @@ export function initialState(resuming = false): State {
   return {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
     pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
-    epoch: 0, telemetryLost: false,
+    epoch: 0, telemetryLost: false, radio: initialRadio, sessionStartPlantTime: null,
   };
 }
 
@@ -120,6 +125,12 @@ function addEvent(s: State, e: PlantEvent): State {
   }
   let next: State = { ...s, epoch: e.host ? s.epoch : e.epoch, events: [...s.events, e].slice(-MAX_EVENTS) };
   switch (e.type) {
+    case 'scenario':
+      // Only events from this session's own plant time on: a resume must not replay old radio calls.
+      if (s.sessionStartPlantTime !== null && e.plantTime >= s.sessionStartPlantTime) {
+        next = { ...next, radio: radioReducer(s.radio, { type: 'push', eventId: e.eventId, kind: e.kind, text: e.radio, message: e.message }) };
+      }
+      break;
     case 'gameEnd':
       next = { ...next, session: 'over', score: e.score, endReason: e.reason };
       break;
@@ -153,7 +164,8 @@ function onServer(s: State, msg: ServerMsg): State {
       // Once over, only reset or startClicked leave it: a late status (of any phase) never revives the run.
       const session = s.session === 'over' ? 'over' : sessionFor(msg.status);
       const epoch = Math.max(s.epoch, msg.status.epoch);
-      return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch, telemetryLost: false };
+      return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch, telemetryLost: false,
+        sessionStartPlantTime: s.sessionStartPlantTime ?? msg.status.plantTime };
     }
     case 'frame':
       return { ...s, readings: { ...s.readings, ...msg.readings }, trends: pushFrame(s.trends, msg.plantTime, msg.readings) };
@@ -209,6 +221,7 @@ export function reducer(s: State, a: Action): State {
       if (a.commandId) commandKeys.set(a.commandId, key);
       return { ...s, pending: new Map(s.pending).set(key, { command: a.command, age: 0 }), commandKeys };
     }
+    case 'radioExpire': return { ...s, radio: radioReducer(s.radio, { type: 'expire' }) };
     case 'dismissToast': return { ...s, toast: null };
     case 'startTimeout': return s.session === 'starting' ? startFailed(s) : s;
     case 'telemetryLost': return s.telemetryLost ? s : { ...s, telemetryLost: true };

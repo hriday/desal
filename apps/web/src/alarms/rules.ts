@@ -36,7 +36,7 @@ function worstStage(readings: Record<string, number>, field: string): { n: numbe
 }
 
 /** Monitor that owns a loop, for controller-fault hints ("Controller fault on loop tbt: drift."). */
-function faultMonitor(text: string): MonitorId {
+export function faultMonitor(text: string): MonitorId {
   const loop = /loop (\w+)/.exec(text)?.[1];
   if (loop === 'tbt') return 'heater';
   if (loop === 'intakeFlow') return 'intake';

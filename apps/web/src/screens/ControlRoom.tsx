@@ -5,6 +5,8 @@ import { ExpandedView } from '../expanded/ExpandedView';
 import { useGame } from '../state/GameProvider';
 import { AlarmStrip } from '../wall/AlarmStrip';
 import { Wall } from '../wall/Wall';
+import { QuotaBar } from './QuotaBar';
+import { Radio } from './Radio';
 import { TopBar } from './TopBar';
 import './room.css';
 
@@ -13,9 +15,10 @@ import './room.css';
  * (Esc or Back returns to the wall). A gameEnd swaps the whole screen for GameOver via the session.
  */
 export function ControlRoom() {
-  const { state, send } = useGame();
+  const { state, send, dispatch } = useGame();
   const { status, readings, events } = state;
   const [opened, setOpened] = useState<MonitorId | null>(null);
+  const expireRadio = useCallback(() => dispatch({ type: 'radioExpire' }), [dispatch]);
   const close = useCallback(() => setOpened(null), []);
   const ctx = useMemo(
     () => alarmContext(events, status?.shiftId ?? null, status?.shiftTarget, status?.loops),
@@ -26,6 +29,7 @@ export function ControlRoom() {
     <main className="room" data-screen="room" data-game-id={state.gameId ?? undefined}>
       <TopBar status={status} conn={state.conn} quitting={state.pending.has('quitGame')} onQuit={() => send(quit())} />
       <p className="room__narrow">This control room is best on a larger screen.</p>
+      <QuotaBar status={status} />
       <AlarmStrip alarms={alarms} onOpen={setOpened} />
       {opened ? (
         <ExpandedView
@@ -35,6 +39,7 @@ export function ControlRoom() {
       ) : (
         <Wall status={status} readings={readings} target={ctx.target} alarms={alarms} onOpen={setOpened} />
       )}
+      <Radio radio={state.radio} onExpire={expireRadio} onOpen={setOpened} />
     </main>
   );
 }

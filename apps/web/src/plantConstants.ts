@@ -10,3 +10,5 @@ export const INTAKE_REQUIRED_PER_C = 0.03;
 export const TICK_PLANT_S = 40;
 /** STAGE_COUNT: number of evaporator stages. */
 export const STAGE_COUNT = 20;
+/** DESIGN_PRODUCT_M3H: design product flow (m3/h). Mirrors the simulator's NOMINAL.productM3h at 93.5 C TBT (services/simulator/src/state.ts). */
+export const DESIGN_PRODUCT_M3H = 531.9;

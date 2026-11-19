@@ -18,3 +18,17 @@
 @media (max-width: 899px) {
   .room__narrow { display: block; }
 }
+
+.quota { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; padding: 6px 4px; font: 13px/1.3 var(--mono); }
+.quota__track { flex: 1 0 100%; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.quota__fill { height: 100%; background: var(--ok); }
+.quota__fill--warn { background: var(--warn); }
+.quota__fill--bad { background: var(--bad); }
+.quota__pace { font-weight: 700; }
+
+.radio {
+  position: fixed; right: 16px; bottom: 16px; max-width: 360px; z-index: 20; text-align: left; cursor: pointer;
+  padding: 10px 12px; border: 1px solid var(--warn); border-radius: 4px; background: var(--panel); color: var(--text);
+  font: 13px/1.4 var(--mono);
+}
+.radio__tag { color: var(--warn); font-weight: 700; margin-right: 6px; }
