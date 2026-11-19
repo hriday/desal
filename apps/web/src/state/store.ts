@@ -2,7 +2,8 @@ import type { Command, GameEndReason, GameScore, PlantEvent, PlantStatus, Server
 import { commandKey } from '../commands';
 import { pushFrame, type Trends } from './trends';
 
-export type Session = 'start' | 'starting' | 'handover' | 'room' | 'over';
+/** 'resuming': a stored game is being resumed; it ends with the first status, a 'no game' error, or a timeout. */
+export type Session = 'start' | 'starting' | 'resuming' | 'handover' | 'room' | 'over';
 export type Conn = 'connecting' | 'open' | 'closed';
 export type Toast = { kind: 'rejected' | 'capacity' | 'error'; message: string };
 
@@ -34,15 +35,18 @@ export type Action =
   | { type: 'conn'; conn: Conn }
   | { type: 'startClicked' }
   | { type: 'reset' }
+  // The resume got no answer in time: offer a new run.
+  | { type: 'resumeTimeout' }
   // Dispatch only when socket.send() returned true; a command that was never sent must not show as pending.
   | { type: 'sent'; command: Command; commandId?: string }
   | { type: 'dismissToast' };
 
 export const MAX_EVENTS = 200;
 
-export function initialState(): State {
+/** `resuming`: a gameId is stored, so the socket will try to resume it. */
+export function initialState(resuming = false): State {
   return {
-    session: 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
+    session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
     pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: 'connecting', everOpen: false,
   };
 }
@@ -121,8 +125,8 @@ function onServer(s: State, msg: ServerMsg): State {
         pending.set(k, { ...p, age: p.age + 1 });
       }
       const commandKeys = new Map([...s.commandKeys].filter(([, k]) => pending.has(k)));
-      // gameEnd (or a terminal error) wins over any later status for the same game.
-      const session = s.session === 'over' && msg.status.phase !== 'handover' ? 'over' : sessionFor(msg.status);
+      // Once over, only reset or startClicked leave it: a late status (of any phase) never revives the run.
+      const session = s.session === 'over' ? 'over' : sessionFor(msg.status);
       return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session };
     }
     case 'frame':
@@ -152,6 +156,7 @@ export function reducer(s: State, a: Action): State {
       return a.conn === 'closed'
         ? { ...s, conn: a.conn, pending: new Map(), commandKeys: new Map() }
         : { ...s, conn: a.conn, everOpen: s.everOpen || a.conn === 'open' };
+    case 'resumeTimeout': return s.session === 'resuming' ? { ...s, session: 'start' } : s;
     case 'reset': return { ...initialState(), conn: s.conn, everOpen: s.everOpen };
     case 'startClicked': return { ...initialState(), conn: s.conn, everOpen: s.everOpen, session: 'starting' };
     case 'sent': {

@@ -93,8 +93,16 @@ describe('ControlRoom', () => {
     const { container, ws } = mount(running());
     fireEvent.click(container.querySelector('[data-monitor="fuel"]')!);
     ws.push({ t: 'event', event: ev({ seq: 9, type: 'gameEnd', reason: 'bankrupt', score: { totalProductM3: 100, shiftsCompleted: 2, balanceUsd: -5 } }) });
-    expect(container.querySelector('[data-screen="over"]')).not.toBeNull();
+    const over = container.querySelector('[data-screen="over"]')!;
+    expect(over).not.toBeNull();
     expect(container.querySelector('[data-expanded]')).toBeNull();
+    const t = over.textContent!;
+    expect(t).toContain('The budget ran out');
+    expect(over.querySelector('[aria-label="Water delivered"]')!.textContent).toBe('100');
+    expect(t).toMatch(/Shifts completed\s*2/);
+    expect(t).toMatch(/Final balance\s*-\$5/);
+    // The run is over: a reload must not try to resume it.
+    expect(sessionStorage.getItem(GAME_ID_KEY)).toBeNull();
   });
 
   it('quit asks for confirmation and sends quitGame once', () => {
@@ -129,6 +137,77 @@ describe('Connection overlay', () => {
     const overlay = getByRole('alert');
     expect(overlay.textContent).toContain('Reconnecting…');
     expect(overlay.className).toContain('overlay');
+  });
+
+  it('makes the page inert while dropped (clicks do nothing) and live again on reconnect', () => {
+    vi.useFakeTimers();
+    try {
+      const { container, ws } = mount(running());
+      const app = container.querySelector('.app')!;
+      expect(app.hasAttribute('inert')).toBe(false);
+      ws.drop();
+      expect(app.hasAttribute('inert')).toBe(true);
+      fireEvent.click(container.querySelector('[data-monitor="stages"]')!);
+      expect(container.querySelector('[data-expanded]')).toBeNull();
+      act(() => { vi.advanceTimersByTime(1000); }); // the socket's first backoff
+      FakeWS.all[1]!.open();
+      expect(app.hasAttribute('inert')).toBe(false);
+      fireEvent.click(container.querySelector('[data-monitor="stages"]')!);
+      expect(container.querySelector('[data-expanded="stages"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('Resuming a stored game', () => {
+  const mountStored = () => {
+    sessionStorage.setItem(GAME_ID_KEY, DEMO_GAME_ID);
+    FakeWS.all = [];
+    const r = render(
+      <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
+    );
+    FakeWS.all[0]!.open();
+    return { ...r, ws: FakeWS.all[0]! };
+  };
+
+  it('shows "Resuming your game…" with no Start button until the status arrives', () => {
+    const { container, queryByRole, getByText, ws } = mountStored();
+    expect(ws.sentTypes()).toEqual(['resume']);
+    expect(getByText('Resuming your game…')).toBeTruthy();
+    expect(queryByRole('button', { name: /Start a run/ })).toBeNull();
+    ws.push({ t: 'game', gameId: DEMO_GAME_ID });
+    expect(container.querySelector('[data-screen="resuming"]')).not.toBeNull();
+    ws.push({ t: 'status', status: running() });
+    expect(container.querySelector('[data-screen="room"]')).not.toBeNull();
+  });
+
+  it('"no game" returns to start', () => {
+    const { container, ws } = mountStored();
+    ws.push({ t: 'error', reason: 'no game' });
+    expect(container.querySelector('[data-screen="start"]')).not.toBeNull();
+  });
+
+  it('gives up after 5 s: back to start and the stored id is cleared', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = mountStored();
+      act(() => { vi.advanceTimersByTime(4900); });
+      expect(container.querySelector('[data-screen="resuming"]')).not.toBeNull();
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(container.querySelector('[data-screen="start"]')).not.toBeNull();
+      expect(sessionStorage.getItem(GAME_ID_KEY)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Play again clears the stored id through reset', () => {
+    const { getByRole, ws } = mountStored();
+    ws.push({ t: 'status', status: running({ phase: 'over' }) });
+    sessionStorage.setItem(GAME_ID_KEY, DEMO_GAME_ID);
+    fireEvent.click(getByRole('button', { name: 'Play again' }));
+    expect(sessionStorage.getItem(GAME_ID_KEY)).toBeNull();
   });
 });
 

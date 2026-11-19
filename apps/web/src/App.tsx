@@ -1,4 +1,4 @@
-import { Component, useCallback, useState, type ErrorInfo, type ReactNode } from 'react';
+import { Component, useCallback, useState, type ErrorInfo, type ReactNode, type SyntheticEvent } from 'react';
 import { alarmsFor, MONITORS, type MonitorId } from './alarms/rules';
 import { demoEvents, demoReadings, demoStatus, demoTarget, demoTrends } from './demo';
 import { ExpandedView } from './expanded/ExpandedView';
@@ -40,6 +40,8 @@ function Demo({ open }: { open: MonitorId | null }) {
   );
 }
 
+const swallow = (e: SyntheticEvent) => { e.preventDefault(); e.stopPropagation(); };
+
 export function Screens() {
   const { state, dispatch, send, newGame } = useGame();
   const capacity = state.toast?.kind === 'capacity' ? state.toast.message : null;
@@ -49,6 +51,9 @@ export function Screens() {
     case 'start':
     case 'starting':
       body = <Start onStart={newGame} starting={state.session === 'starting'} capacityMessage={capacity} />;
+      break;
+    case 'resuming':
+      body = <main className="screen" data-screen="resuming"><p>Resuming your game…</p></main>;
       break;
     case 'handover':
       body = (
@@ -66,8 +71,9 @@ export function Screens() {
   }
   return (
     <>
-      {/* inert: under the connection overlay nothing can be clicked or focused. */}
-      <div className="app" inert={blocked}>{body}</div>
+      {/* Under the connection overlay nothing can be focused (inert) or clicked (the capture guard
+          also covers synthetic clicks and browsers without inert). */}
+      <div className="app" inert={blocked} onClickCapture={blocked ? swallow : undefined}>{body}</div>
       <ConnOverlay conn={state.conn} everOpen={state.everOpen} />
       <Toast toast={capacity ? null : state.toast} onDismiss={() => dispatch({ type: 'dismissToast' })} />
     </>

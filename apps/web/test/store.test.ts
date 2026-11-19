@@ -70,6 +70,31 @@ describe('store reducer', () => {
     expect(s.session).toBe('over');
   });
 
+  it('once over, a late status of any phase (even handover) does not leave over; only reset does', () => {
+    let s = server(initialState(), statusMsg({ phase: 'running' }));
+    s = server(s, eventMsg({ seq: 3, type: 'gameEnd', reason: 'quit', score: { totalProductM3: 1, shiftsCompleted: 0, balanceUsd: 1 } }));
+    expect(s.session).toBe('over');
+    s = server(s, statusMsg({ phase: 'handover' }));
+    expect(s.session).toBe('over');
+    s = server(s, statusMsg({ phase: 'running' }));
+    expect(s.session).toBe('over');
+    s = reducer(s, { type: 'reset' });
+    expect(s.session).toBe('start');
+  });
+
+  it('resuming: initial session when a game is stored; a status takes over, no game returns to start, timeout to start', () => {
+    expect(initialState().session).toBe('start');
+    const r = initialState(true);
+    expect(r.session).toBe('resuming');
+    expect(server(r, { t: 'game', gameId }).session).toBe('resuming');
+    expect(server(r, statusMsg({ phase: 'running' })).session).toBe('room');
+    expect(server(r, { t: 'error', reason: 'no game' }).session).toBe('start');
+    expect(reducer(r, { type: 'resumeTimeout' }).session).toBe('start');
+    // A timeout that fires after the game resumed changes nothing.
+    const room = server(r, statusMsg({ phase: 'running' }));
+    expect(reducer(room, { type: 'resumeTimeout' }).session).toBe('room');
+  });
+
   it('startClicked -> starting; game message records gameId', () => {
     let s = reducer(initialState(), { type: 'startClicked' });
     expect(s.session).toBe('starting');

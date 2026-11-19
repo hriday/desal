@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { GameEndReasonSchema, type PlantEvent } from '@desal/schema';
 import { Screens } from '../src/App';
 import { demoReadings, demoStatus } from '../src/demo';
@@ -108,6 +108,7 @@ describe('Screens with provider', () => {
       <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
     );
     expect(container.querySelector('[data-screen="start"]')).not.toBeNull();
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); // the socket opens (the overlay blocks clicks until then)
     fireEvent.click(getByRole('button', { name: 'Start a run' }));
     expect(socks[0]!.sent.map((s) => JSON.parse(s).t)).toContain('newGame');
     expect(container.querySelector('[data-screen="start"]')).not.toBeNull(); // still waiting for the plant

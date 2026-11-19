@@ -1,7 +1,7 @@
 import type { Command } from '@desal/schema';
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type ReactNode } from 'react';
 import { cmdMsg } from '../commands';
-import { createSocket, defaultWsUrl } from '../net/socket';
+import { createSocket, defaultWsUrl, storedGameId, storeGameId } from '../net/socket';
 import { initialState, reducer, type Action, type State } from './store';
 
 export interface Game {
@@ -13,6 +13,8 @@ export interface Game {
   newGame: () => boolean;
 }
 
+export const RESUME_TIMEOUT_MS = 5000;
+
 const Ctx = createContext<Game | null>(null);
 
 export function useGame(): Game {
@@ -22,7 +24,11 @@ export function useGame(): Game {
 }
 
 export function GameProvider({ children, url, factory }: { children: ReactNode; url?: string; factory?: (u: string) => WebSocket }) {
-  const [state, dispatch] = useReducer(reducer, undefined, initialState);
+  const [state, rawDispatch] = useReducer(reducer, null, () => initialState(storedGameId() !== null));
+  const dispatch = useCallback((a: Action) => {
+    if (a.type === 'reset') storeGameId(null); // Play again: never resume the finished run
+    rawDispatch(a);
+  }, []);
   const sock = useRef<ReturnType<typeof createSocket> | null>(null);
 
   useEffect(() => {
@@ -35,6 +41,18 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
     sock.current = s;
     return () => { s.close(); sock.current = null; };
   }, [url, factory]);
+
+  // A resume that gets no answer (no status, no 'no game') within 5 s of the socket opening gives up
+  // and offers a new run. Counting from open keeps a slow first connect from discarding the game.
+  const resuming = state.session === 'resuming' && state.conn === 'open';
+  useEffect(() => {
+    if (!resuming) return;
+    const t = setTimeout(() => {
+      storeGameId(null);
+      rawDispatch({ type: 'resumeTimeout' });
+    }, RESUME_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [resuming]);
 
   const send = useCallback((command: Command) => {
     const { msg, commandId } = cmdMsg(command);

@@ -18,10 +18,10 @@ export function defaultWsUrl(): string {
   );
 }
 
-function storedGameId(): string | null {
+export function storedGameId(): string | null {
   try { return sessionStorage.getItem(GAME_ID_KEY); } catch { return null; }
 }
-function storeGameId(id: string | null): void {
+export function storeGameId(id: string | null): void {
   try { if (id) sessionStorage.setItem(GAME_ID_KEY, id); else sessionStorage.removeItem(GAME_ID_KEY); } catch { /* storage unavailable */ }
 }
 
@@ -67,6 +67,7 @@ export function createSocket(
       const m = r.data;
       if (m.t === 'game') storeGameId(m.gameId);
       else if (m.t === 'error' && (m.reason === 'game ended' || m.reason === 'no game')) storeGameId(null);
+      else if (m.t === 'event' && m.event.type === 'gameEnd') storeGameId(null); // nothing left to resume
       onMsg(m);
     };
     sock.onclose = () => {

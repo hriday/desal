@@ -27,7 +27,7 @@ export function BrineHeater({ status, readings }: EquipmentProps) {
         <path d="M10 18 C6 13 9 9 10 6 C12 10 15 13 10 18Z" fill="#ffd33d" />
       </g>
       <text x={4} y={12} fill={C.muted} fontSize={7}>SP {fmt(sp, 1, '°C')}</text>
-      <text x={196} y={12} fill={C.muted} fontSize={7} textAnchor="end">burner {fmt(cond === undefined ? undefined : cond * 100, 0, '%')}</text>
+      <text x={196} y={12} fill={C.muted} fontSize={7} textAnchor="end">burner health {fmt(cond === undefined ? undefined : cond * 100, 0, '%')}</text>
       <text x={4} y={102} fill={tbt !== undefined && tbt >= 112 ? tbtColor(tbt) : C.text} fontSize={8}>TBT {fmt(tbt, 1, '°C')}</text>
       <text x={196} y={102} fill={C.text} fontSize={8} textAnchor="end">Firing {fmt(firing, 0, '%')}</text>
     </svg>
