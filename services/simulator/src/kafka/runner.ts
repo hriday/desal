@@ -74,13 +74,18 @@ export function kafkaIO(kafka: KafkaInstance): SimIO {
   const producer = kafka.producer({ 'message.timeout.ms': 5000 });
   // Commands consumer, group `desal-sim`: Kafka stores the group's committed
   // offset, so after a restart we continue after the last command we consumed
-  // instead of replaying old ones. Offsets auto-commit after eachMessage returns.
+  // instead of replaying old ones. After eachMessage returns, the offset is only
+  // *stored* in the client; librdkafka commits stored offsets to Kafka every ~5 s
+  // (auto.commit.interval.ms) and on clean disconnect.
   //
-  // Delivery semantic: a command is committed once it is queued, but the career
-  // is only saved every 30 ticks. Commands consumed after the last snapshot and
-  // before a crash are therefore lost (not replayed): fine for a game. A future
-  // improvement is storing the command offset inside the snapshot and seeking to
-  // it on load, which makes "state + position" atomic.
+  // Delivery semantic, after a crash (two windows):
+  //  - Commands applied after the last snapshot are lost: their effect is not in
+  //    the snapshot (the career is saved every 30 ticks), and they are not
+  //    replayed if their offset was already committed. Fine for a game.
+  //  - Commands inside the last uncommitted ~5 s window are redelivered
+  //    (at-least-once), so they may be applied again.
+  // A future improvement is storing the command offset inside the snapshot and
+  // seeking to it on load, which makes "state + position" atomic.
   const groupId = commandsGroup();
   const consumer = kafka.consumer({ kafkaJS: { groupId, fromBeginning: false } });
   const topic = topicName(TOPICS.commands);
