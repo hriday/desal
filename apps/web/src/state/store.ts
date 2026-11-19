@@ -31,6 +31,7 @@ export type Action =
   | { type: 'server'; msg: ServerMsg }
   | { type: 'conn'; conn: Conn }
   | { type: 'startClicked' }
+  | { type: 'reset' }
   // Dispatch only when socket.send() returned true; a command that was never sent must not show as pending.
   | { type: 'sent'; command: Command; commandId?: string }
   | { type: 'dismissToast' };
@@ -146,6 +147,7 @@ export function reducer(s: State, a: Action): State {
       return a.conn === 'closed'
         ? { ...s, conn: a.conn, pending: new Map(), commandKeys: new Map() }
         : { ...s, conn: a.conn };
+    case 'reset': return { ...initialState(), conn: s.conn };
     case 'startClicked': return { ...initialState(), conn: s.conn, session: 'starting' };
     case 'sent': {
       const key = commandKey(a.command);

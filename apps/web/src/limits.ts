@@ -48,3 +48,10 @@ export function backupOrderCostUsd(tonnes: number, grade: FuelGrade, priceUsdPer
   const lhv = Object.hasOwn(LHV_GJ_PER_T, grade) ? LHV_GJ_PER_T[grade] : LHV_GJ_PER_T.standard;
   return tonnes * lhv * priceUsdPerGJ;
 }
+
+/**
+ * Estimated water target (m3) for shift n, shown on the handover before the shift starts; once the shift
+ * runs, status.shiftTarget is authoritative. Approximates the scenario targets in
+ * services/simulator/src/scenario/library.ts (base 3900 m3, growing each shift).
+ */
+export const nextTargetEstimateM3 = (n: number): number => Math.round(3900 * (1 + 0.04 * (n - 1)));
