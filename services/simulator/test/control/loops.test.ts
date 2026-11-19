@@ -1,7 +1,7 @@
-import { LOOP_GAINS, LOOP_RANGES } from '../../src/constants.js';
+import { LOOP_ACTION, LOOP_GAINS, LOOP_RANGES } from '../../src/constants.js';
 import { loopKind } from '../../src/control/loops.js';
 import { pidStep } from '../../src/control/pid.js';
-import type { Loop } from '../../src/state.js';
+import { createInitialState, type Loop } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
 
 const G = LOOP_GAINS.tbt;
@@ -70,5 +70,49 @@ describe('loopKind / ranges', () => {
     expect(loopKind('level7')).toBe('level');
     expect(loopKind('tbt')).toBe('tbt');
     expect(LOOP_RANGES[loopKind('level20')].spMax).toBe(0.6);
+  });
+});
+
+describe('controller action', () => {
+  it('maps loop kinds to their action', () => {
+    expect(LOOP_ACTION.level).toBe('reverse');
+    expect(LOOP_ACTION.blowdown).toBe('reverse');
+    for (const k of ['tbt', 'intakeFlow', 'recirc', 'vacuum'] as const) expect(LOOP_ACTION[k]).toBe('direct');
+  });
+
+  it('a reverse loop settles a plant whose output lowers the measurement', () => {
+    // Plant: y relaxes toward 100 - u, so opening the output pulls y down (like a drain valve).
+    let loop = mk({ setpoint: 30 });
+    let y = 80;
+    for (let i = 0; i < 300; i++) {
+      loop = pidStep(loop, y, G, 0, 100, 1, 'reverse');
+      y += (100 - loop.output - y) * 0.1;
+    }
+    expect(Math.abs(y - 30)).toBeLessThan(0.5);
+    expect(loop.output).toBeGreaterThan(60);
+  });
+
+  it('a reverse loop opens its output when the measurement is above setpoint', () => {
+    const l = pidStep(mk({ setpoint: 50, output: 50, integral: 50 / G.ki }), 60, G, 0, 100, 1, 'reverse');
+    expect(l.output).toBeGreaterThan(50);
+  });
+
+  it('reverse manual -> auto is bumpless', () => {
+    const manual = pidStep(mk({ mode: 'manual', output: 60 }), 30, G, 0, 100, 40, 'reverse');
+    const auto = pidStep({ ...manual, mode: 'auto' }, 30, G, 0, 100, 40, 'reverse');
+    expect(Math.abs(auto.output - 60)).toBeLessThan(0.5);
+  });
+});
+
+describe('initial loop state', () => {
+  it('holds every initial output for one step at zero error', () => {
+    const s = createInitialState(1, 0);
+    const named = (['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum'] as const).map((k) => [k, s.loops[k]] as const);
+    const all = [...named, ...s.loops.levels.map((l) => ['level', l] as const)];
+    for (const [kind, l] of all) {
+      const { outMin, outMax } = LOOP_RANGES[kind];
+      const next = pidStep(l, l.setpoint, LOOP_GAINS[kind], outMin, outMax, 40, LOOP_ACTION[kind]);
+      expect(Math.abs(next.output - l.output)).toBeLessThan(1e-9);
+    }
   });
 });

@@ -4,7 +4,7 @@ import { applyTrip } from '../../src/safety/interlocks.js';
 import { beginAcidClean, beginRestart, restartStep, stepAcidClean, stepRestart, type Result } from '../../src/safety/restart.js';
 import { createInitialState, type PlantState } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
-import { runUntil } from './harness.js';
+import { runUntil, tickOnce } from './harness.js';
 
 function ok(r: Result): { state: PlantState; events: PlantEvent[] } {
   if ('rejected' in r) throw new Error(`unexpected rejection: ${r.rejected}`);
@@ -29,17 +29,42 @@ const isOnline = (s: PlantState): boolean => s.status === 'online';
 const progressSteps = (events: PlantEvent[]): RestartStep[] =>
   events.flatMap((e) => (e.type === 'restartProgress' && e.ok ? [e.step] : []));
 
-/** Put a manual restart at the ramp step with a known previous TBT. */
-function manualRamp(prevTbtC: number, tbtC: number): PlantState {
-  const s = tripped('manual', 0);
-  return {
-    ...s,
-    status: 'restarting',
-    restart: { step: 'ramp', stepStartedTick: s.tick, auto: false, prevTbtC },
-    heater: { ...s.heater, tbtC },
-    loops: { ...s.loops, tbt: { ...s.loops.tbt, mode: 'manual', output: 60 } },
-  };
+/** The operator's setOutput on the firing (tbt) loop, which is manual in Manual mode. */
+function setFiring(s: PlantState, output: number): PlantState {
+  return { ...s, loops: { ...s.loops, tbt: { ...s.loops.tbt, mode: 'manual', output } } };
 }
+
+/** A manual restart at the ramp step whose firing was `prevFiringPct` last tick and is `firingPct` now. */
+function manualRamp(prevFiringPct: number, firingPct: number): PlantState {
+  const s = tripped('manual', 0);
+  return setFiring(
+    {
+      ...s,
+      status: 'restarting',
+      restart: { step: 'ramp', stepStartedTick: s.tick, auto: false, prevFiringPct },
+      heater: { ...s.heater, tbtC: 95 }, // well short of online
+    },
+    firingPct,
+  );
+}
+
+/** Walk a tripped Manual plant through vacuum, recirc, ignition (burner lit), and ramp. */
+function manualAtRamp(): { state: PlantState; events: PlantEvent[] } {
+  let s = tripped('manual');
+  const events: PlantEvent[] = [];
+  for (const step of ['vacuum', 'recirc', 'ignition'] as const) {
+    const r = ok(restartStep(s, step));
+    s = r.state;
+    events.push(...r.events);
+  }
+  const lit = tickOnce(s);
+  events.push(...lit.events);
+  const r = ok(restartStep(lit.state, 'ramp'));
+  events.push(...r.events);
+  return { state: r.state, events };
+}
+
+const damageEvents = (events: PlantEvent[]) => events.filter((e) => e.type === 'damage');
 
 describe('beginRestart (Auto)', () => {
   it('brings a tripped nominal plant online within 120 ticks, reporting each step in order', () => {
@@ -56,7 +81,42 @@ describe('beginRestart (Auto)', () => {
     expect(events.some((e) => e.type === 'trip' || (e.type === 'restartProgress' && !e.ok))).toBe(false);
     expect(run.state.restart).toBeNull();
     expect(run.state.heater.tbtC).toBeGreaterThanOrEqual(run.state.loops.tbt.setpoint - 2);
+    expect(damageEvents(run.events)).toEqual([]); // the auto ramp stays below the warning rate
     expect(allFinite(run.state)).toBe(true);
+
+    // The TBT PID takes over and holds the plant online; levels stay in band throughout.
+    const after = runUntil(run.state, 300);
+    expect(after.events.some((e) => e.type === 'trip')).toBe(false);
+    expect(after.state.status).toBe('online');
+    expect(Math.abs(after.state.heater.tbtC - after.state.loops.tbt.setpoint)).toBeLessThan(2);
+  });
+
+  it('level loops keep every stage in band when the restart pushes recirc back to balance', () => {
+    // Tripped while running reduced recirc (65 % ~ 3250 m3/h): the recirc step's jump back to
+    // balance disturbs every level, and the (reverse-acting) level loops must hold them.
+    let s = tripped('auto');
+    s = { ...s, loops: { ...s.loops, recirc: { ...s.loops.recirc, output: 65 } }, brine: { ...s.brine, recircM3h: 3250 } };
+    s = runUntil(s, 30).state;
+    s = ok(beginRestart(s)).state;
+    let maxLevel = 0;
+    let minLevel = Infinity;
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < 500; i++) {
+      s = tickOnce(s).state;
+      for (const st of s.stages) {
+        maxLevel = Math.max(maxLevel, st.levelM);
+        minLevel = Math.min(minLevel, st.levelM);
+        sum += st.levelM;
+        n++;
+      }
+    }
+    expect(s.status).toBe('online');
+    expect(maxLevel).toBeLessThan(0.6); // no carryover, far from the 0.8 m flood trip
+    expect(minLevel).toBeGreaterThan(0.05);
+    // Centred on the 0.3 m setpoint. The placeholder level gains leave a slow, lightly damped
+    // swing, so this checks centring rather than settling (calibration retunes the gains).
+    expect(Math.abs(sum / n - 0.3)).toBeLessThan(0.05);
   });
 
   it('is rejected unless tripped', () => {
@@ -86,54 +146,60 @@ describe('restartStep (Manual)', () => {
     expect(rejected(restartStep(poorVacuum, 'recirc'))).toBe('step recirc requires vacuum ≥ 0.85');
   });
 
-  it('lets the operator walk the sequence and ramp the burner to online', () => {
-    let s = tripped('manual');
-    const events: PlantEvent[] = [];
-    for (const step of ['vacuum', 'recirc', 'ignition'] as const) {
-      const r = ok(restartStep(s, step));
+  it('lets the operator walk the sequence and raise firing gently to online without damage', () => {
+    const at = manualAtRamp();
+    const events = [...at.events];
+    let s = at.state;
+    for (let i = 0; i < 200 && s.status === 'restarting'; i++) {
+      s = setFiring(s, Math.min(100, s.loops.tbt.output + 8)); // 8 %/tick: under the 10 % warning
+      const r = tickOnce(s);
       s = r.state;
       events.push(...r.events);
     }
-    s = runUntil(s, 1).state; // light the burner
-    const r = ok(restartStep(s, 'ramp'));
-    events.push(...r.events);
-    // Operator opens the burner to full firing.
-    s = { ...r.state, loops: { ...r.state.loops, tbt: { ...r.state.loops.tbt, mode: 'manual', output: 100 } } };
-    const run = runUntil(s, 200, isOnline);
-    events.push(...run.events);
-    expect(run.state.status).toBe('online');
+    expect(s.status).toBe('online');
     expect(progressSteps(events)).toEqual(['vacuum', 'recirc', 'ignition', 'ramp']);
     expect(events.some((e) => e.type === 'online')).toBe(true);
+    expect(damageEvents(events)).toEqual([]);
   });
 
-  it('re-trips with flameOut on a ramp faster than 4 C per plant minute', () => {
-    // 3 C in one 40 s tick = 4.5 C/min.
-    const { state, events } = stepRestart(manualRamp(100, 103));
-    expect(state.status).toBe('tripped');
-    expect(state.trip?.cause).toBe('flameOut');
-    expect(state.loops.tbt.output).toBe(0);
-    expect(events.some((e) => e.type === 'trip' && e.cause === 'flameOut')).toBe(true);
+  it('re-trips with flameOut when the operator slams the burner open', () => {
+    const at = manualAtRamp();
+    const r = tickOnce(setFiring(at.state, 100)); // 15 -> 100 % in one tick
+    expect(r.state.status).toBe('tripped');
+    expect(r.state.trip?.cause).toBe('flameOut');
+    expect(r.state.loops.tbt.output).toBe(0);
+    expect(r.events.some((e) => e.type === 'trip' && e.cause === 'flameOut')).toBe(true);
   });
 
-  it('wears the burner and scales the hot stages on a ramp between 2 and 4 C per plant minute', () => {
-    // 2 C in one 40 s tick = 3 C/min.
-    const s = manualRamp(100, 102);
+  it('re-trips on a firing rise above 25 %/tick', () => {
+    expect(stepRestart(manualRamp(40, 66)).state.trip?.cause).toBe('flameOut');
+    expect(stepRestart(manualRamp(40, 65)).state.status).toBe('restarting');
+  });
+
+  it('wears the burner and scales the hot stages on a firing rise above 10 %/tick', () => {
+    const s = manualRamp(40, 55);
     const { state, events } = stepRestart(s);
     expect(state.status).toBe('restarting');
     expect(state.heater.burnerCondition).toBeLessThan(s.heater.burnerCondition);
     expect(state.stages[0]!.hardScaleMm).toBeGreaterThan(s.stages[0]!.hardScaleMm);
     expect(state.stages[10]!.hardScaleMm).toBe(s.stages[10]!.hardScaleMm);
-    expect(events.filter((e) => e.type === 'damage').map((e) => e.type === 'damage' && e.component)).toEqual([
-      'burner',
-      'stageScale',
-    ]);
+    expect(damageEvents(events).map((e) => e.type === 'damage' && e.component)).toEqual(['burner', 'stageScale']);
   });
 
-  it('takes no penalty on a gentle ramp', () => {
-    const s = manualRamp(100, 101); // 1.5 C/min
+  it('takes no penalty at or below 10 %/tick', () => {
+    const s = manualRamp(40, 50);
     const { state, events } = stepRestart(s);
     expect(state.heater.burnerCondition).toBe(s.heater.burnerCondition);
     expect(events).toEqual([]);
+    expect(state.restart?.prevFiringPct).toBe(50);
+  });
+
+  it('catches a firing jump issued together with the ramp command', () => {
+    let s = tripped('manual');
+    for (const step of ['vacuum', 'recirc', 'ignition'] as const) s = ok(restartStep(s, step)).state;
+    s = tickOnce(s).state;
+    s = ok(restartStep(setFiring(s, 50), 'ramp')).state; // +35 % then ramp, same tick
+    expect(stepRestart(s).state.trip?.cause).toBe('flameOut');
   });
 });
 

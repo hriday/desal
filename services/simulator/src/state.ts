@@ -13,6 +13,7 @@ import {
   CF_MIN,
   CF_NOMINAL,
   LEVEL_BALANCE_VALVE_PCT,
+  LOOP_GAINS,
   RECIRC_NOMINAL_M3H,
   RECIRC_PUMP_MAX_M3H,
   STAGE_COUNT,
@@ -74,8 +75,8 @@ export interface PlantState {
   controlMode: 'auto' | 'manual';
   status: PlantStatusKind;
   trip: { cause: TripCause; atTick: number } | null;
-  /** prevTbtC: TBT seen at the previous restart step, used to measure the ramp rate. */
-  restart: { step: RestartStep; stepStartedTick: number; auto: boolean; prevTbtC: number } | null;
+  /** prevFiringPct: firing (tbt output) seen at the previous restart step, used to police the manual ramp rate. */
+  restart: { step: RestartStep; stepStartedTick: number; auto: boolean; prevFiringPct: number } | null;
   acidCleanRemainingTicks: number;
   loops: Record<'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum', Loop> & { levels: Loop[] };
   seawater: { tempC: number; salinityGL: number; chlorophyllUgL: number };
@@ -121,8 +122,10 @@ export const BALANCE = {
   levelPct: LEVEL_BALANCE_VALVE_PCT,
 };
 
-function loop(setpoint: number, output = 0): Loop {
-  return { mode: 'auto', setpoint, output, integral: 0, prevError: 0, fault: null };
+/** A loop at rest: the integral is preset so that at zero error the PI output equals `output`. */
+function loop(kind: keyof typeof LOOP_GAINS, setpoint: number, output: number): Loop {
+  const { ki } = LOOP_GAINS[kind];
+  return { mode: 'auto', setpoint, output, integral: ki > 0 ? output / ki : 0, prevError: 0, fault: null };
 }
 
 function pump(running: boolean): Pump {
@@ -148,12 +151,12 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
     restart: null,
     acidCleanRemainingTicks: 0,
     loops: {
-      tbt: loop(NOMINAL.tbtC, NOMINAL.firingPct),
-      intakeFlow: loop(NOMINAL.intakeM3h, NOMINAL.intakePumpPct),
-      recirc: loop(NOMINAL.recircM3h, BALANCE.recircPct),
-      blowdown: loop(NOMINAL.concentrationFactor, BALANCE.blowdownPct),
-      vacuum: loop(NOMINAL.vacuumQuality, BALANCE.vacuumPct),
-      levels: Array.from({ length: STAGE_COUNT }, () => loop(NOMINAL.levelM, BALANCE.levelPct)),
+      tbt: loop('tbt', NOMINAL.tbtC, NOMINAL.firingPct),
+      intakeFlow: loop('intakeFlow', NOMINAL.intakeM3h, NOMINAL.intakePumpPct),
+      recirc: loop('recirc', NOMINAL.recircM3h, BALANCE.recircPct),
+      blowdown: loop('blowdown', NOMINAL.concentrationFactor, BALANCE.blowdownPct),
+      vacuum: loop('vacuum', NOMINAL.vacuumQuality, BALANCE.vacuumPct),
+      levels: Array.from({ length: STAGE_COUNT }, () => loop('level', NOMINAL.levelM, BALANCE.levelPct)),
     },
     seawater: { tempC: 30, salinityGL: 45, chlorophyllUgL: 1 },
     intake: {

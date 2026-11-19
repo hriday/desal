@@ -1,19 +1,22 @@
 import type { PlantEvent, RestartStep } from '@desal/schema';
 import {
   ACID_CLEAN_TICKS,
-  AUTO_RAMP_C_PER_MIN,
-  AUTO_RAMP_FIRING_GAIN,
+  AUTO_RAMP_PCT_PER_TICK,
   IGNITION_FIRING_PCT,
+  LOOP_ACTION,
+  LOOP_GAINS,
+  LOOP_RANGES,
   ONLINE_MARGIN_C,
   RAMP_BURNER_WEAR,
   RAMP_SCALE_MM,
-  RAMP_TRIP_C_PER_MIN,
-  RAMP_WARN_C_PER_MIN,
+  RAMP_TRIP_PCT_PER_TICK,
+  RAMP_WARN_PCT_PER_TICK,
   RESTART_RECIRC_FRACTION,
   RESTART_VACUUM_MIN,
   TICK_PLANT_S,
   TRIP_SCALE_STAGES,
 } from '../constants.js';
+import { pidStep } from '../control/pid.js';
 import { BALANCE, type PlantState } from '../state.js';
 import { applyTrip } from './interlocks.js';
 
@@ -53,11 +56,15 @@ function enterStep(s: PlantState, step: RestartStep, auto: boolean): { state: Pl
   if (step === 'vacuum') loops = { ...loops, vacuum: { ...loops.vacuum, output: BALANCE.vacuumPct } };
   if (step === 'recirc') loops = { ...loops, recirc: { ...loops.recirc, output: BALANCE.recircPct } };
   if (step === 'ignition') loops = { ...loops, tbt: { ...loops.tbt, output: IGNITION_FIRING_PCT } };
+  // Ignition's own jump to IGNITION_FIRING_PCT is not a ramp; ramp keeps the reference from the
+  // ignition step so a firing jump issued together with the ramp command is still caught.
+  const prevFiringPct =
+    step === 'ramp' && s.restart ? s.restart.prevFiringPct : loops.tbt.output;
   const state: PlantState = {
     ...s,
     status: 'restarting',
     loops,
-    restart: { step, stepStartedTick: s.tick, auto, prevTbtC: s.heater.tbtC },
+    restart: { step, stepStartedTick: s.tick, auto, prevFiringPct },
   };
   return { state, events: [{ ...eventBase(s), type: 'restartProgress', step, ok: true }] };
 }
@@ -83,7 +90,7 @@ export function restartStep(s: PlantState, step: RestartStep): Result {
   return enterStep(s, step, false);
 }
 
-/** Extra burner wear and hot-stage scale from one tick of an over-fast manual ramp. */
+/** Extra burner wear and hot-stage scale from one tick of an over-fast manual firing rise. */
 function rampPenalty(s: PlantState): { state: PlantState; events: PlantEvent[] } {
   const state: PlantState = {
     ...s,
@@ -103,45 +110,45 @@ function rampPenalty(s: PlantState): { state: PlantState; events: PlantEvent[] }
 }
 
 /**
- * Advance a restart by one tick (call after the units have run). Auto restarts advance a step
- * whenever the next step's precondition holds and ramp the firing toward a target TBT rise rate.
- * Manual ramps are policed: too fast wears the burner and scales the hot stages; far too fast
- * flames out and re-trips. TBT within ONLINE_MARGIN_C of setpoint during the ramp brings the
- * plant online.
+ * Advance a restart by one tick (call after the units have run).
+ * - Auto: advance a step whenever the next step's precondition holds. In the ramp, firing follows
+ *   what the TBT PID asks for, but rises by at most AUTO_RAMP_PCT_PER_TICK; the PID state is kept
+ *   so it takes over bumplessly once online.
+ * - Manual (ignition and ramp): the operator's firing rise per tick is policed. Above
+ *   RAMP_WARN_PCT_PER_TICK the burner wears and the hot stages scale; above RAMP_TRIP_PCT_PER_TICK
+ *   the burner flames out and the plant re-trips.
+ * TBT within ONLINE_MARGIN_C of setpoint during the ramp brings the plant online.
  */
 export function stepRestart(s: PlantState): { state: PlantState; events: PlantEvent[] } {
   const r = s.restart;
   if (s.status !== 'restarting' || !r) return { state: s, events: [] };
-  const tbtC = s.heater.tbtC;
   const withPrev = (st: PlantState): PlantState =>
-    st.restart ? { ...st, restart: { ...st.restart, prevTbtC: tbtC } } : st;
+    st.restart ? { ...st, restart: { ...st.restart, prevFiringPct: st.loops.tbt.output } } : st;
 
-  if (r.step !== 'ramp') {
-    if (!r.auto) return { state: withPrev(s), events: [] };
+  let state = s;
+  const events: PlantEvent[] = [];
+  if (r.auto && r.step !== 'ramp') {
     const next = STEPS[STEPS.indexOf(r.step) + 1];
     if (!next || unmetPrecondition(s, next)) return { state: withPrev(s), events: [] };
     return enterStep(s, next, true);
   }
-
-  const rateCPerMin = ((tbtC - r.prevTbtC) / TICK_PLANT_S) * 60;
-  let state = s;
-  const events: PlantEvent[] = [];
   if (r.auto) {
-    const tbt = state.loops.tbt;
-    const output = Math.min(
-      100,
-      Math.max(IGNITION_FIRING_PCT, tbt.output + AUTO_RAMP_FIRING_GAIN * (AUTO_RAMP_C_PER_MIN - rateCPerMin)),
-    );
-    state = { ...state, loops: { ...state.loops, tbt: { ...tbt, output } } };
-  } else if (rateCPerMin > RAMP_TRIP_C_PER_MIN) {
-    return applyTrip(s, 'flameOut');
-  } else if (rateCPerMin > RAMP_WARN_C_PER_MIN) {
-    const p = rampPenalty(state);
-    state = p.state;
-    events.push(...p.events);
+    const tbt = s.loops.tbt;
+    const { outMin, outMax } = LOOP_RANGES.tbt;
+    const pid = pidStep({ ...tbt, mode: 'auto' }, s.heater.tbtC, LOOP_GAINS.tbt, outMin, outMax, TICK_PLANT_S, LOOP_ACTION.tbt);
+    const output = Math.min(tbt.output + AUTO_RAMP_PCT_PER_TICK, pid.output);
+    state = { ...s, loops: { ...s.loops, tbt: { ...pid, mode: tbt.mode, output } } };
+  } else if (r.step === 'ignition' || r.step === 'ramp') {
+    const risePct = s.loops.tbt.output - r.prevFiringPct;
+    if (risePct > RAMP_TRIP_PCT_PER_TICK) return applyTrip(s, 'flameOut');
+    if (risePct > RAMP_WARN_PCT_PER_TICK) {
+      const p = rampPenalty(s);
+      state = p.state;
+      events.push(...p.events);
+    }
   }
 
-  if (tbtC >= state.loops.tbt.setpoint - ONLINE_MARGIN_C) {
+  if (r.step === 'ramp' && state.heater.tbtC >= state.loops.tbt.setpoint - ONLINE_MARGIN_C) {
     state = { ...state, status: 'online', restart: null, trip: null };
     events.push({ ...eventBase(s), type: 'online' });
     return { state, events };

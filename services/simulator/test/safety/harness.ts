@@ -1,24 +1,53 @@
 import type { PlantEvent } from '@desal/schema';
-import { TICK_PLANT_S } from '../../src/constants.js';
+import { LOOP_ACTION, LOOP_GAINS, LOOP_RANGES, TICK_PLANT_S } from '../../src/constants.js';
+import { pidStep } from '../../src/control/pid.js';
 import { applyTrip, checkInterlocks } from '../../src/safety/interlocks.js';
 import { stepAcidClean, stepRestart } from '../../src/safety/restart.js';
-import type { PlantState } from '../../src/state.js';
+import type { Loop, PlantState } from '../../src/state.js';
 import { stepFuel } from '../../src/units/fuel.js';
 import { heaterDemandMW, stepHeater } from '../../src/units/heater.js';
 import { stepIntake } from '../../src/units/intake.js';
 import { stepProduct } from '../../src/units/product.js';
 import { recoveredTempC, stepStages } from '../../src/units/stages.js';
 
+type Kind = keyof typeof LOOP_GAINS;
+
+function step(loop: Loop, kind: Kind, measured: number): Loop {
+  const { outMin, outMax } = LOOP_RANGES[kind];
+  return pidStep(loop, measured, LOOP_GAINS[kind], outMin, outMax, TICK_PLANT_S, LOOP_ACTION[kind]);
+}
+
 /**
- * Test-only stand-in for the tick orchestrator (Task 12): units, then restart/acid-clean, then
- * interlocks. No PID is stepped: every actuator holds its balance output (the plant starts at
- * equilibrium, and a trip leaves vacuum and recirc running), and during a restart the sequence
- * itself owns the tbt, vacuum and recirc outputs.
+ * Step the PIDs the restart sequence does not own. While restarting, the sequence owns tbt,
+ * vacuum and recirc; while tripped or acid cleaning, the burner stays off (tbt is not stepped).
+ * intakeFlow and recirc are held at their outputs: their placeholder gains act on m3/h errors and
+ * bang-bang the output until the calibration task retunes them.
+ */
+function stepLoops(s: PlantState): PlantState {
+  const restarting = s.status === 'restarting';
+  const burnerOff = s.status === 'tripped' || s.status === 'acidCleaning';
+  const l = s.loops;
+  return {
+    ...s,
+    loops: {
+      tbt: restarting || burnerOff ? l.tbt : step(l.tbt, 'tbt', s.heater.tbtC),
+      intakeFlow: l.intakeFlow,
+      recirc: l.recirc,
+      blowdown: step(l.blowdown, 'blowdown', s.brine.concentrationFactor),
+      vacuum: restarting ? l.vacuum : step(l.vacuum, 'vacuum', s.vacuum.quality),
+      levels: l.levels.map((loop, i) => step(loop, 'level', s.stages[i]?.levelM ?? loop.setpoint)),
+    },
+  };
+}
+
+/**
+ * Test-only stand-in for the tick orchestrator (Task 12): loops, units, restart/acid-clean,
+ * then interlocks.
  */
 export function tickOnce(s0: PlantState): { state: PlantState; events: PlantEvent[] } {
   const dt = TICK_PLANT_S;
   const events: PlantEvent[] = [];
-  let s = stepIntake(s0, dt);
+  let s = stepIntake(stepLoops(s0), dt);
   const fuel = stepFuel(s, heaterDemandMW(s), dt);
   s = fuel.state;
   events.push(...fuel.events);

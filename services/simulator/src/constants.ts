@@ -27,6 +27,20 @@ export const LOOP_RANGES = {
   level: { spMin: 0.15, spMax: 0.6, outMin: 0, outMax: 100 },
 } as const;
 
+/**
+ * Controller action per loop kind. 'direct': raising the output raises the measurement
+ * (error = setpoint - measured). 'reverse': raising the output lowers it (error = measured -
+ * setpoint): a high level must open the drain valve, and a high CF must raise blowdown.
+ */
+export const LOOP_ACTION: Record<keyof typeof LOOP_GAINS, 'direct' | 'reverse'> = {
+  tbt: 'direct',
+  intakeFlow: 'direct',
+  recirc: 'direct',
+  blowdown: 'reverse',
+  vacuum: 'direct',
+  level: 'reverse',
+};
+
 /** Measurement bias added per tick to a drifting loop sensor. */
 export const LOOP_DRIFT_PER_TICK = 0.05;
 /** Gain multiplier applied to an oscillating loop. */
@@ -176,14 +190,12 @@ export const RESTART_VACUUM_MIN = 0.85;
 export const RESTART_RECIRC_FRACTION = 0.8;
 /** Burner firing (percent) set at ignition. */
 export const IGNITION_FIRING_PCT = 15;
-/** TBT ramp rate the Auto restart aims for (degC per plant minute). */
-export const AUTO_RAMP_C_PER_MIN = 1.5;
-/** Auto ramp firing correction per tick per degC/min of ramp-rate error (percent). */
-export const AUTO_RAMP_FIRING_GAIN = 10;
-/** Manual ramp rate above which the burner wears and the hot stages scale (degC per plant minute). */
-export const RAMP_WARN_C_PER_MIN = 2;
-/** Manual ramp rate above which the burner flames out and the plant re-trips (degC per plant minute). */
-export const RAMP_TRIP_C_PER_MIN = 4;
+/** Firing rise per tick the Auto ramp allows itself (percent per tick); below RAMP_WARN_PCT_PER_TICK. */
+export const AUTO_RAMP_PCT_PER_TICK = 5;
+/** Manual firing rise per tick above which the burner wears and the hot stages scale (percent per tick). */
+export const RAMP_WARN_PCT_PER_TICK = 10;
+/** Manual firing rise per tick above which the burner flames out and the plant re-trips (percent per tick). */
+export const RAMP_TRIP_PCT_PER_TICK = 25;
 /** Burner condition lost per tick of an over-fast manual ramp. */
 export const RAMP_BURNER_WEAR = 0.002;
 /** Hard scale added per tick of an over-fast manual ramp to each of the hottest stages (mm). */

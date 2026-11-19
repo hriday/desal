@@ -9,7 +9,7 @@ export interface Gains {
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-/** Advance one loop by one tick. Pure: returns a new Loop. */
+/** Advance one loop by one tick. Pure: returns a new Loop. `action` is the loop kind's LOOP_ACTION. */
 export function pidStep(
   loop: Loop,
   measured: number,
@@ -17,10 +17,12 @@ export function pidStep(
   outMin: number,
   outMax: number,
   dtS: number,
+  action: 'direct' | 'reverse' = 'direct',
 ): Loop {
+  const errorOf = (y: number): number => (action === 'direct' ? loop.setpoint - y : y - loop.setpoint);
   if (loop.mode === 'manual') {
     // Back-calculate the integral so switching to auto holds the current output.
-    const error = loop.setpoint - measured;
+    const error = errorOf(measured);
     // The first auto step adds error*dtS before computing, so back-calculate against that.
     const integral =
       gains.ki > 0 ? (loop.output - gains.kp * error) / gains.ki - error * dtS : 0;
@@ -39,7 +41,7 @@ export function pidStep(
   const ki = gains.ki * mult;
   const kd = gains.kd * mult;
 
-  const error = loop.setpoint - y;
+  const error = errorOf(y);
   const derivative = dtS > 0 ? (error - loop.prevError) / dtS : 0;
   const trialIntegral = loop.integral + error * dtS;
   const raw = kp * error + ki * trialIntegral + kd * derivative;

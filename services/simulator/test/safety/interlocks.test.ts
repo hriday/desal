@@ -55,7 +55,7 @@ describe('checkInterlocks', () => {
     const s: PlantState = {
       ...online(),
       status: 'restarting',
-      restart: { step: 'recirc', stepStartedTick: 0, auto: true, prevTbtC: 100 },
+      restart: { step: 'recirc', stepStartedTick: 0, auto: true, prevFiringPct: 0 },
     };
     expect(checkInterlocks(s, 0)).toBeNull();
     const ramp: PlantState = { ...s, tick: 5, restart: { ...s.restart!, step: 'ramp', stepStartedTick: 4 } };
