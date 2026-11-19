@@ -1,7 +1,7 @@
 import { PlantEventSchema, type PlantEvent } from '../src/index.js';
 
 const G = '3f2b8c1e-5d4a-4e7b-9a10-2c6d8e4f1a7b';
-const base = { gameId: G, seq: 0, tick: 10, plantTime: 600, shiftId: 3 };
+const base = { gameId: G, epoch: 0, seq: 0, tick: 10, plantTime: 600, shiftId: 3 };
 const summary = {
   productM3: 1200, targetM3: 1500, offSpecMinutes: 4, fuelCostUsd: 900, fuelBudgetUsd: 1000, trips: 1, spentUsd: 900, offSpecM3: 12, nextAllocationUsd: 7760, balanceUsd: 14100,
   damage: { maxHardScaleMm: 0.4, pumpWear: { 'P-101': 0.1, 'P-102': 0.2, 'P-103': 0.3 }, burnerCondition: 0.9 },
@@ -52,4 +52,11 @@ test('rejects a negative or fractional seq and a missing gameId', () => {
   expect(PlantEventSchema.safeParse({ ...base, type: 'online', seq: 1.5 }).success).toBe(false);
   const { gameId: _g, ...noGame } = base;
   expect(PlantEventSchema.safeParse({ ...noGame, type: 'online' }).success).toBe(false);
+});
+
+test('epoch is required on every event: a non-negative integer', () => {
+  const { epoch: _e, ...noEpoch } = base;
+  expect(PlantEventSchema.safeParse({ ...noEpoch, type: 'online' }).success).toBe(false);
+  expect(PlantEventSchema.safeParse({ ...base, type: 'online', epoch: -1 }).success).toBe(false);
+  expect(PlantEventSchema.safeParse({ ...base, type: 'online', epoch: 2 }).success).toBe(true);
 });

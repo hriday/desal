@@ -28,6 +28,11 @@ export interface State {
   conn: Conn;
   /** The socket has been open at least once, so a later 'connecting' is a reconnect. */
   everOpen: boolean;
+  /**
+   * The game's newest epoch seen (restores from a snapshot). A restore can rewind seq, so events are
+   * de-duplicated on (epoch, seq): a higher epoch starts the de-dup afresh, an older one is stale.
+   */
+  epoch: number;
 }
 
 export type Action =
@@ -48,6 +53,7 @@ export function initialState(resuming = false): State {
   return {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
     pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: 'connecting', everOpen: false,
+    epoch: 0,
   };
 }
 
@@ -92,8 +98,9 @@ function withoutRejected(s: State, commandId: string): Pick<State, 'pending' | '
 }
 
 function addEvent(s: State, e: PlantEvent): State {
-  if (s.events.some((x) => x.seq === e.seq)) return s;
-  let next: State = { ...s, events: [...s.events, e].slice(-MAX_EVENTS) };
+  if (e.epoch < s.epoch) return s; // from before the game was restored: superseded
+  if (e.epoch === s.epoch && s.events.some((x) => x.epoch === e.epoch && x.seq === e.seq)) return s;
+  let next: State = { ...s, epoch: e.epoch, events: [...s.events, e].slice(-MAX_EVENTS) };
   switch (e.type) {
     case 'gameEnd':
       next = { ...next, session: 'over', score: e.score, endReason: e.reason };
@@ -127,7 +134,8 @@ function onServer(s: State, msg: ServerMsg): State {
       const commandKeys = new Map([...s.commandKeys].filter(([, k]) => pending.has(k)));
       // Once over, only reset or startClicked leave it: a late status (of any phase) never revives the run.
       const session = s.session === 'over' ? 'over' : sessionFor(msg.status);
-      return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session };
+      const epoch = Math.max(s.epoch, msg.status.epoch);
+      return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch };
     }
     case 'frame':
       return { ...s, readings: { ...s.readings, ...msg.readings }, trends: pushFrame(s.trends, msg.plantTime, msg.readings) };

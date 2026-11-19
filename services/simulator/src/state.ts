@@ -93,7 +93,7 @@ export interface ScenarioEffects {
 
 /** An event as the plant units produce it; tick() stamps gameId, seq, tick and plantTime. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-export type SimEvent = DistributiveOmit<PlantEvent, 'gameId' | 'seq'>;
+export type SimEvent = DistributiveOmit<PlantEvent, 'gameId' | 'epoch' | 'seq'>;
 
 /** One game = one run of shifts in one sitting; the operating account lives here. */
 export interface Run {
@@ -102,8 +102,10 @@ export interface Run {
   shiftNumber: number;
   totalProductM3: number;
   shiftsCompleted: number;
-  /** Next event seq to assign (per game, monotonically increasing). */
+  /** Next event seq to assign (per game, monotonically increasing within an epoch). */
   eventSeq: number;
+  /** Times this game was restored from a snapshot (GameHost.restore); stamped on every record. */
+  epoch: number;
   over: { reason: GameEndReason; atTick: number } | null;
 }
 
@@ -260,6 +262,6 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
       nextEventIndex: 0,
       effects: { offgradeOnly: false, deliveryDelayTicks: 0, chlorophyllTarget: 1, chlorophyllRampPerTick: 0 },
     },
-    run: { gameId, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, over: null },
+    run: { gameId, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
   };
 }

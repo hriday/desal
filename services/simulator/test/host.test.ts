@@ -230,6 +230,27 @@ describe('GameHost', () => {
     expect(h2.games().get(gid(1))!.state.tick).toBe(s.tick + 1);
   });
 
+  it('restore increments the run epoch; records stamped after it carry the new epoch', () => {
+    const h = started([gid(1)]);
+    const created = h.games().get(gid(1))!.state;
+    expect(created.run.epoch).toBe(0);
+    const h2 = new GameHost();
+    h2.restore([created], 5000);
+    expect(h2.games().get(gid(1))!.state.run.epoch).toBe(1);
+    const r = h2.step([cmd(gid(1), { type: 'startShift', mode: 'auto' })], 6000);
+    const out = r.perGame.get(gid(1))!;
+    expect(out.events.map((e) => [e.type, e.epoch, e.seq])).toEqual([
+      ['shiftStart', 1, 1],
+      ['accountChange', 1, 2],
+    ]);
+    expect(out.status!.epoch).toBe(1);
+    expect(out.telemetry.every((t) => t.epoch === 1)).toBe(true);
+    // Restored again (a second crash): the epoch keeps counting.
+    const h3 = new GameHost();
+    h3.restore([h2.games().get(gid(1))!.state], 7000);
+    expect(h3.games().get(gid(1))!.state.run.epoch).toBe(2);
+  });
+
   it('new-game seeds are reproducible from the host seed and differ between games', () => {
     const a = started([gid(1), gid(2)], { seed: 7 });
     const b = started([gid(1), gid(2)], { seed: 7 });

@@ -428,7 +428,7 @@ describe('pending and rejection', () => {
     expect(input.value).toBe('112.0');
     expect(container.textContent).toContain('sending…');
     const { gameId } = demoStatus();
-    dispatchServer({ t: 'event', event: { gameId, seq: 500, tick: 1, plantTime: 1, shiftId: 3, type: 'commandRejected', commandId: sends[0]!.commandId, reason: 'setpoint changes are Auto-mode only' } });
+    dispatchServer({ t: 'event', event: { gameId, epoch: 0, seq: 500, tick: 1, plantTime: 1, shiftId: 3, type: 'commandRejected', commandId: sends[0]!.commandId, reason: 'setpoint changes are Auto-mode only' } });
     expect(within(container).getByRole('alert').textContent).toContain('setpoint changes are Auto-mode only');
     expect(input.value).toBe('108.0');
     expect(container.textContent).not.toContain('sending…');

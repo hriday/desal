@@ -39,6 +39,18 @@ describe('FrameAssembler', () => {
     expect(fa.flush(A)).toBeNull();
   });
 
+  it('a new epoch (the game was restored from a snapshot, its tick rewound) resets the emitted mark', () => {
+    const fa = new FrameAssembler();
+    fa.add(reading(A, 5, 'TBT'));
+    expect(fa.flush(A, 5)?.tick).toBe(5);
+    // Restored at tick 3: without the epoch these readings would look late and be dropped forever.
+    expect(fa.add(reading(A, 3, 'TBT', 30, 1))).toBeNull();
+    expect(fa.flush(A, 3, 1)).toEqual({ t: 'frame', tick: 3, plantTime: 120, readings: { TBT: 30 } });
+    // A straggler from the old epoch is dropped.
+    expect(fa.add(reading(A, 6, 'TBT', 60, 0))).toBeNull();
+    expect(fa.openTicks(A)).toBe(0);
+  });
+
   it('is bounded: at most 2 open ticks per game, and drop() forgets a game', () => {
     const fa = new FrameAssembler();
     const frames = [];

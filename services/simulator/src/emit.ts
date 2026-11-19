@@ -67,6 +67,7 @@ export function toTelemetry(s: PlantState): TelemetryReading[] {
   const shiftId = s.shift?.id ?? 0;
   return SENSORS.map(({ id, unitId, read }) => ({
     gameId: s.run.gameId,
+    epoch: s.run.epoch,
     sensorId: id,
     unitId,
     shiftId,
@@ -99,6 +100,7 @@ export function toStatus(s: PlantState): PlantStatus {
   const inShift = s.shift !== null && (s.phase === 'running' || s.phase === 'paused');
   return {
     gameId: s.run.gameId,
+    epoch: s.run.epoch,
     shiftNumber: s.run.shiftNumber,
     balanceUsd: s.run.balanceUsd,
     tick: s.tick,

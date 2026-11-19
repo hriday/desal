@@ -206,7 +206,7 @@ export class Sessions {
       if (!r.success) return;
       this.endWait(gameId, true);
       // Frame N before status N: the status closes its tick's frame.
-      const frame = this.frames.flush(gameId, r.data.tick);
+      const frame = this.frames.flush(gameId, r.data.tick, r.data.epoch);
       if (frame) this.broadcast(gameId, frame);
       this.broadcast(gameId, { t: 'status', status: r.data });
     } else {

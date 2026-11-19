@@ -196,16 +196,36 @@ describe('emission', () => {
     expect(due).toEqual([30, 60]);
   });
 
-  it('flags snapshotDue outside a running shift when a command was accepted, not when it was rejected', () => {
+  it('flags snapshotDue outside a running shift when a command was accepted, or any event was emitted', () => {
     const handover = createInitialState(1, T0, GAME_ID);
     expect(tick(handover, []).snapshotDue).toBe(false);
-    expect(tick(handover, [env(handover, { type: 'setDose', chemical: 'chlorine', mgL: 3 })]).snapshotDue).toBe(false);
+    // A rejection leaves the state as it was, but its event advanced seq: saved, so seq never rewinds.
+    expect(tick(handover, [env(handover, { type: 'setDose', chemical: 'chlorine', mgL: 3 })]).snapshotDue).toBe(true);
     expect(tick(handover, [env(handover, { type: 'startShift', mode: 'auto' })]).snapshotDue).toBe(true);
 
     const paused = tick(running(), [env(running(), { type: 'pause' })]).state;
     expect(paused.phase).toBe('paused');
     expect(tick(paused, []).snapshotDue).toBe(false);
     expect(tick(paused, [env(paused, { type: 'setDose', chemical: 'chlorine', mgL: 3 })]).snapshotDue).toBe(true);
+  });
+
+  it('flags snapshotDue on any running tick that emits an event (seq must not rewind after a crash)', () => {
+    const s = runTicks(running(), 3).state; // tick 3: no periodic snapshot due
+    const quiet = tick(s, []);
+    expect(quiet.events).toEqual([]);
+    expect(quiet.snapshotDue).toBe(false);
+    const rejected = tick(s, [env(s, { type: 'setOutput', loop: 'tbt', value: 50 })]); // Auto mode: rejected
+    expect(rejected.events.map((e) => e.type)).toEqual(['commandRejected']);
+    expect(rejected.snapshotDue).toBe(true);
+  });
+
+  it('stamps the run epoch on every event, reading and status', () => {
+    const s0 = { ...running(), run: { ...running().run, epoch: 4 } };
+    const r = tick(s0, [env(s0, { type: 'setOutput', loop: 'tbt', value: 50 })]);
+    expect(r.events.length).toBeGreaterThan(0);
+    for (const e of r.events) expect(e.epoch).toBe(4);
+    expect(r.telemetry.every((t) => t.epoch === 4)).toBe(true);
+    expect(r.status.epoch).toBe(4);
   });
 
   it('emits every SENSOR_IDS entry exactly once per tick, as valid readings', () => {

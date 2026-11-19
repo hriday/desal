@@ -86,9 +86,16 @@ export class GameHost {
     return this.entries;
   }
 
-  /** Resume games from snapshots after a restart; their liveness and player-action clocks start now. */
+  /**
+   * Resume games from snapshots after a restart; their liveness and player-action clocks start now.
+   * Each restored game enters a new epoch: its seq and tick may rewind to the snapshot's, and the
+   * epoch tells consumers that records from here on are new, not duplicates.
+   */
   restore(states: PlantState[], nowMs: number): void {
-    for (const state of states) this.entries.set(state.run.gameId, { state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });
+    for (const s of states) {
+      const state: PlantState = { ...s, run: { ...s.run, epoch: s.run.epoch + 1 } };
+      this.entries.set(state.run.gameId, { state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });
+    }
   }
 
   /** Has the game gone too long without a command, or without a player action for its phase? */
@@ -111,7 +118,7 @@ export class GameHost {
 
     // Host-level events have no plant to stamp from: seq 0, tick 0, wall-clock plantTime, no shift.
     const hostEvent = (gameId: string, e: HostEventBody): void => {
-      hostEvents.push({ gameId, seq: 0, tick: 0, plantTime: nowMs, shiftId: null, ...e } as PlantEvent);
+      hostEvents.push({ gameId, epoch: 0, seq: 0, tick: 0, plantTime: nowMs, shiftId: null, ...e } as PlantEvent);
     };
 
     for (const raw of envelopes) {

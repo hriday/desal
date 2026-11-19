@@ -150,7 +150,8 @@ const countTrips = (events: SimEvent[]): number => events.filter((e) => e.type =
 export function stamped(events: SimEvent[], s: PlantState): { state: PlantState; events: PlantEvent[] } {
   const seq0 = s.run.eventSeq;
   const out = events.map(
-    (e, i) => ({ ...e, gameId: s.run.gameId, seq: seq0 + i, tick: s.tick, plantTime: s.plantTime }) as PlantEvent,
+    (e, i) =>
+      ({ ...e, gameId: s.run.gameId, epoch: s.run.epoch, seq: seq0 + i, tick: s.tick, plantTime: s.plantTime }) as PlantEvent,
   );
   return { state: { ...s, run: { ...s.run, eventSeq: seq0 + events.length } }, events: out };
 }
@@ -181,7 +182,8 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
     // A manual trip while paused still counts against the shift.
     s = withAccumulators(s, { ...NO_STEP, trips: commandTrips });
     const out = stamped(events, s);
-    const snapshotDue = changedOutsideRunning || commandTrips > 0 || (s.phase === 'over' && s0.phase !== 'over');
+    const snapshotDue =
+      changedOutsideRunning || events.length > 0 || commandTrips > 0 || (s.phase === 'over' && s0.phase !== 'over');
     return { state: out.state, telemetry: [], status: toStatus(out.state), events: out.events, snapshotDue };
   }
 
@@ -206,8 +208,14 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
     s = over.state;
     events.push(...over.events);
   }
+  // Any event advances seq; events are rare, so saving on each keeps seq from rewinding after a crash.
   const snapshotDue =
-    changedOutsideRunning || s.tick % SNAPSHOT_EVERY_TICKS === 0 || ended || trips > 0 || reason !== null;
+    changedOutsideRunning ||
+    events.length > 0 ||
+    s.tick % SNAPSHOT_EVERY_TICKS === 0 ||
+    ended ||
+    trips > 0 ||
+    reason !== null;
   // Commands and the plant step used the pre-advance clock; stamping here (after the shift-end
   // events) gives every record of the tick the post-tick clock and a gap-free seq.
   const out = stamped(events, s);

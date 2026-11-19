@@ -13,7 +13,7 @@ export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
   };
   for (let i = 1; i <= 20; i++) loops[`level${i}`] = loop(0.35, 50);
   return {
-    gameId: DEMO_GAME_ID, shiftNumber: 3, balanceUsd: 12450, tick: 1720, plantTime: 68800, shiftId: 3,
+    gameId: DEMO_GAME_ID, epoch: 0, shiftNumber: 3, balanceUsd: 12450, tick: 1720, plantTime: 68800, shiftId: 3,
     phase: 'running', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
     loops: loops as PlantStatus['loops'],
     pumps: {
@@ -74,7 +74,7 @@ export function demoTrends(points = 600): Trends {
 
 /** This shift's events so far: start, allocation, a bloom notice and a pump overhaul. */
 export function demoEvents(): PlantEvent[] {
-  const base = (seq: number, tick: number) => ({ gameId: DEMO_GAME_ID, seq, tick, plantTime: tick * 40, shiftId: 3 });
+  const base = (seq: number, tick: number) => ({ gameId: DEMO_GAME_ID, epoch: 0, seq, tick, plantTime: tick * 40, shiftId: 3 });
   return [
     { ...base(40, 1440), type: 'shiftStart', scenarioId: 'shift-3', mode: 'auto', target: demoTarget },
     { ...base(41, 1440), type: 'accountChange', deltaUsd: 20000, balanceUsd: 25570, cause: 'allocation' },

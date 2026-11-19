@@ -59,7 +59,16 @@ export type DamageComponent = z.infer<typeof DamageComponentSchema>;
 
 // shiftId is null outside a shift (e.g. a commandRejected during handover).
 // seq is a per-game monotonically increasing counter so consumers can de-duplicate at-least-once deliveries.
-const base = { gameId: z.uuid(), seq: z.number().int().min(0), tick: num, plantTime: num, shiftId: num.nullable() };
+// epoch counts how often the game was restored from a snapshot. A restore can rewind seq (and tick) to
+// the snapshot's, so consumers de-duplicate on (gameId, epoch, seq), and a higher epoch resets their marks.
+const base = {
+  gameId: z.uuid(),
+  epoch: z.number().int().min(0),
+  seq: z.number().int().min(0),
+  tick: num,
+  plantTime: num,
+  shiftId: num.nullable(),
+};
 
 export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('shiftStart'), scenarioId: z.string(), mode: LoopModeSchema, target: ShiftTargetSchema }),

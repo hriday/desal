@@ -9,6 +9,7 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
   const loop = { mode: 'auto' as const, setpoint: 1, output: 50 };
   return {
     gameId,
+    epoch: 0,
     shiftNumber: 1,
     balanceUsd: 15000,
     tick,
@@ -43,7 +44,7 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
   };
 }
 
-const base = (gameId: string, tick = 0) => ({ gameId, seq: tick, tick, plantTime: tick * 40, shiftId: null });
+const base = (gameId: string, tick = 0) => ({ gameId, epoch: 0, seq: tick, tick, plantTime: tick * 40, shiftId: null });
 
 export const gameStart = (gameId: string): PlantEvent => ({ ...base(gameId), type: 'gameStart' });
 export const gameRejected = (gameId: string): PlantEvent => ({ ...base(gameId), type: 'gameRejected', reason: 'capacity' });
@@ -55,6 +56,6 @@ export const gameEnd = (gameId: string, tick = 10): PlantEvent => ({
 });
 export const online = (gameId: string, tick = 1): PlantEvent => ({ ...base(gameId, tick), type: 'online' });
 
-export function reading(gameId: string, tick: number, sensorId: string, value = tick): TelemetryReading {
-  return { gameId, sensorId, unitId: 'stages', shiftId: 1, tick, plantTime: tick * 40, value };
+export function reading(gameId: string, tick: number, sensorId: string, value = tick, epoch = 0): TelemetryReading {
+  return { gameId, epoch, sensorId, unitId: 'stages', shiftId: 1, tick, plantTime: tick * 40, value };
 }

@@ -2,6 +2,7 @@ import type { PlantStatus } from '../src/index.js';
 
 export const status: PlantStatus = {
   gameId: '3f2b8c1e-5d4a-4e7b-9a10-2c6d8e4f1a7b',
+  epoch: 0,
   shiftNumber: 1,
   balanceUsd: 40000,
   tick: 5,

@@ -7,7 +7,7 @@ const gameId = '11111111-1111-4111-8111-111111111111';
 
 function status(over: Partial<PlantStatus> = {}): PlantStatus {
   return {
-    gameId, shiftNumber: 1, balanceUsd: 1000, tick: 0, plantTime: 0, shiftId: 1,
+    gameId, epoch: 0, shiftNumber: 1, balanceUsd: 1000, tick: 0, plantTime: 0, shiftId: 1,
     phase: 'running', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
     loops: { tbt: { mode: 'auto', setpoint: 100, output: 50 } } as PlantStatus['loops'],
     pumps: { 'P-101': { running: true, overhaulRemainingTicks: 0 }, 'P-102': { running: false, overhaulRemainingTicks: 0 }, 'P-103': { running: false, overhaulRemainingTicks: 0 } },
@@ -21,7 +21,7 @@ function status(over: Partial<PlantStatus> = {}): PlantStatus {
   };
 }
 const ev = (e: Record<string, unknown>): PlantEvent =>
-  ({ gameId, seq: 0, tick: 0, plantTime: 0, shiftId: 1, ...e }) as PlantEvent;
+  ({ gameId, epoch: 0, seq: 0, tick: 0, plantTime: 0, shiftId: 1, ...e }) as PlantEvent;
 const server = (s: State, msg: ServerMsg) => reducer(s, { type: 'server', msg });
 const statusMsg = (over: Partial<PlantStatus> = {}): ServerMsg => ({ t: 'status', status: status(over) });
 const eventMsg = (e: Record<string, unknown>): ServerMsg => ({ t: 'event', event: ev(e) });
@@ -57,6 +57,26 @@ describe('store reducer', () => {
     for (let i = 10; i < 330; i++) s = server(s, eventMsg({ type: 'online', seq: i }));
     expect(s.events).toHaveLength(200);
     expect(s.events.at(-1)!.seq).toBe(329);
+  });
+
+  it('after a restore (epoch up), events whose seq rewound are kept; stale older-epoch events are dropped', () => {
+    let s = initialState();
+    for (let seq = 1; seq <= 5; seq++) s = server(s, eventMsg({ type: 'online', seq, epoch: 0 }));
+    // The simulator crashed after seq 5 but its last save was at seq 3: the restored game reuses 3..5.
+    s = server(s, eventMsg({ type: 'trip', cause: 'manual', seq: 3, epoch: 1 }));
+    s = server(s, eventMsg({ type: 'online', seq: 4, epoch: 1 }));
+    expect(s.events.map((e) => [e.epoch, e.seq])).toEqual([[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [1, 3], [1, 4]]);
+    // A duplicate within the new epoch is still dropped, and a straggler from the old epoch too.
+    s = server(s, eventMsg({ type: 'online', seq: 4, epoch: 1 }));
+    s = server(s, eventMsg({ type: 'online', seq: 9, epoch: 0 }));
+    expect(s.events).toHaveLength(7);
+    expect(s.epoch).toBe(1);
+  });
+
+  it('a status from a newer epoch moves the epoch too', () => {
+    const s = server(initialState(), statusMsg({ epoch: 2 }));
+    expect(s.epoch).toBe(2);
+    expect(server(s, eventMsg({ type: 'online', seq: 1, epoch: 1 })).events).toEqual([]);
   });
 
   it('status phases drive the session', () => {

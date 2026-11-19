@@ -19,6 +19,7 @@ describe('run state', () => {
       totalProductM3: 0,
       shiftsCompleted: 0,
       eventSeq: 0,
+      epoch: 0,
       over: null,
     });
   });

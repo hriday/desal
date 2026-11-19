@@ -114,7 +114,7 @@ describe('expanded views', () => {
   });
 
   it('ShiftView shows the last 20 events in plain language, newest first, skipping unknown types', () => {
-    const base = { gameId: DEMO_GAME_ID, tick: 1, plantTime: 3600, shiftId: 3 };
+    const base = { gameId: DEMO_GAME_ID, epoch: 0, tick: 1, plantTime: 3600, shiftId: 3 };
     const many: PlantEvent[] = Array.from({ length: 25 }, (_, i) => ({ ...base, seq: i, type: 'deliveryArrived', tonnes: i, grade: 'standard' }));
     const unknown = { ...base, seq: 99, type: 'meteorStrike', crater: 3 } as unknown as PlantEvent;
     const { container } = render(<ShiftView {...sample()} events={[...many, unknown]} />);
@@ -127,7 +127,7 @@ describe('expanded views', () => {
 });
 
 describe('eventText', () => {
-  const base = { gameId: DEMO_GAME_ID, seq: 1, tick: 1, plantTime: 3600, shiftId: 3 };
+  const base = { gameId: DEMO_GAME_ID, epoch: 0, seq: 1, tick: 1, plantTime: 3600, shiftId: 3 };
   const SAMPLES: { [K in PlantEvent['type']]: Extract<PlantEvent, { type: K }> } = {
     shiftStart: { ...base, type: 'shiftStart', scenarioId: 'x', mode: 'auto', target: demoTarget },
     shiftEnd: {

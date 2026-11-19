@@ -14,7 +14,7 @@ const server = [
   { t: 'game', gameId: G },
   { t: 'status', status },
   { t: 'frame', tick: 3, plantTime: 120, readings: { 'tbt.temp': 108 } },
-  { t: 'event', event: { gameId: G, seq: 0, tick: 1, plantTime: 40, shiftId: null, type: 'online' } },
+  { t: 'event', event: { gameId: G, epoch: 0, seq: 0, tick: 1, plantTime: 40, shiftId: null, type: 'online' } },
   { t: 'error', reason: 'no game' },
   { t: 'pong' },
 ];

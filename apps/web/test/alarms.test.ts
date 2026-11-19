@@ -142,7 +142,7 @@ describe('alarmsFor', () => {
 });
 
 describe('alarmContext', () => {
-  const base = { gameId: DEMO_GAME_ID, tick: 0, plantTime: 0 };
+  const base = { gameId: DEMO_GAME_ID, epoch: 0, tick: 0, plantTime: 0 };
   const events: PlantEvent[] = [
     { ...base, seq: 1, shiftId: 2, type: 'shiftStart', scenarioId: 'a', mode: 'auto', target: { ...demoTarget, productM3: 1 } },
     { ...base, seq: 2, shiftId: 2, type: 'scenario', kind: 'controllerFault', message: 'old fault' },

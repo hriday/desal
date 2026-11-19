@@ -41,7 +41,7 @@ function mount(status?: PlantStatus) {
 }
 
 const running = (over: Partial<PlantStatus> = {}) => demoStatus({ phase: 'running', ...over });
-const ev = (e: Record<string, unknown>) => ({ gameId: DEMO_GAME_ID, tick: 1, plantTime: 0, shiftId: 3, ...e }) as unknown as PlantEvent;
+const ev = (e: Record<string, unknown>) => ({ gameId: DEMO_GAME_ID, epoch: 0, tick: 1, plantTime: 0, shiftId: 3, ...e }) as unknown as PlantEvent;
 
 describe('ControlRoom', () => {
   it('shows the wall and a top bar with shift, plant clock, time left, balance, mode and connection', () => {

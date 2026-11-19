@@ -39,6 +39,14 @@ describe('snapshots', () => {
     expect(run(r.state, 100).telemetry).toEqual(run(s, 100).telemetry);
   });
 
+  it('a save from before run.epoch existed restores with epoch 0', () => {
+    const old = clone();
+    delete old.run.epoch;
+    const r = restore(wrap(old));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.state.run.epoch).toBe(0);
+  });
+
   it('rejects garbage, wrong format and unknown version', () => {
     const s = createInitialState(1, T0, GAME_ID);
     for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 3 })]) {

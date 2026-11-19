@@ -130,6 +130,8 @@ export const PlantStateSchema = z.object({
     totalProductM3: num,
     shiftsCompleted: num,
     eventSeq: num,
+    // Saves written before epochs existed have none: they start at 0.
+    epoch: z.number().int().min(0).default(0),
     over: z.object({ reason: GameEndReasonSchema, atTick: num }).nullable(),
   }),
 });
