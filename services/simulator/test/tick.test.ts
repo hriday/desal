@@ -1,9 +1,9 @@
 import { PlantEventSchema, PlantStatusSchema, TELEMETRY_SENSOR_COUNT, TelemetryReadingSchema, type PlantEvent } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
-import { SHIFT_TICKS, TICK_PLANT_S } from '../src/constants.js';
+import { LOOP_RANGES, SHIFT_TICKS, TICK_PLANT_S } from '../src/constants.js';
 import { SENSOR_IDS } from '../src/emit.js';
 import { startShift } from '../src/shift.js';
-import { createInitialState, type PlantState } from '../src/state.js';
+import { createInitialState, NOMINAL, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
 import { env, GAME_ID } from './envelope.js';
 import { allFinite } from './helpers.js';
@@ -144,6 +144,24 @@ describe('TBT setpoint 118 without antiscalant', () => {
       expect(trip.snapshotDue).toBe(true);
     }
   });
+});
+
+describe('lowering the TBT setpoint in Auto (ruling R12a)', () => {
+  // A vacuum loss tells the player to cut TBT; doing so in Auto must not trip the plant. The deepest
+  // cut is to the bottom of the setpoint range (a 10 C cut from 93.5 would leave the 85-112 C range).
+  for (const value of [NOMINAL.tbtC - 5, LOOP_RANGES.tbt.spMin]) {
+    it(`a cut from ${NOMINAL.tbtC} to ${value} C at nominal does not trip within 60 ticks, and TBT follows it down`, () => {
+      const s0 = running();
+      const s = { ...s0, chaos: { ...s0.chaos, active: null } };
+      const drop = NOMINAL.tbtC - value;
+      const cut = tick(s, [env(s, { type: 'setSetpoint', loop: 'tbt', value })]);
+      expect(cut.state.loops.tbt.setpoint).toBe(value);
+      const r = runTicks(cut.state, 60);
+      expect([...cut.events, ...r.events].filter((e) => e.type === 'trip')).toEqual([]);
+      expect(r.state.status).toBe('online');
+      expect(r.state.heater.tbtC).toBeLessThan(NOMINAL.tbtC - drop / 2);
+    });
+  }
 });
 
 describe('record stamps', () => {

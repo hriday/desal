@@ -3,11 +3,11 @@ import { applyCommand } from './commands.js';
 import {
   LOOP_ACTION,
   LOOP_GAINS,
-  LOOP_RANGES,
   SHIFT_TICKS,
   SNAPSHOT_EVERY_TICKS,
   TICK_PLANT_S,
 } from './constants.js';
+import { autoOutputRange } from './control/loops.js';
 import { pidStep } from './control/pid.js';
 import { spendPerTick } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
@@ -47,7 +47,7 @@ export interface PlantStep {
 type Kind = keyof typeof LOOP_GAINS;
 
 function stepLoop(loop: Loop, kind: Kind, measured: number): Loop {
-  const { outMin, outMax } = LOOP_RANGES[kind];
+  const { outMin, outMax } = autoOutputRange(kind);
   return pidStep(loop, measured, LOOP_GAINS[kind], outMin, outMax, TICK_PLANT_S, LOOP_ACTION[kind]);
 }
 

@@ -201,6 +201,12 @@ export const TRIP_BURNER_DAMAGE = 0.01;
 export const RESTART_VACUUM_MIN = 0.85;
 /** Recirc flow, as a fraction of its setpoint, the recirc step must reach before ignition. */
 export const RESTART_RECIRC_FRACTION = 0.8;
+/**
+ * The burner's minimum fire (turndown, percent): the TBT loop in Auto never commands less. Firing at
+ * 0 is a flame-out (the noFuel interlock), so Auto must hold the flame at low fire while TBT falls
+ * to a lowered setpoint. Manual firing may still go to 0.
+ */
+export const BURNER_MIN_FIRING_PCT = 10;
 /** Burner firing (percent) set at ignition. */
 export const IGNITION_FIRING_PCT = 15;
 /** Firing rise per tick the Auto ramp allows itself (percent per tick); below RAMP_WARN_PCT_PER_TICK. */
