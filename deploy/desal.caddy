@@ -1,11 +1,40 @@
-# desal.moosha.org: Kafka UI behind basic auth until the game UI exists (Plan 2).
+# desal.moosha.org: the public game, its gateway, and Kafka UI at /kafka (basic auth).
 # Installed by scripts/deploy/deploy.sh as /etc/caddy/sites/desal.caddy, with
-# __AUTH_USER__ / __AUTH_HASH__ replaced (credentials in /opt/desal/basic-auth.txt).
+# __HOST__ / __AUTH_USER__ / __AUTH_HASH__ replaced (credentials in /opt/desal/basic-auth.txt).
 __HOST__ {
 	encode zstd gzip
-	header X-Robots-Tag "noindex, nofollow"
-	basic_auth {
-		__AUTH_USER__ __AUTH_HASH__
+
+	# Public: browsers and the play CLI. reverse_proxy handles the WebSocket upgrade.
+	# Caddy sets X-Forwarded-For to the client's address (it replaces any value the
+	# client sent, because no trusted_proxies are configured), and the gateway uses
+	# it for per-client limits; it only honours the header from loopback peers.
+	handle /ws* {
+		reverse_proxy 127.0.0.1:8081
 	}
-	reverse_proxy 127.0.0.1:8080
+	handle /healthz {
+		reverse_proxy 127.0.0.1:8081
+	}
+
+	# Admin: Kafka UI (SERVER_SERVLET_CONTEXT_PATH=/kafka), never indexed.
+	handle /kafka* {
+		header X-Robots-Tag "noindex, nofollow"
+		basic_auth {
+			__AUTH_USER__ __AUTH_HASH__
+		}
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# The control room: static build shipped to /opt/desal/web (symlink to web-<commit>).
+	# Mutually exclusive matchers, because Caddy orders same-name `header` directives
+	# itself: hashed /assets/* are immutable; everything else (index.html, also served
+	# for SPA routes via try_files) must revalidate.
+	handle {
+		root * /opt/desal/web
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@rest not path /assets/*
+		header @rest Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
 }
