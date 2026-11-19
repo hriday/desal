@@ -1,4 +1,7 @@
 import { salinityLimit } from '../alarms/rules';
+import { divert as divertCmd } from '../commands';
+import { canSend } from '../controls/ctx';
+import { Toggle } from '../controls/Toggle';
 import { Trend } from '../controls/Trend';
 import { DASH, fmt, get, num } from '../equipment/format';
 import { ProductWater } from '../equipment/ProductWater';
@@ -32,6 +35,15 @@ export function ProductView(props: ExpandedProps) {
           <Trend label="Salinity" unit="ppm" digits={1} data={trends['product.salinityPpm']} />
           <Trend label="In-spec water" unit="m³" data={trends['product.shiftProductM3']} />
         </>
+      }
+      controls={
+        <Toggle
+          label="Divert to drain"
+          on={typeof divert === 'boolean' ? divert : undefined}
+          pending={props.pending?.has('divertToDrain') === true}
+          disabled={!canSend({ status, send: props.send })}
+          onChange={(on) => props.send?.(divertCmd(on))}
+        />
       }
     />
   );

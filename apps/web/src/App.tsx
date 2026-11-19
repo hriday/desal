@@ -11,6 +11,9 @@ export type Screen = 'start' | 'handover' | 'room' | 'over';
 const asMonitor = (v: string | null): MonitorId | null =>
   v !== null && (MONITORS as readonly string[]).includes(v) ? (v as MonitorId) : null;
 
+/** The demo has no plant: controls are live but nothing is sent (so nothing shows as pending). */
+const demoSend = () => false;
+
 /** `?demo`: the wall with the built-in sample plant, for visual checks without a backend. `&open=stages` expands a monitor. */
 function Demo({ open }: { open: MonitorId | null }) {
   const [opened, setOpened] = useState<MonitorId | null>(open);
@@ -25,7 +28,7 @@ function Demo({ open }: { open: MonitorId | null }) {
       <AlarmStrip alarms={data.alarms} onOpen={setOpened} />
       <div style={{ height: 8 }} />
       {opened
-        ? <ExpandedView id={opened} {...data} target={demoTarget} onClose={close} />
+        ? <ExpandedView id={opened} {...data} target={demoTarget} onClose={close} send={demoSend} />
         : <Wall status={data.status} readings={data.readings} target={demoTarget} alarms={data.alarms} onOpen={setOpened} />}
     </main>
   );

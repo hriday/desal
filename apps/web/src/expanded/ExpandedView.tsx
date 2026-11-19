@@ -23,7 +23,8 @@ export interface ExpandedViewProps extends ExpandedProps {
 export function ExpandedView({ id, onClose, ...props }: ExpandedViewProps) {
   const back = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    // A field that used Esc to cancel its edit marks the event handled; only an unhandled Esc closes.
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);

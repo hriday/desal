@@ -1,0 +1,29 @@
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 420px;
+  padding: 10px 12px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--warn);
+  border-left-width: 4px;
+  border-radius: 4px;
+  font: 12px/1.4 var(--mono);
+}
+.toast--error, .toast--rejected { border-color: var(--bad); }
+.toast button {
+  margin-left: auto;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+.toast button:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }

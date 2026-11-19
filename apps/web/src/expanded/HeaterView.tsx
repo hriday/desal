@@ -1,4 +1,6 @@
 import type { PlantEvent, PlantStatus } from '@desal/schema';
+import { LoopSetpoint } from '../controls/Setpoint';
+import { LoopModeToggle } from '../controls/Toggle';
 import { Trend } from '../controls/Trend';
 import { BrineHeater } from '../equipment/BrineHeater';
 import { DASH, clamp01, fmt, get, label, num } from '../equipment/format';
@@ -28,6 +30,7 @@ export function HeaterView(props: ExpandedProps) {
   const fuel = status?.fuel;
   const to = fuel?.changeoverTo != null ? label(FUEL_TEXT, fuel.changeoverTo) ?? DASH : undefined;
   const progress = changeoverProgress(status, events);
+  const ctl = { status, pending: props.pending, send: props.send };
   return (
     <ViewLayout
       drawing={<BrineHeater {...props} />}
@@ -51,6 +54,12 @@ export function HeaterView(props: ExpandedProps) {
           <Trend label="TBT" unit="°C" digits={1} data={trends['heater.tbtC']} />
           <Trend label="Firing" unit="%" data={trends['heater.firingPct']} />
           <Trend label="Heat to brine" unit="MW" digits={1} data={trends['heater.heatMW']} />
+        </>
+      }
+      controls={
+        <>
+          <LoopSetpoint loop="tbt" name="TBT" unit="°C" step={0.5} digits={1} {...ctl} />
+          {status?.controlMode === 'auto' && <LoopModeToggle loop="tbt" name="TBT" {...ctl} />}
         </>
       }
     />
