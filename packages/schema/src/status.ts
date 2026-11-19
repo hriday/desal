@@ -17,6 +17,10 @@ export type TripCause = z.infer<typeof TripCauseSchema>;
 export const PhaseSchema = z.enum(['handover', 'running', 'paused', 'over']);
 export type Phase = z.infer<typeof PhaseSchema>;
 
+/** A scenario's controller fault on a loop; it lasts until the next shift starts. */
+export const LoopFaultKindSchema = z.enum(['stuck', 'drift', 'oscillate']);
+export type LoopFaultKind = z.infer<typeof LoopFaultKindSchema>;
+
 export const PlantStatusKindSchema = z.enum(['online', 'tripped', 'restarting', 'acidCleaning']);
 export type PlantStatusKind = z.infer<typeof PlantStatusKindSchema>;
 
@@ -34,7 +38,11 @@ export const PlantStatusSchema = z.object({
   controlMode: LoopModeSchema,
   tripCause: TripCauseSchema.nullable(),
   restartStep: RestartStepSchema.nullable(),
-  loops: z.record(LoopIdSchema, z.object({ mode: LoopModeSchema, setpoint: num, output: num })),
+  /** fault: the loop's controller fault, null when healthy (optional: older simulators did not report it). */
+  loops: z.record(
+    LoopIdSchema,
+    z.object({ mode: LoopModeSchema, setpoint: num, output: num, fault: LoopFaultKindSchema.nullable().optional() }),
+  ),
   pumps: z.record(PumpIdSchema, z.object({ running: z.boolean(), overhaulRemainingTicks: num })),
   fuel: z.object({
     active: FuelKindSchema,

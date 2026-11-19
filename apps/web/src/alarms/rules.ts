@@ -105,18 +105,26 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
 /**
  * The alarm context for the current shift. The target is the status's live `shiftTarget` when given
  * (it follows a mid-shift demandChange), else the one from this shift's shiftStart event.
+ *
+ * Controller faults come from the status loops (`fault`), so a fault alarm lasts exactly as long as
+ * the plant reports the fault. Only a status that carries no fault fields at all (an older
+ * simulator) falls back to this shift's controllerFault events.
  */
 export function alarmContext(
-  events: readonly PlantEvent[], shiftId: number | null, liveTarget?: ShiftTarget | null,
+  events: readonly PlantEvent[], shiftId: number | null, liveTarget?: ShiftTarget | null, loops?: PlantStatus['loops'] | null,
 ): Required<AlarmContext> {
   let target: ShiftTarget | null = null;
-  const faults: string[] = [];
-  if (shiftId === null) return { target, faults };
+  const eventFaults: string[] = [];
+  if (shiftId === null) return { target, faults: [] };
   for (const e of events) {
     if (e.shiftId !== shiftId) continue;
     if (e.type === 'shiftStart') target = e.target;
-    else if (e.type === 'scenario' && e.kind === 'controllerFault') faults.push(e.message);
+    else if (e.type === 'scenario' && e.kind === 'controllerFault') eventFaults.push(e.message);
   }
+  const reported = loops ? Object.entries(loops).filter(([, l]) => l !== undefined && 'fault' in l) : [];
+  const faults = reported.length > 0
+    ? reported.flatMap(([id, l]) => (l?.fault ? [`Controller fault on loop ${id}: ${l.fault}.`] : []))
+    : eventFaults;
   return { target: liveTarget ?? target, faults };
 }
 

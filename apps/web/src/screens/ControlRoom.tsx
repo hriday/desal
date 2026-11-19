@@ -18,8 +18,8 @@ export function ControlRoom() {
   const [opened, setOpened] = useState<MonitorId | null>(null);
   const close = useCallback(() => setOpened(null), []);
   const ctx = useMemo(
-    () => alarmContext(events, status?.shiftId ?? null, status?.shiftTarget),
-    [events, status?.shiftId, status?.shiftTarget],
+    () => alarmContext(events, status?.shiftId ?? null, status?.shiftTarget, status?.loops),
+    [events, status?.shiftId, status?.shiftTarget, status?.loops],
   );
   const alarms = useMemo(() => alarmsFor(status, readings, ctx), [status, readings, ctx]);
   return (

@@ -156,6 +156,20 @@ describe('alarmContext', () => {
     expect(alarmContext([], null)).toEqual({ target: null, faults: [] });
   });
 
+  it('takes the faults from the status loops when the status reports them: a cleared fault raises nothing', () => {
+    const loops = { tbt: { mode: 'auto', setpoint: 1, output: 1, fault: null }, vacuum: { mode: 'auto', setpoint: 1, output: 1, fault: null } } as PlantStatus['loops'];
+    // The shift's event said vacuum was stuck, but the plant no longer reports it.
+    expect(alarmContext(events, 3, null, loops).faults).toEqual([]);
+    const faulty = { ...loops, vacuum: { mode: 'auto', setpoint: 1, output: 1, fault: 'stuck' }, level4: { mode: 'auto', setpoint: 1, output: 1, fault: 'oscillate' } } as PlantStatus['loops'];
+    expect(alarmContext([], 3, null, faulty).faults).toEqual([
+      'Controller fault on loop vacuum: stuck.',
+      'Controller fault on loop level4: oscillate.',
+    ]);
+    // A status without fault fields (an older simulator) falls back to this shift's events.
+    const bare = { tbt: { mode: 'auto', setpoint: 1, output: 1 } } as PlantStatus['loops'];
+    expect(alarmContext(events, 3, null, bare).faults).toEqual(['Controller fault on loop vacuum: stuck.']);
+  });
+
   it("prefers the status's live shift target (a mid-shift demandChange), else the shiftStart one", () => {
     const live = { ...demoTarget, productM3: 4200 };
     expect(alarmContext(events, 3, live).target).toEqual(live);

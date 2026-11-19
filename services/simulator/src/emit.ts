@@ -77,7 +77,7 @@ export function toTelemetry(s: PlantState): TelemetryReading[] {
   }));
 }
 
-const loopView = (l: Loop) => ({ mode: l.mode, setpoint: l.setpoint, output: l.output });
+const loopView = (l: Loop) => ({ mode: l.mode, setpoint: l.setpoint, output: l.output, fault: l.fault?.kind ?? null });
 
 /** Pending fuel deliveries as the player sees them: time until arrival, never absolute ticks. */
 const deliveryView = (s: PlantState) =>

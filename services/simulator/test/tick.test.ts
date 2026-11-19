@@ -232,6 +232,26 @@ describe('emission', () => {
     expect(SENSOR_IDS.length).toBe(TELEMETRY_SENSOR_COUNT);
   });
 
+  it('reports each loop\'s controller fault in the status (null when healthy), so the UI alarm clears with it', () => {
+    const s0 = running();
+    const healthy = tick(s0, []).status;
+    expect(healthy.loops.vacuum!.fault).toBeNull();
+    expect(healthy.loops.level3!.fault).toBeNull();
+    const faulty: PlantState = {
+      ...s0,
+      loops: {
+        ...s0.loops,
+        vacuum: { ...s0.loops.vacuum, fault: { kind: 'stuck', bias: 0 } },
+        levels: s0.loops.levels.map((l, i) => (i === 2 ? { ...l, fault: { kind: 'drift', bias: 0 } } : l)),
+      },
+    };
+    const st = tick(faulty, []).status;
+    expect(PlantStatusSchema.safeParse(st).success).toBe(true);
+    expect(st.loops.vacuum!.fault).toBe('stuck');
+    expect(st.loops.level3!.fault).toBe('drift');
+    expect(st.loops.tbt!.fault).toBeNull();
+  });
+
   it('emits every SENSOR_IDS entry exactly once per tick, as valid readings', () => {
     let s = running();
     expect(new Set(SENSOR_IDS).size).toBe(SENSOR_IDS.length);
