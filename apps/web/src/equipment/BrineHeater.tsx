@@ -8,7 +8,7 @@ export function BrineHeater({ status, readings }: EquipmentProps) {
   const tbt = get(readings, 'heater.tbtC');
   const firing = get(readings, 'heater.firingPct');
   const flame = Math.round(clamp01((firing ?? 0) / 100) * 100) / 100;
-  const sp = status?.loops.tbt?.setpoint;
+  const sp = status?.loops?.tbt?.setpoint;
   const cond = get(readings, 'heater.burnerCondition');
   return (
     <svg viewBox="0 0 200 104" role="img" aria-label="Brine heater">

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render } from '@testing-library/react';
+import type { PlantStatus } from '@desal/schema';
 import type { ComponentType } from 'react';
 import type { Alarm } from '../src/alarms/rules';
 import { demoReadings, demoStatus, demoTarget } from '../src/demo';
@@ -29,6 +30,44 @@ describe('equipment drawings', () => {
     const { container } = render(<C status={null} readings={{}} target={null} />);
     expect(container.querySelector('svg')).not.toBeNull();
     expect(container.textContent).toContain('—');
+  });
+
+  // Readings and status as they might arrive malformed: non-finite or null values, unknown enum values.
+  const weirdReadings = (v: unknown) =>
+    Object.fromEntries(Object.keys(demoReadings()).map((k) => [k, v])) as unknown as Record<string, number>;
+  const weirdStatus = {
+    ...demoStatus(),
+    status: 'melting', controlMode: 'hybrid', balanceUsd: null, shiftNumber: null, shiftTicksRemaining: NaN,
+    fuel: { active: 'coal', changeoverTo: null, backupGrade: 'sludge', gasCurtailmentNotice: null },
+  } as unknown as PlantStatus;
+
+  it.each(EQUIPMENT.flatMap(([n, C]) => [NaN, Infinity, null].map((v) => [n, C, v] as const)))(
+    '%s renders "—" and no NaN/undefined/null for %s readings and unknown status values',
+    (_n, C, v) => {
+      const { container } = render(<C status={weirdStatus} readings={weirdReadings(v)} target={{ ...demoTarget, productM3: 0 }} />);
+      expect(container.textContent).toContain('—');
+      expect(container.innerHTML).not.toMatch(/NaN|undefined|null|Infinity/);
+    },
+  );
+
+  it.each(EQUIPMENT)('%s shows no NaN/undefined/null with nothing known', (_n, C) => {
+    const { container } = render(<C status={null} readings={{}} target={null} />);
+    expect(container.innerHTML).not.toMatch(/NaN|undefined|null|Infinity/);
+  });
+
+  it.each(EQUIPMENT)('%s draws no NaN with a zero target', (_n, C) => {
+    const { container } = render(<C status={demoStatus()} readings={demoReadings()} target={{ ...demoTarget, productM3: 0 }} />);
+    expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('unknown status, mode and fuel values render "—", not raw or blank', () => {
+    const shift = render(<ShiftAccount status={weirdStatus} readings={demoReadings()} target={demoTarget} />).container.textContent;
+    expect(shift).not.toMatch(/melting|hybrid|Manual mode|Auto mode/);
+    expect(shift).toContain('Balance—');
+    cleanup();
+    const fuel = render(<Fuel status={weirdStatus} readings={demoReadings()} target={null} />).container.textContent;
+    expect(fuel).not.toMatch(/coal|sludge/);
+    expect(fuel).toContain('on —');
   });
 
   it.each(EQUIPMENT)('%s shows its key values from a sample frame', (_n, C, expected) => {

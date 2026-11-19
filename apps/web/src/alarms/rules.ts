@@ -1,4 +1,6 @@
 import type { PlantEvent, PlantStatus, ShiftTarget } from '@desal/schema';
+import { usd } from '../equipment/format';
+import { DEFAULT_MAX_SALINITY_PPM, INTAKE_REQUIRED_BASE_M3H, INTAKE_REQUIRED_PER_C, STAGE_COUNT } from '../plantConstants';
 
 export type MonitorId = 'intake' | 'heater' | 'stages' | 'product' | 'fuel' | 'shift';
 /** The wall's monitors, in display order. */
@@ -10,14 +12,8 @@ export interface Alarm { id: string; monitor: MonitorId; level: AlarmLevel; text
 /** What the rules need beyond status and readings: the current shift's target and its controller-fault hints. */
 export interface AlarmContext { target?: ShiftTarget | null; faults?: string[] }
 
-/** Mirrors the simulator's constants (spec 3.1): required intake flow and the default salinity limit. */
-const INTAKE_REQUIRED_BASE_M3H = 5500;
-const INTAKE_REQUIRED_PER_C = 0.03;
-const DEFAULT_MAX_SALINITY_PPM = 25;
-const STAGE_COUNT = 20;
-
 export function requiredIntakeM3h(seawaterC: number | undefined): number {
-  const hot = Math.max(0, (seawaterC ?? 0) - 30);
+  const hot = Number.isFinite(seawaterC) ? Math.max(0, seawaterC! - 30) : 0;
   return INTAKE_REQUIRED_BASE_M3H * (1 + INTAKE_REQUIRED_PER_C * hot);
 }
 
@@ -41,8 +37,6 @@ function faultMonitor(text: string): MonitorId {
   if (loop === 'recirc' || loop === 'blowdown' || loop === 'vacuum' || loop?.startsWith('level')) return 'stages';
   return 'shift';
 }
-
-const usd = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(Math.round(n)).toLocaleString('en-US')}`;
 
 /** Client-side alarm rules (Plan 3 Task 3). A missing reading raises nothing. */
 export function alarmsFor(status: PlantStatus | null, readings: Record<string, number>, ctx: AlarmContext = {}): Alarm[] {
@@ -91,11 +85,12 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
   // Fuel
   const tank = r('fuel.backupTonnes');
   add('backupTank', 'fuel', low(tank, 40, 10), `Backup tank low ${tank?.toFixed(0)} t`);
-  if (status?.fuel.gasCurtailmentNotice) add('gasCurtail', 'fuel', 'warn', status.fuel.gasCurtailmentNotice);
+  if (typeof status?.fuel?.gasCurtailmentNotice === 'string') add('gasCurtail', 'fuel', 'warn', status.fuel.gasCurtailmentNotice);
 
   // Shift & account
-  if (status?.status === 'tripped') add('tripped', 'shift', 'bad', `Plant tripped${status.tripCause ? `: ${status.tripCause}` : ''}`);
-  if (status) add('balance', 'shift', low(status.balanceUsd, 5000, 0), `Balance ${usd(status.balanceUsd)}`);
+  if (status?.status === 'tripped') add('tripped', 'shift', 'bad', `Plant tripped${typeof status.tripCause === 'string' ? `: ${status.tripCause}` : ''}`);
+  const bal = Number.isFinite(status?.balanceUsd) ? status!.balanceUsd : undefined;
+  add('balance', 'shift', low(bal, 5000, 0), `Balance ${usd(bal)}`);
 
   (ctx.faults ?? []).forEach((text, i) => add(`fault${i}`, faultMonitor(text), 'warn', text));
   return out;
@@ -112,6 +107,11 @@ export function alarmContext(events: readonly PlantEvent[], shiftId: number | nu
     else if (e.type === 'scenario' && e.kind === 'controllerFault') faults.push(e.message);
   }
   return { target, faults };
+}
+
+/** Alarms worst first (bad before warn), otherwise in their original order. */
+export function byWorst(alarms: readonly Alarm[]): Alarm[] {
+  return [...alarms].sort((a, b) => (a.level === b.level ? 0 : a.level === 'bad' ? -1 : 1));
 }
 
 /** A monitor's colour: its worst active alarm, or ok. */

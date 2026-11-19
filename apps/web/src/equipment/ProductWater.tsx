@@ -1,17 +1,17 @@
-import { C, clamp01, fmt, get } from './format';
+import { DEFAULT_MAX_SALINITY_PPM } from '../plantConstants';
+import { C, clamp01, fmt, get, num } from './format';
 import type { EquipmentProps } from './types';
-
-const DEFAULT_MAX_SALINITY_PPM = 25;
 
 /** Distillate into the product tank (filled by in-spec water this shift against target) and the salinity analyser. */
 export function ProductWater({ status, readings, target }: EquipmentProps) {
   const flow = get(readings, 'product.flowM3h');
   const sal = get(readings, 'product.salinityPpm');
   const made = get(readings, 'product.shiftProductM3');
-  const limit = target?.maxSalinityPpm ?? DEFAULT_MAX_SALINITY_PPM;
-  const frac = made !== undefined && target ? clamp01(made / target.productM3) : undefined;
+  const limit = num(target?.maxSalinityPpm) && target.maxSalinityPpm > 0 ? target.maxSalinityPpm : DEFAULT_MAX_SALINITY_PPM;
+  const goal = target?.productM3;
+  const frac = made !== undefined && num(goal) && goal > 0 ? clamp01(made / goal) : undefined;
   const salColor = sal === undefined ? C.line : sal > limit ? C.bad : sal >= 0.8 * limit ? C.warn : C.ok;
-  const divert = status?.divertToDrain ?? false;
+  const divert = status?.divertToDrain === true;
   const verdict = divert ? 'to drain' : sal === undefined ? '—' : sal > limit ? 'off spec' : sal >= 0.8 * limit ? 'near limit' : 'in spec';
   const fillH = (frac ?? 0) * 66;
   return (

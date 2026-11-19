@@ -1,5 +1,5 @@
 import type { PlantEvent, PlantStatus } from '@desal/schema';
-import { alarmContext, alarmsFor, requiredIntakeM3h, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
+import { alarmContext, alarmsFor, byWorst, requiredIntakeM3h, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
 import { DEMO_GAME_ID, demoReadings, demoStatus, demoTarget } from '../src/demo';
 
 // A healthy plant: the demo frame with its two deliberate problems removed.
@@ -108,6 +108,12 @@ describe('alarmsFor', () => {
     expect(level('balance', clean(), demoStatus({ balanceUsd: -1 }))).toBe('bad');
   });
 
+  it('a missing or non-finite balance raises nothing', () => {
+    for (const b of [null, NaN, undefined]) {
+      expect(level('balance', clean(), { ...demoStatus(), balanceUsd: b } as unknown as PlantStatus)).toBeUndefined();
+    }
+  });
+
   it('a controller-fault hint is warn on the monitor of its loop', () => {
     const alarms = alarmsFor(demoStatus(), clean(), { faults: ['Controller fault on loop tbt: drift.'] });
     expect(alarms).toEqual([expect.objectContaining({ monitor: 'heater', level: 'warn', text: 'Controller fault on loop tbt: drift.' })]);
@@ -133,6 +139,13 @@ describe('alarmContext', () => {
   it('takes the current shift target and its controller faults only', () => {
     expect(alarmContext(events, 3)).toEqual({ target: demoTarget, faults: ['Controller fault on loop vacuum: stuck.'] });
     expect(alarmContext([], null)).toEqual({ target: null, faults: [] });
+  });
+});
+
+describe('byWorst', () => {
+  it('sorts bad before warn, stable otherwise', () => {
+    const mk = (id: string, level: Alarm['level']): Alarm => ({ id, monitor: 'shift', level, text: id });
+    expect(byWorst([mk('a', 'warn'), mk('b', 'bad'), mk('c', 'warn'), mk('d', 'bad')]).map((x) => x.id)).toEqual(['b', 'd', 'a', 'c']);
   });
 });
 

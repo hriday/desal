@@ -30,8 +30,8 @@ export function Intake({ status, readings }: EquipmentProps) {
       <text x={56} y={40} fill={C.muted} fontSize={7}>screen {fmt(fouling, 2)}</text>
       <path d="M72 68 H196" stroke={C.water} strokeWidth={5} />
       {PUMPS.map((id, i) => {
-        const p = status?.pumps[id];
-        const running = p?.running ?? false;
+        const p = status?.pumps?.[id];
+        const running = p?.running === true;
         const wear = get(readings, `intake.${id}.wear`);
         const cx = 98 + i * 36;
         return (

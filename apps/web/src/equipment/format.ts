@@ -1,3 +1,5 @@
+import { TICK_PLANT_S } from '../plantConstants';
+
 /** Shared value formatting for the drawings. Anything missing or non-finite renders as an em dash. */
 export const DASH = '—';
 
@@ -19,8 +21,6 @@ export function usd(v: number | undefined | null): string {
   return `${v < 0 ? '-' : ''}$${Math.abs(Math.round(v)).toLocaleString('en-US')}`;
 }
 
-/** Plant seconds per simulation tick (simulator TICK_PLANT_S). */
-export const TICK_PLANT_S = 40;
 
 /** "3h 40m" from a tick count. */
 export function ticksToHm(ticks: number | undefined | null): string {
