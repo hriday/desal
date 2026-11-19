@@ -220,6 +220,69 @@ describe('restartStep (Manual)', () => {
   });
 });
 
+describe('control-mode gating', () => {
+  it('rejects the one-button restart in Manual mode', () => {
+    const s = tripped('manual');
+    expect(rejected(beginRestart(s))).toBe('one-button restart is Auto-mode only');
+  });
+
+  it('rejects manual restart steps in Auto mode', () => {
+    const s = tripped('auto');
+    expect(rejected(restartStep(s, 'vacuum'))).toBe('manual restart steps are Manual-mode only');
+  });
+});
+
+describe('burner lock-out before ignition', () => {
+  /** Run `ticks` with the operator holding firing at 100 %; returns heatMW and TBT per tick. */
+  function holdFiring(s0: PlantState, ticks: number): { s: PlantState; heat: number[]; tbt: number[] } {
+    let s = s0;
+    const heat: number[] = [];
+    const tbt: number[] = [s.heater.tbtC];
+    for (let i = 0; i < ticks; i++) {
+      s = tickOnce(setFiring(s, 100)).state;
+      heat.push(s.heater.heatMW);
+      tbt.push(s.heater.tbtC);
+    }
+    return { s, heat, tbt };
+  }
+  const nonRising = (xs: number[]): boolean => xs.every((x, i) => i === 0 || x <= xs[i - 1]! + 1e-9);
+
+  it('does not heat a tripped plant whose firing output is at 100 %', () => {
+    const { s, heat, tbt } = holdFiring(tripped('manual', 0), 50);
+    expect(s.status).toBe('tripped');
+    expect(heat.every((h) => h === 0)).toBe(true);
+    expect(nonRising(tbt)).toBe(true);
+  });
+
+  it('does not heat during the vacuum step, and holds firing at 0', () => {
+    const start = ok(restartStep(tripped('manual', 0), 'vacuum')).state;
+    const { s, heat, tbt } = holdFiring(start, 50);
+    expect(s.status).toBe('restarting');
+    expect(s.restart?.step).toBe('vacuum');
+    expect(s.loops.tbt.output).toBe(0);
+    expect(heat.every((h) => h === 0)).toBe(true);
+    expect(nonRising(tbt)).toBe(true);
+  });
+});
+
+describe('restart from a loss-of-vacuum trip', () => {
+  it('comes back online without re-tripping while vacuum is pulled down', () => {
+    const s0 = createInitialState(1, 0);
+    const poor: PlantState = {
+      ...s0,
+      vacuum: { quality: 0.4 },
+      loops: { ...s0.loops, vacuum: { ...s0.loops.vacuum, output: 10 } },
+    };
+    const trip = applyTrip(poor, 'lossOfVacuum').state;
+    expect(trip.heater.heatMW).toBe(0);
+    const start = ok(beginRestart(trip));
+    const run = runUntil(start.state, 200, isOnline);
+    expect(run.events.some((e) => e.type === 'trip')).toBe(false);
+    expect(run.state.status).toBe('online');
+    expect(progressSteps([...start.events, ...run.events])).toEqual(['vacuum', 'recirc', 'ignition', 'ramp']);
+  });
+});
+
 describe('acid clean', () => {
   it('is rejected while online', () => {
     expect(rejected(beginAcidClean(createInitialState(1, 0)))).toMatch(/tripped/);

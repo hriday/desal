@@ -55,6 +55,7 @@ function enterStep(s: PlantState, step: RestartStep, auto: boolean): { state: Pl
   let loops = s.loops;
   if (step === 'vacuum') loops = { ...loops, vacuum: { ...loops.vacuum, output: BALANCE.vacuumPct } };
   if (step === 'recirc') loops = { ...loops, recirc: { ...loops.recirc, output: BALANCE.recircPct } };
+  if (step === 'vacuum' || step === 'recirc') loops = { ...loops, tbt: { ...loops.tbt, output: 0 } };
   if (step === 'ignition') loops = { ...loops, tbt: { ...loops.tbt, output: IGNITION_FIRING_PCT } };
   // Ignition's own jump to IGNITION_FIRING_PCT is not a ramp; ramp keeps the reference from the
   // ignition step so a firing jump issued together with the ramp command is still caught.
@@ -73,6 +74,7 @@ function enterStep(s: PlantState, step: RestartStep, auto: boolean): { state: Pl
 export function beginRestart(s: PlantState): Result {
   if (s.status === 'acidCleaning') return { rejected: 'acid clean in progress' };
   if (s.status !== 'tripped') return { rejected: 'restart requires a tripped plant' };
+  if (s.controlMode !== 'auto') return { rejected: 'one-button restart is Auto-mode only' };
   return enterStep(s, 'vacuum', true);
 }
 
@@ -80,6 +82,7 @@ export function beginRestart(s: PlantState): Result {
 export function restartStep(s: PlantState, step: RestartStep): Result {
   if (s.status === 'acidCleaning') return { rejected: 'acid clean in progress' };
   if (s.status !== 'tripped' && s.status !== 'restarting') return { rejected: 'restart requires a tripped plant' };
+  if (s.controlMode !== 'manual') return { rejected: 'manual restart steps are Manual-mode only' };
   if (s.restart?.auto) return { rejected: 'automatic restart in progress' };
   const idx = STEPS.indexOf(step);
   const doneIdx = s.status === 'restarting' && s.restart ? STEPS.indexOf(s.restart.step) : -1;
@@ -127,10 +130,14 @@ export function stepRestart(s: PlantState): { state: PlantState; events: PlantEv
 
   let state = s;
   const events: PlantEvent[] = [];
+  if (r.step === 'vacuum' || r.step === 'recirc') {
+    // Burner locked out before ignition: hold firing at 0 whatever the operator set.
+    state = { ...s, loops: { ...s.loops, tbt: { ...s.loops.tbt, output: 0 } } };
+  }
   if (r.auto && r.step !== 'ramp') {
     const next = STEPS[STEPS.indexOf(r.step) + 1];
-    if (!next || unmetPrecondition(s, next)) return { state: withPrev(s), events: [] };
-    return enterStep(s, next, true);
+    if (!next || unmetPrecondition(state, next)) return { state: withPrev(state), events: [] };
+    return enterStep(state, next, true);
   }
   if (r.auto) {
     const tbt = s.loops.tbt;

@@ -62,6 +62,17 @@ describe('checkInterlocks', () => {
     expect(checkInterlocks(ramp, 0)).toBe('noFuel');
   });
 
+  it('suppresses loss of vacuum only during the restart vacuum step', () => {
+    const s: PlantState = {
+      ...online(),
+      status: 'restarting',
+      vacuum: { quality: 0.4 },
+      restart: { step: 'vacuum', stepStartedTick: 0, auto: true, prevFiringPct: 0 },
+    };
+    expect(checkInterlocks(s, 0)).toBeNull();
+    expect(checkInterlocks({ ...s, restart: { ...s.restart!, step: 'recirc' } }, 0)).toBe('lossOfVacuum');
+  });
+
   it('is silent while tripped or acid cleaning', () => {
     expect(checkInterlocks({ ...withTbt(online(), 130), status: 'tripped' }, 0)).toBeNull();
     expect(checkInterlocks({ ...withTbt(online(), 130), status: 'acidCleaning' }, 0)).toBeNull();

@@ -11,8 +11,23 @@ import {
 } from '../constants.js';
 import type { PlantState } from '../state.js';
 
-/** Heat the burner would deliver at the current firing demand. Firing lives in loops.tbt.output (auto or manual). */
+/**
+ * The burner is permitted to fire only when online, or during a restart from ignition onward.
+ * Tripped, acid cleaning, and the vacuum/recirc restart steps are locked out (no interlock
+ * watches the plant then).
+ */
+function burnerPermitted(s: PlantState): boolean {
+  if (s.status === 'online') return true;
+  if (s.status !== 'restarting' || !s.restart) return false;
+  return s.restart.step === 'ignition' || s.restart.step === 'ramp';
+}
+
+/**
+ * Heat the burner would deliver at the current firing demand. Firing lives in loops.tbt.output
+ * (auto or manual); it is 0 while the burner is locked out.
+ */
 export function heaterDemandMW(s: PlantState): number {
+  if (!burnerPermitted(s)) return 0;
   return BURNER_MAX_MW * (s.loops.tbt.output / 100) * s.heater.burnerCondition;
 }
 
