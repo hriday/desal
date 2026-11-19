@@ -9,14 +9,18 @@ import {
   type ServerErrorReason,
   type ServerMsg,
 } from '@desal/schema';
+import { TokenBucket } from './bucket.js';
 import { FrameAssembler } from './frames.js';
 import type { GatewayTopic, SeenStatus } from './kafka.js';
 import { ClientLimits, type PerClientLimits } from './limits.js';
 import {
+  CLOSE_POLICY_VIOLATION,
   CLOSE_TOO_LARGE,
   MAX_MSG_BYTES,
-  MAX_MSGS_PER_S,
   parseClientMsg,
+  RATE_ABUSE_MS,
+  RATE_BURST,
+  RATE_REFILL_PER_S,
   RESUME_WAIT_MS,
   RESUME_WINDOW_MS,
 } from './protocol.js';
@@ -49,8 +53,8 @@ interface Socket {
   gameId: string | null;
   /** Sent newGame; the 'game' reply waits for the simulator's gameStart. */
   awaitingStart: boolean;
-  /** When each message accepted in the last second arrived (oldest first; at most MAX_MSGS_PER_S). */
-  recent: number[];
+  /** Message rate limit (protocol.ts, RATE_*). */
+  bucket: TokenBucket;
   /** Who this socket belongs to (an IP address, see server.ts), for the per-client limits. */
   clientId: string;
   /** A resume waiting for the game's first status (none known yet). */
@@ -104,7 +108,8 @@ export class Sessions {
 
   /** clientId defaults to the socket itself (no per-client grouping). */
   open(socketId: string, sink: SocketSink, clientId: string = socketId): void {
-    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, recent: [], clientId, resuming: null });
+    const bucket = new TokenBucket({ burst: RATE_BURST, refillPerS: RATE_REFILL_PER_S, abuseMs: RATE_ABUSE_MS }, this.now());
+    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, bucket, clientId, resuming: null });
   }
 
   /**
@@ -130,10 +135,10 @@ export class Sessions {
       return;
     }
     const now = this.now();
-    // Sliding window: forget arrivals a second or more old, then count what is left.
-    while (s.recent.length > 0 && now - s.recent[0]! >= 1000) s.recent.shift();
-    if (s.recent.length >= MAX_MSGS_PER_S) return this.error(s, 'rate limited');
-    s.recent.push(now);
+    // Over the rate: dropped without an answer (an error per message would itself be a flood).
+    const take = s.bucket.take(now);
+    if (take === 'abusive') return s.sink.close(CLOSE_POLICY_VIOLATION, 'rate limited');
+    if (take === 'dropped') return;
 
     const parsed = parseClientMsg(raw);
     if (!parsed.ok) return this.error(s, parsed.reason);

@@ -71,6 +71,23 @@ docker exec desal-kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server local
   --add-config segment.ms=3600000,min.cleanable.dirty.ratio=0.1
 ```
 
+**One-off, retention bounds for `plant.commands` and `plant.events`.** Players write to `plant.commands` (through the
+gateway), and every rejected command adds a `commandRejected` to `plant.events`, so both topics are capped by size as
+well as time. The simulator sets this only when it creates a topic (`ensureTopics` cannot alter an existing one), so on
+a server whose topics predate it, run once:
+
+```bash
+docker exec desal-kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 \
+  --entity-type topics --entity-name plant.commands --alter \
+  --add-config retention.ms=86400000,retention.bytes=268435456
+docker exec desal-kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 \
+  --entity-type topics --entity-name plant.events --alter \
+  --add-config retention.ms=604800000,retention.bytes=268435456
+```
+
+`plant.commands` keeps 24 h and at most 256 MiB; `plant.events` keeps its 7-day time retention (so Flink jobs can replay
+a week) and at most 256 MiB per partition. Check with `--describe` instead of `--alter ...`.
+
 Override the target with `DESAL_SERVER=root@host` and `DESAL_HOST=name`.
 
 **Rolling back:** check out the earlier commit and run `deploy.sh` again, or on the server set `SIMULATOR_IMAGE` and

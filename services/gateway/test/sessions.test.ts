@@ -164,15 +164,28 @@ describe('limits', () => {
     expect(closed.size).toBe(0);
   });
 
-  it('drops a 55 msgs/s flood beyond 50 per second, with rate limited errors', () => {
+  it('token bucket: a burst of 25, then drops silently (no error per dropped message)', () => {
     const box = open('s1');
-    for (let i = 0; i < 55; i++) client('s1', { t: 'ping' });
-    expect(box.filter((m) => m.t === 'pong')).toHaveLength(50);
-    expect(box.filter((m) => m.t === 'error')).toEqual(Array(5).fill({ t: 'error', reason: 'rate limited' }));
-    clock += 1000; // a second later: allowed again
-    box.length = 0;
-    client('s1', { t: 'ping' });
-    expect(box).toEqual([{ t: 'pong' }]);
+    for (let i = 0; i < 30; i++) client('s1', { t: 'ping' });
+    expect(box.filter((m) => m.t === 'pong')).toHaveLength(25);
+    expect(box.filter((m) => m.t === 'error')).toEqual([]);
+    expect(closed.size).toBe(0);
+  });
+
+  it('refills 5 tokens per second, up to the burst of 25', () => {
+    const box = open('s1');
+    const pings = (n: number) => {
+      box.length = 0;
+      for (let i = 0; i < n; i++) client('s1', { t: 'ping' });
+      return box.filter((m) => m.t === 'pong').length;
+    };
+    expect(pings(25)).toBe(25);
+    clock += 1000;
+    expect(pings(10)).toBe(5);
+    clock += 200;
+    expect(pings(3)).toBe(1);
+    clock += 60_000; // a long pause refills to the burst, never beyond
+    expect(pings(30)).toBe(25);
   });
 
   it('allows a 20-command burst (set all stage levels)', () => {
@@ -182,18 +195,33 @@ describe('limits', () => {
     expect(sent.filter((e) => e.command.type === 'setSetpoint')).toHaveLength(20);
   });
 
-  it('limits over a sliding 1 s window, not fixed seconds', () => {
-    const box = open('s1');
-    const pings = (n: number) => {
-      box.length = 0;
-      for (let i = 0; i < n; i++) client('s1', { t: 'ping' });
-      return box.filter((m) => m.t === 'pong').length;
+  it('closes the socket (1008) after 3 consecutive seconds of an empty bucket', () => {
+    open('s1');
+    // A flood at 50 msgs/s: the burst is gone after about 0.55 s, and the bucket stays empty from then on.
+    for (let ms = 0; ms < 3400; ms += 20) {
+      client('s1', { t: 'ping' });
+      clock += 20;
+    }
+    expect(closed.has('s1')).toBe(false); // empty for about 2.85 s
+    for (let ms = 0; ms < 400; ms += 20) {
+      client('s1', { t: 'ping' });
+      clock += 20;
+    }
+    expect(closed.get('s1')).toBe(1008);
+  });
+
+  it('a pause longer than a second restarts the 3 s count', () => {
+    open('s1');
+    const flood = (ms: number) => {
+      for (let t = 0; t < ms; t += 20) {
+        client('s1', { t: 'ping' });
+        clock += 20;
+      }
     };
-    expect(pings(30)).toBe(30); // t
-    clock += 500;
-    expect(pings(25)).toBe(20); // t+500: 30 + 20 = 50 in the last second
-    clock += 500;
-    expect(pings(31)).toBe(30); // t+1000: the 30 from t have left the window; 20 remain
+    flood(2500);
+    clock += 1500; // quiet: the bucket is no longer being hammered
+    flood(2500);
+    expect(closed.has('s1')).toBe(false);
   });
 
   it('ping answers pong', () => {

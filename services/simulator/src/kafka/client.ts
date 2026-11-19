@@ -58,9 +58,28 @@ const SPECS: TopicSpec[] = [
     ],
   },
   // 1 partition = one total order for operator actions across all games;
-  // replaying them reproduces the same plant histories.
-  { base: TOPICS.commands, numPartitions: 1 },
-  { base: TOPICS.events, numPartitions: 1, configEntries: [LOG_APPEND_TIME] },
+  // replaying them reproduces the same plant histories. Public players write here
+  // (through the gateway), so it is bounded: 24 h and 256 MiB, whichever comes first.
+  {
+    base: TOPICS.commands,
+    numPartitions: 1,
+    configEntries: [
+      { name: 'retention.ms', value: '86400000' },
+      { name: 'retention.bytes', value: '268435456' },
+    ],
+  },
+  // Events keep the 7-day default time retention (Flink jobs may replay a week of
+  // history), set explicitly, plus a 256 MiB size cap: every rejected command adds a
+  // commandRejected event, so a flood of bad commands must not be able to fill the disk.
+  {
+    base: TOPICS.events,
+    numPartitions: 1,
+    configEntries: [
+      LOG_APPEND_TIME,
+      { name: 'retention.ms', value: '604800000' },
+      { name: 'retention.bytes', value: '268435456' },
+    ],
+  },
   // Status is only interesting while fresh, so expire it after 1 hour.
   {
     base: TOPICS.status,
@@ -96,6 +115,7 @@ const SPECS: TopicSpec[] = [
  *   docker exec desal-kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 \
  *     --entity-type topics --entity-name plant.telemetry --alter \
  *     --add-config message.timestamp.type=LogAppendTime,retention.ms=86400000,retention.bytes=268435456
+ * docs/hosting.md lists the commands for plant.commands and plant.events (retention bounds);
  * and for a plant.state created before Plan 2 (prompt compaction of snapshots and tombstones):
  *   docker exec desal-kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:9092 \
  *     --entity-type topics --entity-name plant.state --alter \

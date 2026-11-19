@@ -65,5 +65,12 @@ describe('ensureTopics', () => {
     const telemetry = describe(TOPICS.telemetry);
     expect(telemetry).toContain('retention.ms=86400000');
     expect(telemetry).toContain('retention.bytes=268435456');
+    // One client could otherwise fill the disk through commands and the rejections they cause.
+    const commands = describe(TOPICS.commands);
+    expect(commands).toContain('retention.ms=86400000');
+    expect(commands).toContain('retention.bytes=268435456');
+    const events = describe(TOPICS.events);
+    expect(events).toContain('retention.ms=604800000'); // 7 days, kept for Flink
+    expect(events).toContain('retention.bytes=268435456');
   });
 });

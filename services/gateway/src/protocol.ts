@@ -3,10 +3,13 @@ import { ClientMsgSchema, type ClientMsg, type ServerErrorReason } from '@desal/
 /** Largest client message accepted, in bytes; larger ones close the socket. */
 export const MAX_MSG_BYTES = 16384;
 /**
- * Client messages allowed per socket in any sliding 1 s window; the rest are dropped. 50 leaves
- * room for the UI's "set all stage levels" burst (20 commands at once).
+ * Per-socket token bucket (bucket.ts): a burst of 25 messages, refilled at 5 per second; a message
+ * finding the bucket empty is dropped. 25 leaves room for the UI's "set all stage levels" burst
+ * (20 commands at once). A socket that keeps the bucket empty for 3 s is closed with 1008.
  */
-export const MAX_MSGS_PER_S = 50;
+export const RATE_BURST = 25;
+export const RATE_REFILL_PER_S = 5;
+export const RATE_ABUSE_MS = 3_000;
 /** Concurrent sockets per gateway; extra ones are closed with code 1013 (try again later). */
 export const MAX_SOCKETS = 50;
 /**
@@ -27,6 +30,7 @@ export const RESUME_WINDOW_MS = 90_000;
 
 /** WebSocket close codes used by the gateway. */
 export const CLOSE_TOO_LARGE = 1009;
+export const CLOSE_POLICY_VIOLATION = 1008;
 export const CLOSE_TRY_AGAIN_LATER = 1013;
 export const CLOSE_GOING_AWAY = 1001;
 
