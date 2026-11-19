@@ -328,7 +328,7 @@ describe('SimRunner start', () => {
     const host = new GameHost();
     const runner = new SimRunner(io, host, { log: () => {}, now: () => 5_000_000 });
     await runner.start([saved]);
-    expect(host.games().get(A)).toEqual({ state: saved, lastSeenMs: 5_000_000 });
+    expect(host.games().get(A)).toEqual({ state: saved, lastSeenMs: 5_000_000, lastPlayerActionMs: 5_000_000 });
     const stopping = runner.stop();
     await vi.advanceTimersByTimeAsync(1000);
     await stopping;

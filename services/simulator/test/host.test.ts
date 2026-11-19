@@ -96,6 +96,67 @@ describe('GameHost', () => {
     expect(h.games().has(gid(1))).toBe(true);
   });
 
+  describe('idle players (heartbeats alone do not keep a game forever)', () => {
+    /** Step with a heartbeat for every game every 15 s, from `from` (exclusive) to `to` (inclusive); returns the games ended. */
+    function heartbeats(h: GameHost, from: number, to: number): string[] {
+      const ended: string[] = [];
+      for (let t = from + 15_000; t <= to; t += 15_000) {
+        ended.push(...h.step([...h.games().keys()].map((g) => cmd(g, { type: 'heartbeat' })), t).ended);
+      }
+      return ended;
+    }
+
+    it('ends a game in handover after 10 minutes without a player action', () => {
+      const h = started([gid(1)]); // created at 0, in handover
+      expect(heartbeats(h, 0, 600_000)).toEqual([]);
+      const r = h.step([cmd(gid(1), { type: 'heartbeat' })], 600_001);
+      expect(r.ended).toEqual([gid(1)]);
+      expect(r.perGame.get(gid(1))!.events.at(-1)).toMatchObject({ type: 'gameEnd', reason: 'abandoned' });
+    });
+
+    it('ends a running game after 30 minutes without a player action, not after 10', () => {
+      const h = started([gid(1)]);
+      h.step([cmd(gid(1), { type: 'startShift', mode: 'auto' })], 1000);
+      expect(heartbeats(h, 1000, 1000 + 1_800_000)).toEqual([]);
+      expect(h.games().get(gid(1))!.state.phase).toBe('running');
+      const r = h.step([cmd(gid(1), { type: 'heartbeat' })], 1000 + 1_800_001);
+      expect(r.ended).toEqual([gid(1)]);
+    });
+
+    it('ends a paused game after 10 minutes without a player action', () => {
+      const h = started([gid(1)]);
+      h.step([cmd(gid(1), { type: 'startShift', mode: 'auto' })], 1000);
+      h.step([cmd(gid(1), { type: 'pause' }, 1)], 2000);
+      expect(h.games().get(gid(1))!.state.phase).toBe('paused');
+      expect(heartbeats(h, 2000, 602_000)).toEqual([]);
+      expect(h.step([], 602_001).ended).toEqual([gid(1)]);
+    });
+
+    it('any command but a heartbeat counts as a player action, even a rejected one', () => {
+      const h = started([gid(1)]);
+      expect(heartbeats(h, 0, 540_000)).toEqual([]);
+      h.step([cmd(gid(1), { type: 'resume' })], 550_000); // rejected (not paused), still the player acting
+      expect(heartbeats(h, 550_000, 1_140_000)).toEqual([]);
+      expect(h.step([], 1_150_001).ended).toEqual([gid(1)]);
+    });
+
+    it('both limits are host options', () => {
+      const h = started([gid(1), gid(2)], { idleHandoverMs: 1000, idleRunningMs: 5000 });
+      h.step([cmd(gid(2), { type: 'startShift', mode: 'auto' })], 0);
+      expect(h.step([], 1001).ended).toEqual([gid(1)]);
+      expect(h.step([], 5000).ended).toEqual([]);
+      expect(h.step([], 5001).ended).toEqual([gid(2)]);
+    });
+
+    it('a restored game counts its player-action clock from the restore', () => {
+      const s = started([gid(1)]).games().get(gid(1))!.state;
+      const h = new GameHost();
+      h.restore([s], 10_000_000);
+      expect(heartbeats(h, 10_000_000, 10_600_000)).toEqual([]);
+      expect(h.step([], 10_600_001).ended).toEqual([gid(1)]);
+    });
+  });
+
   it('quitGame ends the game with one gameEnd and removes it', () => {
     const h = started([gid(1)]);
     const r = h.step([cmd(gid(1), { type: 'quitGame' })], 1000);

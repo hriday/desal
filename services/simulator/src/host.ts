@@ -10,6 +10,8 @@ import { stamped, tick } from './tick.js';
 const NIL_GAME_ID = '00000000-0000-0000-0000-000000000000';
 const COMMAND_ID_ECHO_MAX = 64;
 const DEFAULT_IDLE_MS = 90_000;
+const DEFAULT_IDLE_HANDOVER_MS = 10 * 60_000;
+const DEFAULT_IDLE_RUNNING_MS = 30 * 60_000;
 const DEFAULT_HOST_SEED = 0x5eed1234;
 
 export interface GameTickOut {
@@ -32,14 +34,25 @@ export interface HostTick {
 
 export interface GameHostOptions {
   maxGames?: number;
+  /** No command at all (heartbeats included) for this long: the client is gone, the game is abandoned. */
   idleMs?: number;
+  /**
+   * No player action (any command but a heartbeat) for this long while in handover or paused: the
+   * game is abandoned. Heartbeats only prove a tab is open; a forgotten tab must not hold a slot.
+   */
+  idleHandoverMs?: number;
+  /** The same, while a shift runs (the plant needs no input to keep going, so this is longer). */
+  idleRunningMs?: number;
   /** Seed of the RNG that picks each new game's plant seed. Tests use the default; the runner passes a random one. */
   seed?: number;
 }
 
 interface Entry {
   state: PlantState;
+  /** Last command of any kind (liveness). */
   lastSeenMs: number;
+  /** Last command other than a heartbeat (the player is still playing). */
+  lastPlayerActionMs: number;
 }
 
 type HostEventBody =
@@ -57,21 +70,32 @@ export class GameHost {
   private readonly entries = new Map<string, Entry>();
   private readonly maxGames: number;
   private readonly idleMs: number;
+  private readonly idleHandoverMs: number;
+  private readonly idleRunningMs: number;
   private rngSeed: number;
 
   constructor(opts: GameHostOptions = {}) {
     this.maxGames = opts.maxGames ?? MAX_GAMES;
     this.idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
+    this.idleHandoverMs = opts.idleHandoverMs ?? DEFAULT_IDLE_HANDOVER_MS;
+    this.idleRunningMs = opts.idleRunningMs ?? DEFAULT_IDLE_RUNNING_MS;
     this.rngSeed = (opts.seed ?? DEFAULT_HOST_SEED) >>> 0;
   }
 
-  games(): ReadonlyMap<string, { state: PlantState; lastSeenMs: number }> {
+  games(): ReadonlyMap<string, { state: PlantState; lastSeenMs: number; lastPlayerActionMs: number }> {
     return this.entries;
   }
 
-  /** Resume games from snapshots after a restart; their liveness clock starts now. */
+  /** Resume games from snapshots after a restart; their liveness and player-action clocks start now. */
   restore(states: PlantState[], nowMs: number): void {
-    for (const state of states) this.entries.set(state.run.gameId, { state, lastSeenMs: nowMs });
+    for (const state of states) this.entries.set(state.run.gameId, { state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });
+  }
+
+  /** Has the game gone too long without a command, or without a player action for its phase? */
+  private idle(entry: Entry, nowMs: number): boolean {
+    if (nowMs - entry.lastSeenMs > this.idleMs) return true;
+    const limit = entry.state.phase === 'running' ? this.idleRunningMs : this.idleHandoverMs;
+    return nowMs - entry.lastPlayerActionMs > limit;
   }
 
   private newSeed(): number {
@@ -115,7 +139,7 @@ export class GameHost {
           const initial = createInitialState(this.newSeed(), nowMs, gameId);
           // gameStart is seq 0 of the new game, stamped from its own state.
           const start = stamped([{ type: 'gameStart', tick: 0, plantTime: nowMs, shiftId: null }], initial);
-          this.entries.set(gameId, { state: start.state, lastSeenMs: nowMs });
+          this.entries.set(gameId, { state: start.state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });
           lead.set(gameId, start.events);
         }
         continue;
@@ -130,6 +154,7 @@ export class GameHost {
       }
       existing.lastSeenMs = nowMs;
       if (command.type === 'heartbeat') continue;
+      existing.lastPlayerActionMs = nowMs;
       const list = pending.get(gameId) ?? [];
       list.push(raw);
       pending.set(gameId, list);
@@ -143,7 +168,7 @@ export class GameHost {
       const first = lead.get(gameId) ?? [];
       let out: GameTickOut;
       try {
-        if (nowMs - entry.lastSeenMs > this.idleMs) {
+        if (this.idle(entry, nowMs)) {
           out = this.finish(entry, 'abandoned', first);
         } else {
           const r = tick(entry.state, pending.get(gameId) ?? []);
