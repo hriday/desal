@@ -180,7 +180,8 @@ export function reducer(s: State, a: Action): State {
     case 'conn':
       switch (a.conn) {
         case 'idle': return { ...s, conn: 'idle', everOpen: false, telemetryLost: false };
-        case 'connecting': return { ...s, conn: a.conn, telemetryLost: false };
+        // A retry after a 1013 stays 'full' (message and Retry) until it actually opens.
+        case 'connecting': return { ...s, conn: s.conn === 'full' ? 'full' : 'connecting', telemetryLost: false };
         case 'open': {
           const opened: State = { ...s, conn: 'open', everOpen: true, telemetryLost: false };
           // A reconnect while starting with no game assigned: the newGame's fate is unknown, so

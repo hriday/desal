@@ -232,6 +232,8 @@ describe('Gateway at capacity (close 1013)', () => {
     const n = FakeWS.all.length;
     fireEvent.click(getByRole('button', { name: 'Retry' }));
     expect(FakeWS.all).toHaveLength(n + 1);
+    // Still at capacity as far as we know until the new socket opens: no flicker to "Reconnecting…".
+    expect(getByRole('alert').textContent).toContain('The plant is at capacity, try again shortly');
     FakeWS.all.at(-1)!.open();
     expect(FakeWS.all.at(-1)!.sentTypes()).toEqual(['resume']);
   });
