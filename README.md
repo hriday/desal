@@ -55,7 +55,7 @@ One tick runs per second and is 40 plant seconds. Ctrl-C saves a final snapshot 
 
 The career save is the latest record (key `plant-1`) of the compacted `plant.state` topic. If the save is corrupt the simulator refuses to start and tells you to use `--new-career` (the old record stays in the topic history until compaction removes it).
 
-If Kafka goes down mid-run, the plant freezes and retries the failed tick until Kafka acknowledges it again.
+If Kafka goes down mid-run, the plant freezes and retries the failed tick until Kafka acknowledges it again. Errors that retrying cannot fix halt the simulator instead: an exception inside the plant model, or a produce error the broker will never accept (message too large, invalid record, authorization or authentication failure). It logs `FATAL`, writes a final snapshot of the last good state, and exits with status 1.
 
 An Auto (one-button) restart gives up on a step that makes no progress for 90 ticks (1 plant hour; in the ramp, progress means TBT still climbing): it emits `restartProgress` with `ok: false` and a reason, and the plant goes back to `tripped` without trip damage, so you can fix the cause and restart again. Putting the firing (`tbt`) loop in manual during an Auto ramp hands the firing to you, policed by the same ramp-rate limits as a Manual restart.
 

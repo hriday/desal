@@ -51,6 +51,12 @@ describe('applyCommand', () => {
     expect(e.type === 'commandRejected' && e.reason.startsWith('invalid:')).toBe(true);
   });
 
+  it('echoes at most 64 chars of an invalid commandId, so a huge one cannot make an unproducible event', () => {
+    const huge = 'x'.repeat(5_000_000);
+    const e = applyCommand(running(), { commandId: huge, command: { type: 'pause' } }).events[0]!;
+    expect(e.type === 'commandRejected' && e.commandId).toBe('x'.repeat(64));
+  });
+
   it('rejects a stale shift id', () => {
     const s = running();
     const r = applyCommand(s, env({ type: 'pause' }, 7));

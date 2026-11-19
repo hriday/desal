@@ -1,5 +1,6 @@
 import { PLANT_KEY, TOPICS } from '@desal/schema';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as tickModule from '../../src/tick.js';
 import { topicName } from '../../src/kafka/client.js';
 import { commandsGroup, SimRunner, type OutRecord, type SimIO } from '../../src/kafka/runner.js';
 import { createInitialState } from '../../src/state.js';
@@ -124,6 +125,87 @@ describe('SimRunner (fake I/O)', () => {
     const last = JSON.parse(String(snaps.at(-1)!.messages[0]!.value));
     expect(last.state.tick).toBe(runner.state.tick);
     expect(snaps.at(-1)!.messages[0]!.key).toBe(PLANT_KEY);
+  });
+});
+
+/** A librdkafka-style produce error, as the client rejects with (e.g. code 10 = message size too large). */
+const kafkaError = (code: number, message: string) => Object.assign(new Error(message), { code });
+
+describe('SimRunner fatal errors (fake I/O)', () => {
+  let io: FakeIO;
+  let logs: string[];
+  let fatal: unknown[];
+  let runner: SimRunner;
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    io = new FakeIO();
+    logs = [];
+    fatal = [];
+    runner = new SimRunner(io, initial, { tickMs: 1000, retryMs: 2000, log: (m) => logs.push(m), onFatal: (e) => fatal.push(e) });
+    await runner.start();
+    io.deliver(env(initial, { type: 'startShift', mode: 'auto' }));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    const stopping = runner.stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await stopping;
+    vi.useRealTimers();
+  });
+
+  const lastSnapshot = () => JSON.parse(String(io.on(TOPICS.state).at(-1)!.messages[0]!.value));
+
+  it('an exception inside tick() halts: last good state kept and saved, onFatal called, no more ticks', async () => {
+    await vi.advanceTimersByTimeAsync(3000);
+    const good = runner.state;
+    expect(good.tick).toBe(3);
+    const boom = new Error('model blew up');
+    vi.spyOn(tickModule, 'tick').mockImplementation(() => {
+      throw boom;
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(fatal).toEqual([boom]);
+    expect(runner.state).toBe(good);
+    expect(lastSnapshot().state).toEqual(good);
+    expect(logs.some((l) => /fatal/i.test(l) && /model blew up/.test(l))).toBe(true);
+    const sent = io.sent.length;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(io.sent.length).toBe(sent);
+    await expect(runner.stop()).resolves.toBeUndefined();
+    expect(runner.failed).toBe(true);
+  });
+
+  it('a non-retriable produce error (message too large) halts instead of retrying forever as kafkaDown', async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+    const send = io.send.bind(io);
+    io.send = async (record) => {
+      if (record.topic === topicName(TOPICS.telemetry)) {
+        io.attempts++;
+        throw kafkaError(10, 'Broker: Message size too large');
+      }
+      return send(record);
+    };
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(runner.kafkaDown).toBe(false);
+    expect(fatal).toHaveLength(1);
+    expect(logs.some((l) => /fatal/i.test(l) && /too large/i.test(l))).toBe(true);
+    const attempts = io.attempts;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(io.attempts).toBe(attempts); // no resend loop
+    // A final snapshot was attempted (and here succeeded: only telemetry is oversize).
+    expect(lastSnapshot().state.tick).toBe(runner.state.tick);
+  });
+
+  it('a retriable produce error still freezes and retries (kafkaDown), not fatal', async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+    io.down = true;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(runner.kafkaDown).toBe(true);
+    expect(fatal).toEqual([]);
+    io.down = false;
   });
 });
 

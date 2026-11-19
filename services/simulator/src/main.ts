@@ -29,7 +29,8 @@ async function main(): Promise<void> {
     }
   }
 
-  const runner = new SimRunner(kafka, state);
+  // A fatal runner error has already saved the last good state and disconnected.
+  const runner = new SimRunner(kafka, state, { onFatal: () => process.exit(1) });
   await runner.start();
 
   let stopping = false;
@@ -37,8 +38,13 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     console.log(`[sim] ${signal}: saving and shutting down`);
-    await runner.stop();
-    process.exit(0);
+    try {
+      await runner.stop();
+    } catch (e) {
+      console.error('[sim] shutdown failed:', e);
+      process.exit(1);
+    }
+    process.exit(runner.failed ? 1 : 0);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));

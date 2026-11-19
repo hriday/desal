@@ -16,13 +16,13 @@ A later phase adds a reverse osmosis (RO) unit.
 **Goals**
 - A tense, readable operator experience: notice the problem, diagnose it, act, and see the consequence.
 - A simulation that follows real cause-and-effect relationships, so a desalination engineer would nod along, without requiring textbook knowledge to play.
-- Persistent consequences: trips and damage carry over, and the player inherits their own plant in the next shift.
+- Consequences within a game: trips and damage carry over from shift to shift, and the player inherits their own plant in the next shift. A game is played in one sitting; it can't be saved and resumed later (§3.1).
 - Kafka and Flink doing real work in the loop: telemetry, commands, alarms, trends, scoring, handover reports, persisted plant state.
 
 **Non-goals (for now)**
 - The RO unit (phase 2; the design should make it pluggable, see §10).
-- Multiplayer and user accounts. (It is hosted on a Linux server, see §7, but for one operator.)
-- An economy, tycoon, or upgrade shop. The player is an operator, not a manager.
+- Multiplayer *within* a plant, user accounts, saving a game to continue later. (It is public on a Linux server, see §7; each visitor runs their own plant.)
+- A tycoon economy or upgrade shop. The player is an operator, not a manager: the operating account only constrains the run (it pays for fuel, repairs and fines and earns for water); it buys no upgrades.
 - High-fidelity engineering accuracy (no CFD, no full heat and mass balance solver).
 - Mobile layouts. The target is a desktop browser.
 
@@ -39,10 +39,18 @@ A later phase adds a reverse osmosis (RO) unit.
 - Each shift has a **target**: product volume (m³), maximum salinity (ppm), and a **fuel cost budget** in money (fuel prices move, so the budget is in $, not tonnes).
 - Each shift has a **scenario**: starting conditions plus scheduled and random events (algal bloom onset, seawater temperature rise, pump bearing wear, gas supply curtailment, gas price spike, backup-fuel delivery delay, demand change mid-shift). Scenarios get harder over the career.
 - At the end of the shift, the player gets a **score and debrief**.
-- **Continuity:** it is one plant across a career. The next shift starts from the exact state the last one ended in: scale thickness, pump wear, backup fuel tank level, equipment that is down. *(My call: a single career save. "New career" resets the plant. There is no game over; a badly damaged plant simply makes later shifts harder. Repair options are in §3.4.)*
-- **Shift handover report:** shown at the start of each shift, like a real operator's handover log. It covers equipment condition, trips and incidents last shift, open alarms, and this shift's target and conditions. Flink generates it from the previous shift's events.
-- Pause is allowed (single-player).
-- **Quitting mid-shift** (my call): the career resumes exactly where it was left. The simulator snapshots to `plant.state` every 30 real seconds as well as at shift end. A snapshot includes scenario progress, pending events (for example, fuel deliveries in transit), and the RNG state. Flink jobs use checkpointing so per-shift state (running score, alarm timers, report inputs) survives restarts. Shift IDs are a monotonically increasing number; `shift.start` and `shift.end` events bracket each shift.
+- **A game is a run of shifts in one sitting** (the user's decision, 2026-11-18). A visitor starts a fresh plant and plays shift after shift. Damage, scale, wear and backup fuel carry over within the run. The game ends when they quit or close the tab (after a short reconnect grace period, my call: 60 s), and they get a **final score for the whole run**. **A game can't be saved and continued later.** There is no career across visits.
+- **Each shift is harder than the last, and the run ends when the plant can't go on** (the user's direction, 2026-11-18: "at some point the money has run out, or the fuel has, or something else"). The details are my calls:
+  - **The run has an operating account.** It starts at $40,000. Each shift it earns revenue for water delivered in spec ($3.00/m³), and it pays for fuel burned, backup-fuel deliveries (paid on order), acid cleaning ($6,000), and a pump overhaul ($8,000, which resets a pump's wear, the way the run repairs damage). It is fined for missing the shift target ($4 per m³ short) and for off-spec water delivered ($10 per m³). The fixed per-shift fuel budget is replaced by the account; the shift's fuel allowance becomes guidance shown in the handover.
+  - **Game over** comes from any of:
+    - **Bankrupt:** the account is below $0 at a shift end.
+    - **Out of fuel:** no gas is available, the backup tank is empty, and the account can't pay for a delivery.
+    - **Plant failure:** the burner condition reaches 0, or no intake pump is usable (wear at 1).
+  - When game over is reached mid-shift (fuel or failure), the run ends at once with the reason shown.
+  - **Difficulty:** each shift raises the target and draws more and harsher scenario events (blooms, curtailments, price spikes, off-grade fuel, controller faults, warmer seawater), so a run always ends eventually.
+  - **Final score:** shifts completed (the headline), plus total water delivered and the final account balance as tie-breakers.
+- **Shift handover report:** shown at the start of each shift after the first, like a real operator's handover log. It covers equipment condition, trips and incidents last shift, open alarms, and this shift's target and conditions. Flink generates it from the previous shift's events.
+- Pause is allowed, but it counts toward the reconnect grace: a paused, disconnected game still ends.
 
 ### 3.2 Plant model (MSF, brine recirculation)
 The units, in flow order:
@@ -97,7 +105,7 @@ Each control is a setpoint in Auto and a direct output in Manual.
 - **Recovery** (my call): acid cleaning, which takes the plant offline for part of a shift and removes hard scale, and a pump swap to standby. Both are operator actions with a production cost. A between-shifts maintenance choice is left for later.
 
 ### 3.6 Scoring
-Per shift: production against target, time off-spec on salinity, fuel cost against budget, trips, and damage added. The score is a weighted sum; weights are the builder's call and tunable. Flink computes the running score live and the final score at shift end.
+Per shift: the account movement (revenue minus fuel, repairs and fines), production against target, off-spec time, trips and damage added. These are shown in the debrief. The run's final score is shifts completed, then water delivered, then account balance (§3.1). The simulator owns the account and the game-over checks (they are game rules, not analytics). Flink computes the running KPIs, the debrief and the handover report.
 
 ## 4. UI: the control room
 
@@ -118,6 +126,8 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
 3. **Flink job as the physics engine.** It teaches advanced Flink, but it fights the tool: tick-based physics is awkward in Flink, harder to debug, and adds latency. Rejected.
 
 ## 6. Architecture
+
+**Many games at once** (the user's decision, 2026-11-18: each concurrent player gets their own plant). Every game has a `gameId` (a UUID created when the visitor starts). Every message (command, telemetry, status, event, report) carries it, and it is the Kafka message key, so one game's records stay ordered on one partition and Flink keys all per-game state by `gameId`. The simulator hosts many plants, each its own `PlantState` stepped by the same deterministic `tick()`. There is a concurrency cap for the 2 GB server (my call: 10 games; extra visitors see "the plant is at capacity, try again shortly"). When a game ends, its plant is dropped and a `gameEnd` event with the final score is published. Plan 1 built the single-plant version; **Plan 2 starts by making the simulator and schema multi-game** (this also settles the final review's career-identity and shift-id-uniqueness findings, since `gameId` plus shift number is unique).
 
 ```
  Browser (React, SVG)
@@ -162,7 +172,7 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
 | `plant.alarms` | alarm id | Flink | raise/clear/ack state |
 | `plant.kpis` | shift id | Flink | running KPIs and score |
 | `shift.reports` | shift id | Flink | debrief and handover; unlimited retention (career history) |
-| `plant.state` | plant id | simulator | **compacted**; latest snapshot = career save |
+| `plant.state` | game id | simulator | **compacted**; latest snapshot per live game, for crash recovery only (a simulator restart may resume games that were running, but a visitor can never resume a game they left). Tombstoned when the game ends |
 
 **Responsiveness:** the browser shows the simulator's telemetry as soon as it arrives. Flink output (alarms, trends, score) can arrive slightly later without hurting the feel. Commands are acknowledged in the UI immediately and confirmed by the next telemetry.
 
@@ -175,13 +185,13 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
 **Local development:** Docker Compose runs Kafka (KRaft), Flink JobManager and TaskManager, and Kafka UI. The simulator, gateway, and frontend run as Node processes. One command brings up the infrastructure and one starts the app.
 
 **Production** (the user's direction: "this will run on a Linux server, similar to all our other projects"). It follows the convention of the user's other projects, for example `compliance_platform/docs/hosting.md`:
-- An Ubuntu 24.04 server that also runs other applications. Everything desal adds is named `desal*`, and removing it leaves the other applications untouched.
+- An Ubuntu 24.04 server (DigitalOcean, 68.183.200.37). desal is now the only application on it, but it still follows the shared-server convention: everything it adds is named `desal*`.
 - **Compose project `desal`** in `/opt/desal` (`compose.yml`, `.env`). Every service runs as a container: kafka, flink-jobmanager, flink-taskmanager, simulator, gateway. Images are tagged `desal-<service>:<commit>`, and the two newest of each are kept.
 - **Caddy on the host** already holds ports 80 and 443. desal adds `/etc/caddy/desal.caddy`, imported from the main Caddyfile. Caddy serves the built frontend's static files and reverse-proxies the WebSocket to the gateway, which listens on `127.0.0.1` only. Kafka, Flink, and Kafka UI are never exposed publicly. Kafka UI and the Flink dashboard are reached over an SSH tunnel when needed.
-- **Every container is capped** (memory, CPU, processes) because the server is shared. Kafka plus Flink is the heavy part; the starting budget (my call) is about 3 GB in total: Kafka 1 GB, Flink JobManager 0.75 GB, TaskManager 1 GB, simulator and gateway 256 MB each. Tune it after measuring.
-- **Persistent data** lives in the Docker volume `desal_kafka-data`. The career save is the compacted `plant.state` topic, so this volume is the save game. Flink checkpoints go in `desal_flink-checkpoints`.
+- **Every container is capped** (memory, CPU, processes). The server is a 2 GB DigitalOcean droplet with a 2 GB swapfile; the previous app on it (`reserve`) was removed at the user's direction, 2026-11-18. Current caps: Kafka 768 MB, Kafka UI 384 MB, simulator 256 MB. **Flink (Plan 3) will not fit in 2 GB alongside these.** Before Plan 3, resize the droplet or run Flink in a slim configuration; decide then.
+- **Persistent data** lives in the Docker volume `desal_kafka-data` (topics, including crash-recovery snapshots of live games). Flink checkpoints go in `desal_flink-checkpoints`.
 - **`scripts/deploy/deploy.sh`** builds images from this machine (for `linux/amd64` unless the server says otherwise), ships them, writes `/opt/desal`, installs the Caddy site, and runs `docker compose up -d`. **`docs/hosting.md`** documents what lives where, how to deploy, roll back, back up the Kafka volume, and remove desal.
-- **Access:** single operator; not a public game. Caddy basic auth sits in front of the site, with credentials in `/opt/desal/.env`. *(Confirmed by the user, 2026-11-18.)*
+- **Access:** the game is public, no password (the user's decision, 2026-11-18). Kafka UI is an admin tool that can delete topics, so it stays behind Caddy basic auth (my call). Until the game UI exists (Plan 2), Kafka UI is what https://desal.moosha.org serves; after that it moves to a path or subdomain behind the password.
 - Deployment is its own milestone plan, after the gateway and UI exist.
 
 ## 8. Learning support (my call, light-touch)

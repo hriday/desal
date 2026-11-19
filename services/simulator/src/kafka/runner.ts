@@ -139,7 +139,38 @@ export interface RunnerOptions {
   /** While Kafka is down, how often to retry the failed send. */
   retryMs?: number;
   log?: (msg: string) => void;
+  /**
+   * Called once the runner has halted on an unrecoverable error (an exception inside tick(), a
+   * non-retriable produce error), after its final snapshot attempt and disconnect. The process
+   * should exit non-zero.
+   */
+  onFatal?: (error: unknown) => void;
 }
+
+/**
+ * librdkafka error codes for produce failures that resending can never fix (the record or the
+ * client is at fault, not the broker's availability). Everything else, e.g. a timeout, is treated
+ * as an outage: the plant freezes and the tick is resent.
+ */
+const NON_RETRIABLE_PRODUCE_CODES = new Set([
+  2, // ERR_INVALID_MSG
+  4, // ERR_INVALID_MSG_SIZE
+  10, // ERR_MSG_SIZE_TOO_LARGE (what the broker returned, live, for an oversize record)
+  18, // ERR_RECORD_LIST_TOO_LARGE
+  29, // ERR_TOPIC_AUTHORIZATION_FAILED
+  31, // ERR_CLUSTER_AUTHORIZATION_FAILED
+  58, // ERR_SASL_AUTHENTICATION_FAILED
+  87, // ERR_INVALID_RECORD
+  -169, // ERR__AUTHENTICATION
+  -186, // ERR__INVALID_ARG
+]);
+
+export function isNonRetriableProduceError(e: unknown): boolean {
+  const code = (e as { code?: unknown } | null)?.code;
+  return typeof code === 'number' && NON_RETRIABLE_PRODUCE_CODES.has(code);
+}
+
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 function snapshotRecord(s: PlantState): OutRecord {
   // Keyed by PLANT_KEY so compaction keeps exactly one latest save per plant.
@@ -178,22 +209,36 @@ function isSimIO(x: KafkaInstance | SimIO): x is SimIO {
   return typeof (x as SimIO).send === 'function';
 }
 
+/** A produce error that resending cannot fix; carries the client's original error. */
+class FatalProduceError extends Error {
+  constructor(readonly original: unknown) {
+    super(`non-retriable produce error: ${errorText(original)}`);
+  }
+}
+
 /**
  * Drives the deterministic tick() in real time and wires it to Kafka.
  *
  * A self-scheduling setTimeout loop (not setInterval) guarantees ticks never
  * overlap: the next tick is only scheduled after this tick's records are acked.
+ *
+ * Unrecoverable errors halt the runner instead of crashing the process or
+ * retrying forever: it keeps the last good state, attempts a final snapshot of
+ * it, disconnects, and reports through onFatal.
  */
 export class SimRunner {
   private readonly io: SimIO;
   private readonly tickMs: number;
   private readonly retryMs: number;
   private readonly log: (msg: string) => void;
+  private readonly onFatal: (error: unknown) => void;
   private current: PlantState;
   private queue: unknown[] = [];
   private running = false;
   private timer: NodeJS.Timeout | undefined;
   private loopDone: Promise<void> = Promise.resolve();
+  private stopping: Promise<void> | null = null;
+  private halted = false;
   /** Records of the tick whose produce failed; resent (all of them) until Kafka acks. */
   private unsent: OutRecord[] | null = null;
 
@@ -203,6 +248,7 @@ export class SimRunner {
     this.tickMs = opts.tickMs ?? 1000;
     this.retryMs = opts.retryMs ?? 2000;
     this.log = opts.log ?? ((m) => console.log(`[sim] ${m}`));
+    this.onFatal = opts.onFatal ?? (() => {});
   }
 
   get state(): PlantState {
@@ -214,6 +260,11 @@ export class SimRunner {
     return this.unsent !== null;
   }
 
+  /** True once the runner has halted on an unrecoverable error. */
+  get failed(): boolean {
+    return this.halted;
+  }
+
   async start(): Promise<void> {
     await this.io.start((raw) => this.queue.push(raw));
     // Save immediately: a --new-career replaces the old save now, not 30 ticks later.
@@ -223,21 +274,49 @@ export class SimRunner {
     this.log(`running at tick ${this.current.tick} (phase ${this.current.phase})`);
   }
 
-  /** Stops ticking, waits for the in-flight tick, writes a final snapshot (unless Kafka is down), disconnects. */
+  /**
+   * Stops ticking, waits for the in-flight tick, writes a final snapshot (unless Kafka is down),
+   * disconnects. Never rejects; safe to call again, and after a fatal halt (which already closed).
+   */
   async stop({ finalSnapshot = true }: { finalSnapshot?: boolean } = {}): Promise<void> {
-    if (!this.running) return;
+    if (!this.stopping) {
+      if (!this.running) return;
+      this.stopping = this.close(finalSnapshot, true);
+    }
+    await this.stopping;
+  }
+
+  private async close(finalSnapshot: boolean, waitForLoop: boolean): Promise<void> {
     this.running = false;
     clearTimeout(this.timer);
-    await this.loopDone;
+    if (waitForLoop) await this.loopDone;
     if (finalSnapshot && !this.kafkaDown) {
       try {
         await this.io.send(snapshotRecord(this.current));
         this.log(`final snapshot written at tick ${this.current.tick}`);
       } catch (e) {
-        this.log(`final snapshot failed: ${String(e)}`);
+        this.log(`final snapshot failed: ${errorText(e)}`);
       }
     }
-    await this.io.stop();
+    try {
+      await this.io.stop();
+    } catch (e) {
+      this.log(`disconnect failed: ${errorText(e)}`);
+    }
+  }
+
+  /**
+   * Unrecoverable error inside the loop: stop ticking, save the last good state, disconnect, and
+   * report. Runs inside step(), so it must not wait for loopDone (that is this very call).
+   */
+  private async halt(what: string, error: unknown): Promise<void> {
+    this.halted = true;
+    this.log(`FATAL: ${what}: ${errorText(error)}; halting at tick ${this.current.tick}`);
+    // If stop() is already closing, it saves and disconnects once this step returns.
+    if (this.stopping) return;
+    this.stopping = this.close(true, false);
+    await this.stopping;
+    this.onFatal(error);
   }
 
   private schedule(ms: number): void {
@@ -249,37 +328,56 @@ export class SimRunner {
   /** One loop iteration: a tick when healthy, a resend while Kafka is down. Never rejects. */
   private async step(): Promise<void> {
     const began = Date.now();
-    if (this.unsent) {
-      await this.resend();
-    } else {
-      const r = tick(this.current, this.queue.splice(0));
-      // The tick is committed even if its produce fails; its records are kept and
-      // resent (at-least-once: a retry may duplicate records that did get through).
-      this.current = r.state;
-      await this.produce(tickRecords(r));
+    try {
+      if (this.unsent) {
+        await this.resend();
+      } else {
+        let r: TickResult;
+        try {
+          r = tick(this.current, this.queue.splice(0));
+        } catch (e) {
+          // this.current is untouched, so the last good state is what gets saved.
+          return await this.halt(`tick ${this.current.tick + 1} threw`, e);
+        }
+        // The tick is committed even if its produce fails; its records are kept and
+        // resent (at-least-once: a retry may duplicate records that did get through).
+        this.current = r.state;
+        await this.produce(tickRecords(r));
+      }
+    } catch (e) {
+      if (e instanceof FatalProduceError) return await this.halt('produce failed', e.original);
+      return await this.halt('runner error', e);
     }
     if (!this.running) return;
     // While down, retry every retryMs; otherwise keep a 1 tick/tickMs cadence.
     this.schedule(this.unsent ? this.retryMs : Math.max(0, this.tickMs - (Date.now() - began)));
   }
 
-  private async produce(records: OutRecord[]): Promise<void> {
+  /**
+   * Send records in order; false on an outage. A non-retriable error (the record or the client is
+   * at fault) throws FatalProduceError instead: resending it would fail forever.
+   */
+  private async sendAll(records: OutRecord[]): Promise<boolean> {
     try {
       for (const r of records) await this.io.send(r);
+      return true;
     } catch (e) {
-      this.unsent = records;
-      this.log(`Kafka down (${String(e)}): plant frozen at tick ${this.current.tick}, retrying every ${this.retryMs} ms`);
+      if (isNonRetriableProduceError(e)) throw new FatalProduceError(e);
+      if (!this.unsent) {
+        this.log(`Kafka down (${errorText(e)}): plant frozen at tick ${this.current.tick}, retrying every ${this.retryMs} ms`);
+      }
+      return false;
     }
   }
 
+  private async produce(records: OutRecord[]): Promise<void> {
+    if (!(await this.sendAll(records))) this.unsent = records;
+  }
+
   private async resend(): Promise<void> {
-    const records = this.unsent!;
-    try {
-      for (const r of records) await this.io.send(r);
+    if (await this.sendAll(this.unsent!)) {
       this.unsent = null;
       this.log(`Kafka back: resuming at tick ${this.current.tick}`);
-    } catch {
-      // Still down; step() schedules the next retry.
     }
   }
 }

@@ -15,10 +15,20 @@ const DOSE_MAX_MGL = 10;
 const ORDER_MIN_T = 1;
 const ORDER_MAX_T = 500;
 
+/** Longest commandId echoed back: a huge one from a bad client must not make an unproducible event. */
+const COMMAND_ID_ECHO_MAX = 64;
+
 const reject = (s: PlantState, commandId: string, reason: string): Out => ({
   state: s,
   events: [
-    { type: 'commandRejected', tick: s.tick, plantTime: s.plantTime, shiftId: s.shift?.id ?? null, commandId, reason },
+    {
+      type: 'commandRejected',
+      tick: s.tick,
+      plantTime: s.plantTime,
+      shiftId: s.shift?.id ?? null,
+      commandId: commandId.slice(0, COMMAND_ID_ECHO_MAX),
+      reason,
+    },
   ],
 });
 
