@@ -11,6 +11,8 @@ export interface HandoverProps {
   events: readonly PlantEvent[];
   onStartShift: (mode: LoopMode) => void;
   onQuit: () => void;
+  /** A start or quit is in flight: both buttons stay disabled until the plant answers. */
+  busy?: boolean;
 }
 
 export function lastSummary(events: readonly PlantEvent[]): ShiftSummary | null {
@@ -66,7 +68,7 @@ function Condition({ readings, summary }: { readings: Record<string, number>; su
   );
 }
 
-export function Handover({ status, readings, events, onStartShift, onQuit }: HandoverProps) {
+export function Handover({ status, readings, events, onStartShift, onQuit, busy = false }: HandoverProps) {
   const [mode, setMode] = useState<LoopMode>('auto');
   const summary = lastSummary(events);
   // status.shiftNumber is the last STARTED shift (0 before the first), so the shift about to start is one more.
@@ -97,8 +99,8 @@ export function Handover({ status, readings, events, onStartShift, onQuit }: Han
         </fieldset>
       </section>
       <div className="screen__actions">
-        <button type="button" className="primary" onClick={() => onStartShift(mode)}>Start shift {n}</button>
-        <button type="button" onClick={onQuit}>Quit run</button>
+        <button type="button" className="primary" disabled={busy} onClick={() => onStartShift(mode)}>Start shift {n}</button>
+        <button type="button" disabled={busy} onClick={onQuit}>Quit run</button>
       </div>
     </main>
   );

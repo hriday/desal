@@ -25,6 +25,8 @@ export interface State {
   score: GameScore | null;
   endReason: GameEndReason | null;
   conn: Conn;
+  /** The socket has been open at least once, so a later 'connecting' is a reconnect. */
+  everOpen: boolean;
 }
 
 export type Action =
@@ -41,7 +43,7 @@ export const MAX_EVENTS = 200;
 export function initialState(): State {
   return {
     session: 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
-    pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: 'connecting',
+    pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: 'connecting', everOpen: false,
   };
 }
 
@@ -59,6 +61,9 @@ function confirmed(cmd: Command, st: PlantStatus): boolean {
     case 'ballCleaning': return st.ballCleaning === cmd.on;
     case 'divertToDrain': return st.divertToDrain === cmd.on;
     case 'selectFuel': return st.fuel.active === cmd.fuel || st.fuel.changeoverTo === cmd.fuel;
+    // Held until the plant leaves handover / ends, so these buttons can't send twice meanwhile.
+    case 'startShift': return st.phase !== 'handover';
+    case 'quitGame': return st.phase === 'over';
     default: return true;
   }
 }
@@ -146,9 +151,9 @@ export function reducer(s: State, a: Action): State {
       // On a drop, fall back to plant-reported values; anything in flight is unknowable.
       return a.conn === 'closed'
         ? { ...s, conn: a.conn, pending: new Map(), commandKeys: new Map() }
-        : { ...s, conn: a.conn };
-    case 'reset': return { ...initialState(), conn: s.conn };
-    case 'startClicked': return { ...initialState(), conn: s.conn, session: 'starting' };
+        : { ...s, conn: a.conn, everOpen: s.everOpen || a.conn === 'open' };
+    case 'reset': return { ...initialState(), conn: s.conn, everOpen: s.everOpen };
+    case 'startClicked': return { ...initialState(), conn: s.conn, everOpen: s.everOpen, session: 'starting' };
     case 'sent': {
       const key = commandKey(a.command);
       const commandKeys = new Map(s.commandKeys);

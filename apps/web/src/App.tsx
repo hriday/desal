@@ -1,13 +1,15 @@
-import { useCallback, useState } from 'react';
+import { Component, useCallback, useState, type ErrorInfo, type ReactNode } from 'react';
 import { alarmsFor, MONITORS, type MonitorId } from './alarms/rules';
 import { demoEvents, demoReadings, demoStatus, demoTarget, demoTrends } from './demo';
 import { ExpandedView } from './expanded/ExpandedView';
 import { AlarmStrip } from './wall/AlarmStrip';
 import { quit, startShift } from './commands';
+import { ControlRoom } from './screens/ControlRoom';
 import { GameOver } from './screens/GameOver';
 import { Handover } from './screens/Handover';
 import { Start } from './screens/Start';
 import { GameProvider, useGame } from './state/GameProvider';
+import { ConnOverlay } from './ui/Overlay';
 import { Toast } from './ui/Toast';
 import { Wall } from './wall/Wall';
 import './screens/screens.css';
@@ -38,27 +40,10 @@ function Demo({ open }: { open: MonitorId | null }) {
   );
 }
 
-/** Stand-in for the control room (Task 7): the wall, and a monitor expands on click. */
-function Room() {
-  const { state, send } = useGame();
-  const [opened, setOpened] = useState<MonitorId | null>(null);
-  const close = useCallback(() => setOpened(null), []);
-  const target = state.status?.shiftTarget ?? null;
-  const alarms = alarmsFor(state.status, state.readings, { target });
-  return (
-    <main style={{ padding: 12 }}>
-      <AlarmStrip alarms={alarms} onOpen={setOpened} />
-      <div style={{ height: 8 }} />
-      {opened
-        ? <ExpandedView id={opened} status={state.status} readings={state.readings} trends={state.trends} events={state.events} alarms={alarms} target={target} onClose={close} send={send} />
-        : <Wall status={state.status} readings={state.readings} target={target} alarms={alarms} onOpen={setOpened} />}
-    </main>
-  );
-}
-
 export function Screens() {
   const { state, dispatch, send, newGame } = useGame();
   const capacity = state.toast?.kind === 'capacity' ? state.toast.message : null;
+  const blocked = state.conn !== 'open';
   let body;
   switch (state.session) {
     case 'start':
@@ -68,11 +53,12 @@ export function Screens() {
     case 'handover':
       body = (
         <Handover status={state.status} readings={state.readings} events={state.events}
+          busy={state.pending.has('startShift') || state.pending.has('quitGame')}
           onStartShift={(mode) => send(startShift(mode))} onQuit={() => send(quit())} />
       );
       break;
     case 'room':
-      body = <Room />;
+      body = <ControlRoom />;
       break;
     case 'over':
       body = <GameOver reason={state.endReason} score={state.score} onPlayAgain={() => dispatch({ type: 'reset' })} />;
@@ -80,19 +66,44 @@ export function Screens() {
   }
   return (
     <>
-      {body}
-      {state.conn === 'closed' && <div className="overlay" role="alert">Reconnecting…</div>}
+      {/* inert: under the connection overlay nothing can be clicked or focused. */}
+      <div className="app" inert={blocked}>{body}</div>
+      <ConnOverlay conn={state.conn} everOpen={state.everOpen} />
       <Toast toast={capacity ? null : state.toast} onDismiss={() => dispatch({ type: 'dismissToast' })} />
     </>
   );
+}
+
+/**
+ * Catches a render error anywhere below. The gameId stays in sessionStorage, so Reload resumes
+ * the same game within the gateway's window.
+ */
+export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error: unknown, info: ErrorInfo) { console.error('render failed', error, info.componentStack); }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <main className="screen" data-screen="error" role="alert">
+        <h1>Something went wrong, reload</h1>
+        <p>Your game is still running; reloading picks it up where you left it.</p>
+        <div className="screen__actions">
+          <button type="button" className="primary" onClick={() => window.location.reload()}>Reload</button>
+        </div>
+      </main>
+    );
+  }
 }
 
 export function App() {
   const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
   if (params?.has('demo')) return <Demo open={asMonitor(params.get('open'))} />;
   return (
-    <GameProvider>
-      <Screens />
-    </GameProvider>
+    <ErrorBoundary>
+      <GameProvider>
+        <Screens />
+      </GameProvider>
+    </ErrorBoundary>
   );
 }

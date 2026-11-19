@@ -45,3 +45,10 @@ export const C = {
   line: 'var(--muted)', text: 'var(--text)', muted: 'var(--muted)',
   body: '#1d2b3a', plate: '#2a3b4d', deep: '#164a6b', screen: '#152231', track: '#1f2d3d', oil: '#8b5a2b',
 } as const;
+
+/** The plant clock (epoch ms) as local "HH:MM"; "—" when missing. */
+export function plantClock(ms: number | undefined | null): string {
+  if (!num(ms)) return DASH;
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
