@@ -45,13 +45,17 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('acidClean') }),
   z.object({ type: z.literal('pause') }),
   z.object({ type: z.literal('resume') }),
-  z.object({ type: z.literal('newCareer') }),
+  z.object({ type: z.literal('startGame') }),
+  z.object({ type: z.literal('quitGame') }),
+  z.object({ type: z.literal('heartbeat') }),
+  z.object({ type: z.literal('overhaulPump'), pumpId: PumpIdSchema }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
 
 export const CommandEnvelopeSchema = z.object({
   commandId: z.uuid(),
   issuedAt: num,
+  gameId: z.uuid(),
   shiftId: num.nullable(),
   command: CommandSchema,
 });

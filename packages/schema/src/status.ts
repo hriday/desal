@@ -14,13 +14,16 @@ export const TripCauseSchema = z.enum([
 ]);
 export type TripCause = z.infer<typeof TripCauseSchema>;
 
-export const PhaseSchema = z.enum(['handover', 'running', 'paused']);
+export const PhaseSchema = z.enum(['handover', 'running', 'paused', 'over']);
 export type Phase = z.infer<typeof PhaseSchema>;
 
 export const PlantStatusKindSchema = z.enum(['online', 'tripped', 'restarting', 'acidCleaning']);
 export type PlantStatusKind = z.infer<typeof PlantStatusKindSchema>;
 
 export const PlantStatusSchema = z.object({
+  gameId: z.uuid(),
+  shiftNumber: num,
+  balanceUsd: num,
   tick: num,
   plantTime: num,
   shiftId: num.nullable(),
@@ -30,7 +33,7 @@ export const PlantStatusSchema = z.object({
   tripCause: TripCauseSchema.nullable(),
   restartStep: RestartStepSchema.nullable(),
   loops: z.record(LoopIdSchema, z.object({ mode: LoopModeSchema, setpoint: num, output: num })),
-  pumps: z.record(PumpIdSchema, z.object({ running: z.boolean() })),
+  pumps: z.record(PumpIdSchema, z.object({ running: z.boolean(), overhaulRemainingTicks: num })),
   fuel: z.object({
     active: FuelKindSchema,
     changeoverTo: FuelKindSchema.nullable(),
@@ -40,5 +43,9 @@ export const PlantStatusSchema = z.object({
   ballCleaning: z.boolean(),
   divertToDrain: z.boolean(),
   shiftTicksRemaining: num,
+  deliveries: z.array(z.object({ arrivesInTicks: num, tonnes: num, grade: FuelGradeSchema })),
+  acidCleanRemainingTicks: num,
+  restartAuto: z.boolean().nullable(),
+  offeredGrade: FuelGradeSchema,
 });
 export type PlantStatus = z.infer<typeof PlantStatusSchema>;

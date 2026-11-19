@@ -14,6 +14,9 @@ export const ShiftSummarySchema = z.object({
   fuelCostUsd: num,
   fuelBudgetUsd: num,
   trips: num,
+  revenueUsd: num,
+  finesUsd: num,
+  balanceUsd: num,
   damage: z.object({
     maxHardScaleMm: num,
     pumpWear: z.record(PumpIdSchema, num),
@@ -21,6 +24,15 @@ export const ShiftSummarySchema = z.object({
   }),
 });
 export type ShiftSummary = z.infer<typeof ShiftSummarySchema>;
+
+export const GameEndReasonSchema = z.enum(['bankrupt', 'outOfFuel', 'burnerFailed', 'noIntakePumps', 'quit', 'abandoned', 'error']);
+export type GameEndReason = z.infer<typeof GameEndReasonSchema>;
+
+export const GameScoreSchema = z.object({ shiftsCompleted: num, totalProductM3: num, balanceUsd: num });
+export type GameScore = z.infer<typeof GameScoreSchema>;
+
+export const AccountCauseSchema = z.enum(['revenue', 'fuel', 'delivery', 'acidClean', 'overhaul', 'offSpecFine', 'shortfallFine']);
+export type AccountCause = z.infer<typeof AccountCauseSchema>;
 
 export const ScenarioKindSchema = z.enum([
   'bloom',
@@ -39,7 +51,8 @@ export const DamageComponentSchema = z.enum(['stageScale', 'pump', 'burner']);
 export type DamageComponent = z.infer<typeof DamageComponentSchema>;
 
 // shiftId is null outside a shift (e.g. a commandRejected during handover).
-const base = { tick: num, plantTime: num, shiftId: num.nullable() };
+// seq is a per-game monotonically increasing counter so consumers can de-duplicate at-least-once deliveries.
+const base = { gameId: z.uuid(), seq: z.number().int().min(0), tick: num, plantTime: num, shiftId: num.nullable() };
 
 export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('shiftStart'), scenarioId: z.string(), mode: LoopModeSchema, target: ShiftTargetSchema }),
@@ -52,5 +65,9 @@ export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('deliveryArrived'), tonnes: num, grade: FuelGradeSchema }),
   z.object({ ...base, type: z.literal('commandRejected'), commandId: z.string(), reason: z.string() }),
   z.object({ ...base, type: z.literal('damage'), component: DamageComponentSchema, value: num }),
+  z.object({ ...base, type: z.literal('gameStart') }),
+  z.object({ ...base, type: z.literal('gameRejected'), reason: z.enum(['capacity', 'duplicate']) }),
+  z.object({ ...base, type: z.literal('gameEnd'), reason: GameEndReasonSchema, score: GameScoreSchema }),
+  z.object({ ...base, type: z.literal('accountChange'), deltaUsd: num, balanceUsd: num, cause: AccountCauseSchema }),
 ]);
 export type PlantEvent = z.infer<typeof PlantEventSchema>;

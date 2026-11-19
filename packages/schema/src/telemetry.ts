@@ -15,6 +15,7 @@ export const UnitIdSchema = z.enum([
 export type UnitId = z.infer<typeof UnitIdSchema>;
 
 export const TelemetryReadingSchema = z.object({
+  gameId: z.uuid(),
   sensorId: z.string(),
   unitId: UnitIdSchema,
   shiftId: num,

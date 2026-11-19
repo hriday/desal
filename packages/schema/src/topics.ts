@@ -5,5 +5,3 @@ export const TOPICS = {
   status: 'plant.status',
   state: 'plant.state',
 } as const;
-
-export const PLANT_KEY = 'plant-1';

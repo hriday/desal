@@ -1,0 +1,32 @@
+import type { PlantStatus } from '../src/index.js';
+
+export const status: PlantStatus = {
+  gameId: '3f2b8c1e-5d4a-4e7b-9a10-2c6d8e4f1a7b',
+  shiftNumber: 1,
+  balanceUsd: 40000,
+  tick: 5,
+  plantTime: 300,
+  shiftId: null,
+  phase: 'handover',
+  status: 'online',
+  controlMode: 'auto',
+  tripCause: null,
+  restartStep: null,
+  loops: {
+    tbt: { mode: 'auto', setpoint: 108, output: 50 },
+    intakeFlow: { mode: 'auto', setpoint: 1, output: 2 },
+    recirc: { mode: 'auto', setpoint: 1, output: 2 },
+    blowdown: { mode: 'auto', setpoint: 1, output: 2 },
+    vacuum: { mode: 'auto', setpoint: 1, output: 2 },
+    level3: { mode: 'manual', setpoint: 1, output: 2 },
+  },
+  pumps: { 'P-101': { running: true, overhaulRemainingTicks: 0 }, 'P-102': { running: false, overhaulRemainingTicks: 5 }, 'P-103': { running: true, overhaulRemainingTicks: 0 } },
+  fuel: { active: 'gas', changeoverTo: null, backupGrade: 'standard', gasCurtailmentNotice: null },
+  ballCleaning: false,
+  divertToDrain: false,
+  shiftTicksRemaining: 100,
+  deliveries: [{ arrivesInTicks: 30, tonnes: 50, grade: 'standard' }],
+  acidCleanRemainingTicks: 0,
+  restartAuto: null,
+  offeredGrade: 'standard',
+};
