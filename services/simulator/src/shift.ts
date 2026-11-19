@@ -48,6 +48,26 @@ export function drawPendingPlan(s: PlantState): PlantState {
   return { ...s, seed, chaos: { ...s.chaos, pending: plan } };
 }
 
+const PUMP_START_ORDER = ['P-101', 'P-102', 'P-103'] as const;
+
+/**
+ * The oncoming crew lines up the plant: if fewer than two intake pumps run, start available ones
+ * (stopped, not under overhaul, not worn out), duty pumps first. Only at shift start; Auto never
+ * starts a pump mid-shift.
+ */
+function lineUpPumps(intake: PlantState['intake']): PlantState['intake'] {
+  const pumps = { ...intake.pumps };
+  let running = PUMP_START_ORDER.filter((id) => pumps[id].running).length;
+  for (const id of PUMP_START_ORDER) {
+    if (running >= 2) break;
+    const p = pumps[id];
+    if (p.running || p.overhaulRemainingTicks > 0 || p.wear >= 1) continue;
+    pumps[id] = { ...p, running: true };
+    running++;
+  }
+  return { ...intake, pumps };
+}
+
 /**
  * Begin a shift: activate the pending plan (drawing one now if the state has none, e.g. a bare
  * test state), apply its starting conditions, reset shift accumulators, clear the crew and every
@@ -75,6 +95,7 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
       active: { plan, fired: [], lastFiredMinute: null, nextEventId: plan.queue.length + 1 },
       lastWasHell: plan.hell,
     },
+    intake: lineUpPumps(loaded.intake),
     crew: null,
     faults: noFaults(),
     controlMode: mode,

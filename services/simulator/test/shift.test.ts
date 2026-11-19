@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SHIFT_TICKS } from '../src/constants.js';
+import { applyEffect } from '../src/scenario/effects.js';
 import { loadScenario } from '../src/scenario/engine.js';
 import { scenarioForShift } from '../src/scenario/library.js';
 import { applyTrip } from '../src/safety/interlocks.js';
@@ -225,6 +226,35 @@ describe('chaos plan lifecycle', () => {
     const s0 = fresh();
     const hellPlan = { ...s0.chaos.pending!, hell: true };
     expect(startShift({ ...s0, chaos: { ...s0.chaos, pending: hellPlan } }, 'auto').state.chaos.lastWasHell).toBe(true);
+  });
+});
+
+describe('startShift lines up two intake pumps', () => {
+  const fresh = () => drawPendingPlan(createInitialState(1, T0, GAME_ID));
+  const running = (s: PlantState) => (['P-101', 'P-102', 'P-103'] as const).filter((id) => s.intake.pumps[id].running);
+  const withPumps = (s: PlantState, patch: Record<string, Partial<PlantState['intake']['pumps']['P-101']>>): PlantState => {
+    const pumps = { ...s.intake.pumps };
+    for (const [id, p] of Object.entries(patch)) pumps[id as keyof typeof pumps] = { ...pumps[id as keyof typeof pumps], ...p };
+    return { ...s, intake: { ...s.intake, pumps } };
+  };
+
+  it('after a pump trip left one pump running, the next shift starts with two', () => {
+    const tripped = applyEffect(startShift(fresh(), 'auto').state, 'pumpTrip', { pumpId: 'P-102' });
+    expect(running(tripped)).toEqual(['P-101']);
+    const next = startShift({ ...tripped, phase: 'handover' }, 'auto').state;
+    expect(running(next)).toEqual(['P-101', 'P-102']);
+  });
+
+  it('starts the standby when a duty pump is under overhaul, but never a pump under overhaul', () => {
+    const s = withPumps(fresh(), { 'P-102': { running: false, overhaulRemainingTicks: 50 }, 'P-103': { running: false } });
+    expect(running(startShift(s, 'auto').state)).toEqual(['P-101', 'P-103']);
+    const both = withPumps(fresh(), {
+      'P-102': { running: false, overhaulRemainingTicks: 50 },
+      'P-103': { running: false, overhaulRemainingTicks: 50 },
+    });
+    const next = startShift(both, 'auto').state;
+    expect(running(next)).toEqual(['P-101']);
+    expect(next.intake.pumps['P-102'].running).toBe(false);
   });
 });
 

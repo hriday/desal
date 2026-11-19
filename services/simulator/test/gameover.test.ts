@@ -191,24 +191,13 @@ describe('quitGame', () => {
 });
 
 describe('runs end', () => {
-  // Auto never restarts a tripped pump (the player's job), and a stopped pump takes no wear, so a plant
-  // whose pumps the chaos events stopped would sit dead at no cost forever. The untouched run stands in
-  // for a player who only keeps the pumps running, so that neglect of everything else is what ends it.
-  const restartPumps = (s: PlantState): PlantState => {
-    const pumps = { ...s.intake.pumps };
-    for (const id of Object.keys(pumps) as (keyof typeof pumps)[]) {
-      if (pumps[id].overhaulRemainingTicks === 0) pumps[id] = { ...pumps[id], running: true };
-    }
-    return { ...s, intake: { ...s.intake, pumps } };
-  };
-
   it('an untouched Auto run, starting each shift at handover, reaches game over within 40 shifts', () => {
     let s = createInitialState(7, T0, GAME_ID);
     let end: PlantEvent | undefined;
     for (let t = 0; t < 40 * (SHIFT_TICKS + 1) && s.phase !== 'over'; t++) {
       const cmds = s.phase === 'handover' ? [env(s, { type: 'startShift', mode: 'auto' }, null)] : [];
       const r = tick(s, cmds);
-      s = restartPumps(r.state);
+      s = r.state;
       end ??= r.events.find((e) => e.type === 'gameEnd');
     }
     expect(s.phase).toBe('over');
