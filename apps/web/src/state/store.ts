@@ -134,7 +134,7 @@ function addEvent(s: State, e: PlantEvent): State {
     case 'scenario':
       // Only events from this session's own plant time on: a resume must not replay old radio calls.
       if (s.sessionStartPlantTime !== null && e.plantTime >= s.sessionStartPlantTime) {
-        next = { ...next, radio: radioReducer(s.radio, { type: 'push', eventId: e.eventId, kind: e.kind, text: e.radio, message: e.message }) };
+        next = { ...next, radio: radioReducer(s.radio, { type: 'push', eventId: e.eventId, shiftId: e.shiftId, kind: e.kind, text: e.radio, message: e.message }) };
       }
       break;
     case 'gameEnd':

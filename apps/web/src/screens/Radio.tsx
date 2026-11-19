@@ -11,7 +11,7 @@ export interface RadioProps {
 /** The current radio call; clicking it opens the monitor it concerns. It clears itself after 6 s. */
 export function Radio({ radio, onExpire, onOpen }: RadioProps) {
   const cur = radio.current;
-  const id = cur?.eventId;
+  const id = cur?.key;
   useEffect(() => {
     if (id === undefined) return;
     const t = setTimeout(onExpire, RADIO_MS);

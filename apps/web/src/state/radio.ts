@@ -4,10 +4,12 @@ import { faultMonitor, type MonitorId } from '../alarms/rules';
 /** How long a radio message stays up (ms). */
 export const RADIO_MS = 6000;
 
-export interface RadioMsg { eventId: number; kind: ScenarioKind; text: string; monitor: MonitorId }
-export interface RadioState { current: RadioMsg | null; queue: RadioMsg[]; seen: number[] }
+/** `key` is shift + eventId: the simulator numbers each shift's events from 1 again. */
+export interface RadioMsg { key: string; eventId: number; kind: ScenarioKind; text: string; monitor: MonitorId }
+/** `seen` holds RadioMsg keys. */
+export interface RadioState { current: RadioMsg | null; queue: RadioMsg[]; seen: string[] }
 export type RadioAction =
-  | { type: 'push'; eventId: number; kind: ScenarioKind; text: string; message?: string }
+  | { type: 'push'; eventId: number; shiftId?: number | null; kind: ScenarioKind; text: string; message?: string }
   | { type: 'expire' }
   | { type: 'dismiss' };
 
@@ -25,13 +27,14 @@ export function monitorFor(kind: ScenarioKind, message = ''): MonitorId {
   }
 }
 
-/** One message at a time; later ones queue; a repeated eventId is ignored. */
+/** One message at a time; later ones queue; an event already pushed in the same shift is ignored. */
 export function radioReducer(s: RadioState, a: RadioAction): RadioState {
   switch (a.type) {
     case 'push': {
-      if (s.seen.includes(a.eventId)) return s;
-      const msg: RadioMsg = { eventId: a.eventId, kind: a.kind, text: a.text, monitor: monitorFor(a.kind, a.message) };
-      const seen = [...s.seen, a.eventId];
+      const key = `${a.shiftId ?? '-'}:${a.eventId}`;
+      if (s.seen.includes(key)) return s;
+      const msg: RadioMsg = { key, eventId: a.eventId, kind: a.kind, text: a.text, monitor: monitorFor(a.kind, a.message) };
+      const seen = [...s.seen, key];
       return s.current ? { ...s, seen, queue: [...s.queue, msg] } : { ...s, seen, current: msg };
     }
     case 'expire':

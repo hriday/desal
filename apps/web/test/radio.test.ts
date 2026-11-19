@@ -1,7 +1,7 @@
 import { initialRadio, monitorFor, radioReducer, type RadioAction } from '../src/state/radio';
 import { initialState, reducer } from '../src/state/store';
 
-const p = (eventId: number, text = `msg ${eventId}`): RadioAction => ({ type: 'push', eventId, kind: 'storm', text });
+const p = (eventId: number, text = `msg ${eventId}`, shiftId?: number): RadioAction => ({ type: 'push', eventId, shiftId, kind: 'storm', text });
 
 describe('radioReducer', () => {
   it('shows one at a time, queues the rest, and advances on expire', () => {
@@ -14,6 +14,14 @@ describe('radioReducer', () => {
     expect(s.current?.eventId).toBe(3);
     s = radioReducer(s, { type: 'expire' });
     expect(s.current).toBeNull();
+  });
+  it('treats the same eventId in another shift as a new call', () => {
+    let s = radioReducer(initialRadio, p(1, 'msg 1', 1));
+    s = radioReducer(s, { type: 'expire' });
+    s = radioReducer(s, p(1, 'next shift', 2));
+    expect(s.current?.text).toBe('next shift');
+    s = radioReducer(s, p(1, 'again', 2));
+    expect(s.queue).toHaveLength(0);
   });
   it('ignores a duplicate eventId, even after it was shown', () => {
     let s = radioReducer(initialRadio, p(1));
@@ -40,9 +48,9 @@ describe('monitorFor', () => {
 
 describe('store radio wiring', () => {
   const gameId = '11111111-1111-4111-8111-111111111111';
-  const scen = (eventId: number, plantTime: number) => ({
+  const scen = (eventId: number, plantTime: number, shiftId = 1, seq = eventId) => ({
     t: 'event',
-    event: { gameId, epoch: 0, seq: eventId, tick: 0, plantTime, shiftId: 1, type: 'scenario', eventId, kind: 'storm', message: 'm', radio: `radio ${eventId}` },
+    event: { gameId, epoch: 0, seq, tick: 0, plantTime, shiftId, type: 'scenario', eventId, kind: 'storm', message: 'm', radio: `radio ${shiftId}.${eventId}` },
   }) as never;
   const statusMsg = (plantTime: number) =>
     ({ t: 'status', status: { gameId, epoch: 0, phase: 'running', plantTime, loops: {}, pumps: {} } }) as never;
@@ -52,8 +60,23 @@ describe('store radio wiring', () => {
     s = reducer(s, { type: 'server', msg: scen(1, 500) });
     expect(s.radio.current).toBeNull();
     s = reducer(s, { type: 'server', msg: scen(2, 1500) });
-    expect(s.radio.current?.text).toBe('radio 2');
+    expect(s.radio.current?.text).toBe('radio 1.2');
     s = reducer(s, { type: 'radioExpire' });
     expect(s.radio.current).toBeNull();
+  });
+
+  it('shows each shift its own calls: eventIds restart at 1 every shift (C1)', () => {
+    let s = reducer(initialState(), { type: 'server', msg: statusMsg(1000) });
+    s = reducer(s, { type: 'server', msg: scen(1, 1500, 1, 10) });
+    expect(s.radio.current?.text).toBe('radio 1.1');
+    s = reducer(s, { type: 'radioExpire' });
+    // Shift 2 (and 3) number their events from 1 again; each must still reach the radio.
+    s = reducer(s, { type: 'server', msg: scen(1, 30000, 2, 20) });
+    expect(s.radio.current?.text).toBe('radio 2.1');
+    s = reducer(s, { type: 'radioExpire' });
+    s = reducer(s, { type: 'server', msg: scen(1, 60000, 3, 30) });
+    s = reducer(s, { type: 'server', msg: scen(2, 61000, 3, 31) });
+    expect(s.radio.current?.text).toBe('radio 3.1');
+    expect(s.radio.queue.map((m) => m.text)).toEqual(['radio 3.2']);
   });
 });
