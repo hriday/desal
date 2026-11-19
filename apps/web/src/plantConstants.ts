@@ -20,8 +20,8 @@ export const RECIRC_NOMINAL_M3H = 5350;
  * services/simulator/src/constants.ts (spec 4.6); keep in sync. `plain` names the job on a button, `doing` the work under way.
  */
 export const CREW_JOBS = {
-  plugTubes: { costUsd: 3000, minutes: 60, plain: 'plug tubes', doing: 'Plugging tubes' },
-  repairEjector: { costUsd: 4000, minutes: 45, plain: 'repair ejector', doing: 'Repairing ejector' },
-  replaceSensor: { costUsd: 1500, minutes: 30, plain: 'replace instrument', doing: 'Replacing sensor' },
-  cleanScreens: { costUsd: 1000, minutes: 30, plain: 'clean screens', doing: 'Cleaning screens' },
+  plugTubes: { costUsd: 800, minutes: 60, plain: 'plug tubes', doing: 'Plugging tubes' },
+  repairEjector: { costUsd: 1000, minutes: 45, plain: 'repair ejector', doing: 'Repairing ejector' },
+  replaceSensor: { costUsd: 400, minutes: 30, plain: 'replace instrument', doing: 'Replacing sensor' },
+  cleanScreens: { costUsd: 300, minutes: 30, plain: 'clean screens', doing: 'Cleaning screens' },
 } as const;

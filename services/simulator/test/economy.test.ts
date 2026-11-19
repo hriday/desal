@@ -30,25 +30,25 @@ const summaryOf = (events: PlantEvent[]) => {
 };
 
 describe('allocation', () => {
-  it('starts at $15,000 and shift 1 is allocated $10,000 at startShift', () => {
+  it('starts at $15,000 and shift 1 is allocated $11,000 at startShift', () => {
     expect(START_BALANCE_USD).toBe(15000);
-    expect(ALLOC_BASE_USD).toBe(10000);
+    expect(ALLOC_BASE_USD).toBe(11000);
     const r = startShift(createInitialState(1, T0, GAME_ID), 'auto');
-    expect(r.state.run.balanceUsd).toBe(25000);
+    expect(r.state.run.balanceUsd).toBe(26000);
     expect(r.events.find((e) => e.type === 'accountChange')).toMatchObject({
       cause: 'allocation',
-      deltaUsd: 10000,
-      balanceUsd: 25000,
+      deltaUsd: 11000,
+      balanceUsd: 26000,
       shiftId: 1,
     });
   });
 
-  it('allocationUsd = 10000 x (1 - 0.03(n-1)) x min(1, prev in-spec / prev target), floored at 0', () => {
-    expect(allocationUsd(1, null)).toBe(10000);
-    expect(allocationUsd(2, { productM3: 4000, targetM3: 4000 })).toBeCloseTo(9700, 9);
-    expect(allocationUsd(2, { productM3: 5000, targetM3: 4000 })).toBeCloseTo(9700, 9);
-    expect(allocationUsd(2, { productM3: 2000, targetM3: 4000 })).toBeCloseTo(4850, 9);
-    expect(allocationUsd(11, { productM3: 3000, targetM3: 4000 })).toBeCloseTo(10000 * 0.7 * 0.75, 9);
+  it('allocationUsd = 11000 x (1 - 0.03(n-1)) x min(1, prev in-spec / prev target), floored at 0', () => {
+    expect(allocationUsd(1, null)).toBe(11000);
+    expect(allocationUsd(2, { productM3: 4000, targetM3: 4000 })).toBeCloseTo(10670, 9);
+    expect(allocationUsd(2, { productM3: 5000, targetM3: 4000 })).toBeCloseTo(10670, 9);
+    expect(allocationUsd(2, { productM3: 2000, targetM3: 4000 })).toBeCloseTo(5335, 9);
+    expect(allocationUsd(11, { productM3: 3000, targetM3: 4000 })).toBeCloseTo(11000 * 0.7 * 0.75, 9);
     expect(allocationUsd(40, { productM3: 4000, targetM3: 4000 })).toBe(0);
     expect(allocationUsd(2, { productM3: -5, targetM3: 4000 })).toBe(0);
   });
@@ -61,7 +61,7 @@ describe('allocation', () => {
     };
     const end = endShift(half);
     const predicted = summaryOf(end.events.map((e) => ({ ...e, gameId: GAME_ID, seq: 0 }) as PlantEvent)).nextAllocationUsd;
-    expect(predicted).toBeCloseTo(10000 * 0.97 * 0.5, 9);
+    expect(predicted).toBeCloseTo(11000 * 0.97 * 0.5, 9);
     const next = startShift(end.state, 'auto');
     expect(next.state.run.balanceUsd).toBeCloseTo(end.state.run.balanceUsd + predicted, 9);
     expect(next.events.find((e) => e.type === 'accountChange')).toMatchObject({ cause: 'allocation' });
@@ -90,7 +90,7 @@ describe('water first: in-spec water is what counts', () => {
     expect(sum.spentUsd).toBeCloseTo(sum.fuelCostUsd + 8 * STANDING_COST_USD_PER_HOUR, 6);
     expect(s.run.balanceUsd).toBeGreaterThanOrEqual(START_BALANCE_USD + ALLOC_BASE_USD - sum.spentUsd - 1e-6);
     expect(sum.balanceUsd).toBe(s.run.balanceUsd);
-    expect(sum.nextAllocationUsd).toBeCloseTo(10000 * 0.97, 9);
+    expect(sum.nextAllocationUsd).toBeCloseTo(11000 * 0.97, 9);
     const accounts = events.filter((e) => e.type === 'accountChange');
     expect(accounts).toHaveLength(8);
     expect(accounts.every((e) => e.type === 'accountChange' && e.cause === 'standing')).toBe(true);
@@ -116,7 +116,7 @@ describe('water first: in-spec water is what counts', () => {
     expect(r.state.run.balanceUsd).toBe(s0.run.balanceUsd);
     expect(r.events.some((e) => e.type === 'accountChange')).toBe(false);
     const sum = summaryOf(r.events.map((e) => ({ ...e, gameId: GAME_ID, seq: 0 }) as PlantEvent));
-    expect(sum.nextAllocationUsd).toBeCloseTo(9700 * ((target - 500) / target), 9);
+    expect(sum.nextAllocationUsd).toBeCloseTo(10670 * ((target - 500) / target), 9);
     expect(r.state.run.totalProductM3).toBe(target - 500);
   });
 });

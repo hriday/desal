@@ -235,13 +235,13 @@ describe('dispatchCrew', () => {
     }
   });
 
-  it('plugTubes charges $3,000 at once, runs 90 ticks, then plugs the stage', () => {
+  it('plugTubes charges $800 at once, runs 90 ticks, then plugs the stage', () => {
     const s = leaking();
     const r = dispatch(s, 'plugTubes');
-    expect(r.state.run.balanceUsd).toBe(s.run.balanceUsd - 3000);
+    expect(r.state.run.balanceUsd).toBe(s.run.balanceUsd - 800);
     expect(r.state.crew).toEqual({ job: 'plugTubes', remainingTicks: 90 });
     expect(r.events).toHaveLength(1);
-    expect(r.events[0]).toMatchObject({ type: 'accountChange', deltaUsd: -3000, cause: 'crew' });
+    expect(r.events[0]).toMatchObject({ type: 'accountChange', deltaUsd: -800, cause: 'crew' });
     const mid = idle(r.state, 89);
     expect(mid.crew?.remainingTicks).toBe(1);
     expect(mid.faults.tubeLeak).not.toBeNull();
@@ -263,7 +263,7 @@ describe('dispatchCrew', () => {
     let s = applyEffect(running(), 'sensorFailure', { loop: 'tbt', mode: 'freeze' });
     s = applyEffect(s, 'sensorFailure', { loop: 'vacuum', mode: 'noise' });
     const r = dispatch(s, 'replaceSensor');
-    expect(r.state.run.balanceUsd).toBe(s.run.balanceUsd - 1500);
+    expect(r.state.run.balanceUsd).toBe(s.run.balanceUsd - 400);
     const done = idle(r.state, 45);
     expect(done.faults.sensors).toEqual({});
     expect(done.crew).toBeNull();
@@ -294,10 +294,10 @@ describe('dispatchCrew', () => {
       cleanScreens: applyEffect(running(), 'storm', { fouling: 0.2, deltaC: 2, minutes: 90 }),
     };
     const spec = {
-      plugTubes: [3000, 60],
-      repairEjector: [4000, 45],
-      replaceSensor: [1500, 30],
-      cleanScreens: [1000, 30],
+      plugTubes: [800, 60],
+      repairEjector: [1000, 45],
+      replaceSensor: [400, 30],
+      cleanScreens: [300, 30],
     } as const;
     for (const [job, [usd, min]] of Object.entries(spec)) {
       const s = faulted[job]!;

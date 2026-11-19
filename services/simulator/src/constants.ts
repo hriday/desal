@@ -250,14 +250,18 @@ export const ACID_CLEAN_TICKS = 180;
 // limits spending. There is no revenue and there are no fines.
 /** Balance a new game starts with (USD). */
 export const START_BALANCE_USD = 15000;
-/** Shift 1's operating allocation, credited at startShift (USD). */
-export const ALLOC_BASE_USD = 10000;
+/**
+ * Shift 1's operating allocation, credited at startShift (USD). Sized with CREW_JOBS (R19) so an
+ * engaged player who answers every event lasts a median of 8+ shifts (test/balance.test.ts), while an
+ * untouched game still ends within 40 (test/gameover.test.ts).
+ */
+export const ALLOC_BASE_USD = 11000;
 /** Cut of the base allocation per shift: shift n gets 1 - ALLOC_DECAY_PER_SHIFT x (n - 1) of it. */
 export const ALLOC_DECAY_PER_SHIFT = 0.03;
 /**
  * Standing cost per plant hour of a running shift (staff, standby power, chemicals on hold), whatever
  * the plant status, so an idle or tripped plant slowly goes broke: an untouched game ends bankrupt
- * within 40 shifts (R14/R15). $720 a shift, 7.2 % of shift 1's allocation.
+ * within 40 shifts (R14/R15). $720 a shift, 6.5 % of shift 1's allocation.
  */
 export const STANDING_COST_USD_PER_HOUR = 90;
 /** Cost of an acid clean, charged when it starts (USD). */
@@ -287,12 +291,15 @@ export const POWER_DIP_MAX_MINUTES = 60;
 
 /** Salinity a tube leak adds per plant minute while the tubes are unplugged (ppm). */
 export const TUBE_LEAK_GROWTH_PPM_PER_MIN = 0.1;
-/** What each maintenance crew job costs (USD) and takes (plant minutes); one crew, one job at a time. */
+/**
+ * What each maintenance crew job costs (USD) and takes (plant minutes); one crew, one job at a time.
+ * Priced (R19) at 3-9 % of shift 1's allocation: worth sending for most faults, but never free.
+ */
 export const CREW_JOBS = {
-  plugTubes: { costUsd: 3000, minutes: 60 },
-  repairEjector: { costUsd: 4000, minutes: 45 },
-  replaceSensor: { costUsd: 1500, minutes: 30 },
-  cleanScreens: { costUsd: 1000, minutes: 30 },
+  plugTubes: { costUsd: 800, minutes: 60 },
+  repairEjector: { costUsd: 1000, minutes: 45 },
+  replaceSensor: { costUsd: 400, minutes: 30 },
+  cleanScreens: { costUsd: 300, minutes: 30 },
 } as const;
 /** Capacity multiplier of a stage whose tubes the crew has plugged. */
 export const TUBE_PLUG_DERATE = 0.6;

@@ -121,14 +121,14 @@ Several new events need a repair that isn't a pump overhaul or acid clean. There
 
 | Job | Cost | Duration (plant minutes) |
 |---|---|---|
-| `plugTubes` | $3,000 | 60 |
-| `repairEjector` | $4,000 | 45 |
-| `replaceSensor` | $1,500 | 30 |
-| `cleanScreens` | $1,000 | 30 |
+| `plugTubes` | $800 | 60 |
+| `repairEjector` | $1,000 | 45 |
+| `replaceSensor` | $400 | 30 |
+| `cleanScreens` | $300 | 30 |
 
 - One crew: only one job at a time, and a second dispatch is rejected with a clear reason.
 - A job is only accepted when its fault exists. It's charged to the account like other spending (a new account cause, `crew`).
-- These numbers are starting values to tune.
+- These numbers are starting values to tune. They were cut from $3,000 / $4,000 / $1,500 / $1,000 in the Plan 4 fix wave (ruling R19), together with a $11,000 base allocation, because at the first prices a player who answered every event correctly went bankrupt around shift 4 (`services/simulator/test/balance.test.ts` now holds an engaged player to a median of at least 8 shifts).
 - The crew is offered from the relevant zoomed monitor (Shift/Overview monitor for sensors).
 
 ### 4.7 Quota bar

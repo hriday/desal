@@ -207,7 +207,7 @@ Every change to the balance is one `accountChange { deltaUsd, balanceUsd, cause 
 - `delivery`: a backup fuel order, charged when it is placed.
 - `acidClean`: the acid clean.
 - `overhaul`: a pump overhaul.
-- `crew`: a `dispatchCrew` job, charged when it is accepted (not when it finishes).
+- `crew`: a `dispatchCrew` job, charged when it is accepted (not when it finishes): `plugTubes` $800, `repairEjector` $1,000, `replaceSensor` $400, `cleanScreens` $300.
 - `standing`: staff and standby cost, $90 per plant hour. It is charged on every running tick, in any plant status (online, tripped, restarting), and reported as one `accountChange` with `deltaUsd: -90` per plant hour (90 ticks), not one per tick.
 
 ### The `dispatchCrew` command
