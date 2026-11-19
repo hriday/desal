@@ -40,7 +40,7 @@ describe('Start', () => {
 describe('Handover', () => {
   const base = { readings: demoReadings(), onStartShift: vi.fn(), onQuit: vi.fn() };
   it('shows the last shift, condition and the estimated target before the shift starts', () => {
-    const status = demoStatus({ phase: 'handover', shiftNumber: 2, shiftTarget: null });
+    const status = demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null });
     const { container, getByRole } = render(<Handover {...base} status={status} events={[shiftEnd]} />);
     const t = container.textContent!;
     expect(t).toContain('3,600 / 3,900 m³');
@@ -52,10 +52,19 @@ describe('Handover', () => {
     expect(t).toContain(`≈ ${nextTargetEstimateM3(2).toLocaleString('en-US')} m³`);
     expect(getByRole('button', { name: 'Start shift 2' })).toBeTruthy();
   });
+  it('before the first shift (shiftNumber 0) offers shift 1 at about 3,900 m³; after shift 2 offers shift 3', () => {
+    const first = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 0, shiftTarget: null })} events={[]} />);
+    expect(first.getByRole('button', { name: 'Start shift 1' })).toBeTruthy();
+    expect(first.container.textContent).toContain('≈ 3,900 m³');
+    cleanup();
+    const third = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 2, shiftTarget: null })} events={[]} />);
+    expect(third.getByRole('button', { name: 'Start shift 3' })).toBeTruthy();
+    expect(third.container.textContent).toContain(`≈ ${nextTargetEstimateM3(3).toLocaleString('en-US')} m³`);
+  });
   it('sends the chosen mode, and quit', () => {
     const onStartShift = vi.fn();
     const onQuit = vi.fn();
-    const status = demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null });
+    const status = demoStatus({ phase: 'handover', shiftNumber: 0, shiftTarget: null });
     const { getByRole, getByLabelText } = render(<Handover {...base} onStartShift={onStartShift} onQuit={onQuit} status={status} events={[]} />);
     fireEvent.click(getByLabelText(/Manual/));
     fireEvent.click(getByRole('button', { name: 'Start shift 1' }));

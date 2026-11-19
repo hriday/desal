@@ -69,7 +69,8 @@ function Condition({ readings, summary }: { readings: Record<string, number>; su
 export function Handover({ status, readings, events, onStartShift, onQuit }: HandoverProps) {
   const [mode, setMode] = useState<LoopMode>('auto');
   const summary = lastSummary(events);
-  const n = status?.shiftNumber ?? 1;
+  // status.shiftNumber is the last STARTED shift (0 before the first), so the shift about to start is one more.
+  const n = (status?.shiftNumber ?? 0) + 1;
   // status.shiftTarget is null outside a shift, so before it starts we show the estimate.
   const target = status?.shiftTarget ? fmt(status.shiftTarget.productM3, 0, 'm³') : `≈ ${fmt(nextTargetEstimateM3(n))} m³`;
   return (
