@@ -1,30 +1,39 @@
-import { useState } from 'react';
-import { alarmsFor, type MonitorId } from './alarms/rules';
-import { demoReadings, demoStatus, demoTarget } from './demo';
+import { useCallback, useState } from 'react';
+import { alarmsFor, MONITORS, type MonitorId } from './alarms/rules';
+import { demoEvents, demoReadings, demoStatus, demoTarget, demoTrends } from './demo';
+import { ExpandedView } from './expanded/ExpandedView';
 import { AlarmStrip } from './wall/AlarmStrip';
 import { Wall } from './wall/Wall';
 
 // Placeholder screens; replaced by the real screens in later tasks.
 export type Screen = 'start' | 'handover' | 'room' | 'over';
 
-/** `?demo`: the wall with the built-in sample plant, for visual checks without a backend. */
-function Demo() {
-  const [opened, setOpened] = useState<MonitorId | null>(null);
-  const status = demoStatus();
-  const readings = demoReadings();
-  const alarms = alarmsFor(status, readings, { target: demoTarget });
+const asMonitor = (v: string | null): MonitorId | null =>
+  v !== null && (MONITORS as readonly string[]).includes(v) ? (v as MonitorId) : null;
+
+/** `?demo`: the wall with the built-in sample plant, for visual checks without a backend. `&open=stages` expands a monitor. */
+function Demo({ open }: { open: MonitorId | null }) {
+  const [opened, setOpened] = useState<MonitorId | null>(open);
+  const close = useCallback(() => setOpened(null), []);
+  const [data] = useState(() => {
+    const status = demoStatus();
+    const readings = demoReadings();
+    return { status, readings, trends: demoTrends(), events: demoEvents(), alarms: alarmsFor(status, readings, { target: demoTarget }) };
+  });
   return (
     <main style={{ padding: 12 }}>
-      <AlarmStrip alarms={alarms} onOpen={setOpened} />
+      <AlarmStrip alarms={data.alarms} onOpen={setOpened} />
       <div style={{ height: 8 }} />
-      <Wall status={status} readings={readings} target={demoTarget} alarms={alarms} onOpen={setOpened} />
-      {opened && <p style={{ color: 'var(--muted)', font: '11px var(--mono)' }}>Opened: {opened}</p>}
+      {opened
+        ? <ExpandedView id={opened} {...data} target={demoTarget} onClose={close} />
+        : <Wall status={data.status} readings={data.readings} target={demoTarget} alarms={data.alarms} onOpen={setOpened} />}
     </main>
   );
 }
 
 export function App({ screen = 'start' }: { screen?: Screen }) {
-  if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('demo')) return <Demo />;
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  if (params?.has('demo')) return <Demo open={asMonitor(params.get('open'))} />;
   return (
     <main>
       <h1>Desalination Control Room</h1>

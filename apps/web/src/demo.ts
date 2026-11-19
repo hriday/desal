@@ -1,4 +1,5 @@
-import type { PlantStatus, ShiftTarget } from '@desal/schema';
+import type { PlantEvent, PlantStatus, ShiftTarget } from '@desal/schema';
+import type { Trends } from './state/trends';
 
 /** Built-in sample plant for `?demo` and the tests: mid-shift, S2 badly scaled, chlorophyll rising. */
 export const DEMO_GAME_ID = '11111111-1111-4111-8111-111111111111';
@@ -51,4 +52,28 @@ export function demoReadings(over: Record<string, number> = {}): Record<string, 
     r[`stages.${k}.hardScaleMm`] = i === 2 ? 0.8 : 0.08;
   }
   return { ...r, ...over };
+}
+
+/** Ten minutes of history (one point per second) for every sensor in the demo frame, wobbling around its value. */
+export function demoTrends(points = 600): Trends {
+  const now = demoStatus().plantTime;
+  const out: Trends = {};
+  for (const [id, v] of Object.entries(demoReadings())) {
+    out[id] = Array.from({ length: points }, (_, i) => ({
+      t: now - (points - 1 - i),
+      v: v * (1 + 0.02 * Math.sin(i / 37 + id.length) + 0.01 * Math.sin(i / 7)),
+    }));
+  }
+  return out;
+}
+
+/** This shift's events so far: start, allocation, a bloom notice and a pump overhaul. */
+export function demoEvents(): PlantEvent[] {
+  const base = (seq: number, tick: number) => ({ gameId: DEMO_GAME_ID, seq, tick, plantTime: tick * 40, shiftId: 3 });
+  return [
+    { ...base(40, 1440), type: 'shiftStart', scenarioId: 'shift-3', mode: 'auto', target: demoTarget },
+    { ...base(41, 1440), type: 'accountChange', deltaUsd: 20000, balanceUsd: 25570, cause: 'allocation' },
+    { ...base(42, 1500), type: 'scenario', kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.' },
+    { ...base(43, 1610), type: 'accountChange', deltaUsd: -8000, balanceUsd: 17570, cause: 'overhaul' },
+  ];
 }

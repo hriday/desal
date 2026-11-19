@@ -10,3 +10,5 @@ export const INTAKE_REQUIRED_PER_C = 0.03;
 export const TICK_PLANT_S = 40;
 /** STAGE_COUNT: number of evaporator stages. */
 export const STAGE_COUNT = 20;
+/** CHANGEOVER_TICKS: ticks a fuel changeover lasts. */
+export const CHANGEOVER_TICKS = 8;
