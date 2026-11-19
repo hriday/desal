@@ -135,9 +135,10 @@ export function toStatus(s: PlantState): PlantStatus {
     shiftProductM3: s.shift?.acc.productM3 ?? 0,
     shiftOffSpecM3: s.shift?.acc.offSpecM3 ?? 0,
     productFlowM3h: s.product.flowM3h,
-    // Plan 4 Tasks 3 and 7 replace
-    crew: null,
-    orders: null,
-    hell: null,
+    crew: s.crew ? { job: s.crew.job, remainingTicks: s.crew.remainingTicks } : null,
+    // Handover shows the pending orders; a live shift shows the active ones.
+    orders: s.phase === 'handover' ? (s.chaos.pending?.orders ?? null) : inShift ? (s.chaos.active?.plan.orders ?? null) : null,
+    // Never exposed in handover, so an unwarned hell shift cannot be peeked at.
+    hell: s.phase === 'running' ? (s.chaos.active?.plan.hell ?? null) : null,
   };
 }

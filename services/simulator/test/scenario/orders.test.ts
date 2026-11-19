@@ -11,6 +11,7 @@ const plan = (over: Partial<Omit<ChaosPlan, 'orders'>>): Omit<ChaosPlan, 'orders
   hell: false,
   warned: false,
   targetM3: 4500,
+  initial: { seawaterTempC: 30, chlorophyllUgL: 1 },
   queue: [q('pumpTrip')],
   ...over,
 });
@@ -31,6 +32,20 @@ describe('buildOrders', () => {
     const o = buildOrders(plan({ hell: true, warned: true, queue: [q('storm'), q('powerDip', 2), q('tubeLeak', 3)] }), state, 1);
     expect(o.lines.some((l) => /storm/i.test(l))).toBe(true);
     expect(o.lines.length).toBeLessThanOrEqual(1 + 2);
+  });
+
+  it('falls back to a generic line when a warned hell plan has no hintable events', () => {
+    const o = buildOrders(plan({ hell: true, warned: true, queue: [q('sensorFailure'), q('controllerFault', 2)] }), state, 1);
+    expect(o.lines).toContain('Expect a rough shift — stay sharp.');
+    const hinted = buildOrders(plan({ hell: true, warned: true, queue: [q('storm')] }), state, 1);
+    expect(hinted.lines).not.toContain('Expect a rough shift — stay sharp.');
+  });
+
+  it('quotes the initial seawater from the plan draw, not the live state', () => {
+    const [p] = drawChaosPlan({ shiftNumber: 3, seed: 7, lastWasHell: false, state, initial: { seawaterTempC: 32.5, chlorophyllUgL: 1.7 } });
+    expect(p.initial).toEqual({ seawaterTempC: 32.5, chlorophyllUgL: 1.7 });
+    expect(p.orders.lines[0]).toContain('32.5 C');
+    expect(p.orders.lines[0]).toContain('1.7 ug/L');
   });
 
   it('gives an unwarned hell shift the same lines as a normal one', () => {

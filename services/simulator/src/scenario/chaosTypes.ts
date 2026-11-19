@@ -1,4 +1,5 @@
 import type { ScenarioKind, ShiftOrders } from '@desal/schema';
+import type { Scenario } from './types.js';
 
 /** An event the director has planned for this shift but not yet fired. */
 export interface QueuedEvent {
@@ -15,6 +16,8 @@ export interface ChaosPlan {
   hell: boolean;
   warned: boolean;
   targetM3: number;
+  /** The conditions the shift starts in; drawn with the plan so the orders quote what the player gets. */
+  initial: Scenario['initial'];
   orders: ShiftOrders;
   queue: QueuedEvent[];
 }

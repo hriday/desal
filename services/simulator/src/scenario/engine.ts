@@ -1,8 +1,6 @@
 import type { PumpId, ScenarioKind } from '@desal/schema';
 import { GAS_BASE_PRICE_USD_PER_GJ, GAS_CAP_MW, TICK_PLANT_S } from '../constants.js';
-import { nextRandom } from '../rng.js';
 import type { Loop, PlantState, SimEvent } from '../state.js';
-import { drawEvent } from './library.js';
 import type { Scenario } from './types.js';
 
 const clearFault = (l: Loop): Loop => ({ ...l, fault: null });
@@ -130,14 +128,14 @@ function applyEffect(s: PlantState, kind: ScenarioKind, p: Record<string, number
       };
     case 'controllerFault':
       return setLoopFault(s, String(p.loop), String(p.kind));
-    // Plan 4 Task 4 replaces
+    // The sharp kinds are applied by the chaos director (Plan 4 Task 5).
     default:
       return s;
   }
 }
 
 /**
- * Fire due scheduled events (once each), roll random events, then move chlorophyll toward its target.
+ * Fire due scheduled scenario events (once each), then move chlorophyll toward its target.
  * Does nothing outside a running shift that has a loaded scenario.
  */
 export function stepScenario(s: PlantState): { state: PlantState; events: SimEvent[] } {
@@ -156,20 +154,6 @@ export function stepScenario(s: PlantState): { state: PlantState; events: SimEve
     idx++;
   }
   state = { ...state, scenario: { ...state.scenario, nextEventIndex: idx } };
-
-  let seed = state.seed;
-  for (const { kind, p } of def.randomPerHour) {
-    let v: number;
-    [v, seed] = nextRandom(seed);
-    if (v < (p * TICK_PLANT_S) / 3600) {
-      const [e, next] = drawEvent(kind, elapsedMin, seed, state.run.shiftNumber);
-      seed = next;
-      state = applyEffect(state, e.kind, e.params);
-      // Plan 4 Task 5 replaces eventId and radio
-      events.push({ ...base, type: 'scenario', eventId: s.tick * 100 + events.length + 1, kind: e.kind, message: e.message, radio: e.message });
-    }
-  }
-  state = { ...state, seed };
 
   const { chlorophyllTarget: target, chlorophyllRampPerTick: ramp } = state.scenario.effects;
   const chl = state.seawater.chlorophyllUgL;

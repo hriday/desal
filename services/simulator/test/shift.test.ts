@@ -4,7 +4,8 @@ import { loadScenario } from '../src/scenario/engine.js';
 import { scenarioForShift } from '../src/scenario/library.js';
 import { applyTrip } from '../src/safety/interlocks.js';
 import { restartStep } from '../src/safety/restart.js';
-import { startShift } from '../src/shift.js';
+import { toStatus } from '../src/emit.js';
+import { drawPendingPlan, startShift } from '../src/shift.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
 import { env, GAME_ID } from './envelope.js';
@@ -136,5 +137,121 @@ describe('status shiftTarget outside a shift', () => {
     const over = tick(s, [env(s, { type: 'quitGame' })]);
     expect(over.state.phase).toBe('over');
     expect(over.status.shiftTarget).toBeNull();
+  });
+});
+
+describe('chaos plan lifecycle', () => {
+  const fresh = () => drawPendingPlan(createInitialState(1, T0, GAME_ID));
+
+  it('draws shift 1 at game creation and activates it at startShift', () => {
+    const s = fresh();
+    expect(s.chaos.pending?.shiftNumber).toBe(1);
+    expect(s.chaos.pending?.hell).toBe(false);
+    const started = startShift(s, 'auto');
+    const { pending, active } = started.state.chaos;
+    expect(pending).toBeNull();
+    expect(active?.plan.shiftNumber).toBe(1);
+    expect(active).toMatchObject({ fired: [], lastFiredMinute: null, nextEventId: active!.plan.queue.length + 1 });
+    expect(started.state.shift!.target.productM3).toBe(active!.plan.targetM3);
+    expect(started.state.seawater.tempC).toBe(active!.plan.initial.seawaterTempC);
+    const ev = started.events.find((e) => e.type === 'shiftStart');
+    expect(ev).toMatchObject({ hell: false, orders: active!.plan.orders });
+  });
+
+  it('is deterministic from the seed', () => {
+    expect(fresh()).toEqual(fresh());
+  });
+
+  it('draws a plan on the spot when a bare state has none', () => {
+    const started = startShift(createInitialState(1, T0, GAME_ID), 'auto').state;
+    expect(started.chaos.active?.plan.shiftNumber).toBe(1);
+  });
+
+  it('the orders quote the seawater the next shift actually starts with', () => {
+    const s = runShift(startShift(fresh(), 'auto').state);
+    const orders = s.chaos.pending!.orders;
+    const next = startShift(s, 'auto').state;
+    expect(orders.lines[0]).toContain(`${next.seawater.tempC.toFixed(1)} C`);
+    expect(orders.lines[0]).toContain(`${next.seawater.chlorophyllUgL.toFixed(1)} ug/L`);
+  });
+
+  it('after a full shift: next plan pending, active cleared', () => {
+    const s = runShift(startShift(fresh(), 'auto').state);
+    expect(s.phase).toBe('handover');
+    expect(s.chaos.pending?.shiftNumber).toBe(2);
+    expect(s.chaos.active).toBeNull();
+  });
+
+  it('shiftEnd summary reports fired events only, and the plan hell flag', () => {
+    const s0 = startShift(fresh(), 'auto').state;
+    const active = {
+      ...s0.chaos.active!,
+      plan: { ...s0.chaos.active!.plan, hell: true },
+      fired: [{ eventId: 1, kind: 'pumpTrip' as const, atMinute: 40, cleared: true, how: 'player' as const }],
+    };
+    let s: PlantState = { ...s0, chaos: { ...s0.chaos, active } };
+    const ends: unknown[] = [];
+    for (let i = 0; i < SHIFT_TICKS && s.phase === 'running'; i++) {
+      const t = tick(s, []);
+      s = t.state;
+      ends.push(...t.events.filter((e) => e.type === 'shiftEnd'));
+    }
+    const summary = (ends[0] as { summary: { hell: boolean; events: unknown[] } }).summary;
+    expect(summary.hell).toBe(true);
+    expect(summary.events).toEqual([{ eventId: 1, kind: 'pumpTrip', atMinute: 40, cleared: true, how: 'player' }]);
+  });
+
+  it('startShift clears a running crew job and every per-shift fault (never carried over)', () => {
+    const s0 = fresh();
+    const dirty: PlantState = {
+      ...s0,
+      crew: { job: 'plugTubes', remainingTicks: 30 },
+      faults: {
+        tubeLeak: { stage: 2, ppm: 10 },
+        ejectorFailed: true,
+        powerDipRemainingTicks: 5,
+        stormRemainingTicks: 9,
+        stormFouling: 0.2,
+        sensors: { tbt: { kind: 'freeze', value: 100 } },
+        stageDerate: s0.faults.stageDerate.map(() => 0.5),
+      },
+    };
+    const next = startShift(dirty, 'auto').state;
+    expect(next.crew).toBeNull();
+    expect(next.faults).toEqual(createInitialState(1, T0, GAME_ID).faults);
+  });
+
+  it('records lastWasHell from the activated plan', () => {
+    const s0 = fresh();
+    const hellPlan = { ...s0.chaos.pending!, hell: true };
+    expect(startShift({ ...s0, chaos: { ...s0.chaos, pending: hellPlan } }, 'auto').state.chaos.lastWasHell).toBe(true);
+  });
+});
+
+describe('status orders and hell', () => {
+  const fresh = () => drawPendingPlan(createInitialState(1, T0, GAME_ID));
+
+  it('handover shows the pending orders and no hell flag', () => {
+    const st = toStatus(fresh());
+    expect(st.phase).toBe('handover');
+    expect(st.orders).not.toBeNull();
+    expect(st.orders).toEqual(fresh().chaos.pending!.orders);
+    expect(st.hell).toBeNull();
+  });
+
+  it('a running shift shows the active orders and hell flag; paused keeps orders, hides hell', () => {
+    const running = startShift(fresh(), 'auto').state;
+    const st = toStatus(running);
+    expect(st.orders).toEqual(running.chaos.active!.plan.orders);
+    expect(st.hell).toBe(false);
+    const paused = toStatus({ ...running, phase: 'paused' });
+    expect(paused.orders).toEqual(running.chaos.active!.plan.orders);
+    expect(paused.hell).toBeNull();
+  });
+
+  it('reports the crew job', () => {
+    const s = { ...fresh(), crew: { job: 'plugTubes' as const, remainingTicks: 7 } };
+    expect(toStatus(s).crew).toEqual({ job: 'plugTubes', remainingTicks: 7 });
+    expect(toStatus(fresh()).crew).toBeNull();
   });
 });

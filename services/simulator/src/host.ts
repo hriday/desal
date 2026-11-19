@@ -4,6 +4,7 @@ import { MAX_GAMES } from './constants.js';
 import { toStatus } from './emit.js';
 import { endGame } from './gameover.js';
 import { nextRandom } from './rng.js';
+import { drawPendingPlan } from './shift.js';
 import { createInitialState, type PlantState } from './state.js';
 import { stamped, tick } from './tick.js';
 
@@ -144,7 +145,8 @@ export class GameHost {
         } else if (this.entries.size >= this.maxGames) {
           hostEvent(gameId, { type: 'gameRejected', reason: 'capacity' });
         } else {
-          const initial = createInitialState(this.newSeed(), nowMs, gameId);
+          // Shift 1's plan is drawn now, deterministically from the game seed, so the first handover has orders.
+          const initial = drawPendingPlan(createInitialState(this.newSeed(), nowMs, gameId));
           // gameStart is seq 0 of the new game, stamped from its own state.
           const start = stamped([{ type: 'gameStart', tick: 0, plantTime: nowMs, shiftId: null }], initial);
           this.entries.set(gameId, { state: start.state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });

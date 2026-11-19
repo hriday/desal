@@ -69,6 +69,7 @@ describe('snapshots', () => {
       hell: true,
       warned: false,
       targetM3: 100,
+      initial: { seawaterTempC: 31.5, chlorophyllUgL: 1.2, gasCapMW: 30 },
       orders,
       queue: [{ eventId: 2, kind: 'tubeLeak' as const, params: { stage: 3, ppm: 40, note: 'x' }, earliestMinute: 15, cascade: true }],
     };

@@ -5,6 +5,7 @@ import type { ChaosPlan } from './chaosTypes.js';
 const MAX_SALINITY_PPM = 25;
 /** A pump at or above this wear gets a line in the orders. */
 const ROUGH_WEAR = 0.5;
+const ROUGH_SHIFT_LINE = 'Expect a rough shift — stay sharp.';
 
 /** What the crew says over the radio when `kind` hits, in the plant's voice. */
 export function radioLine(kind: ScenarioKind, p: Record<string, number | string>): string {
@@ -59,7 +60,10 @@ export function buildOrders(plan: Omit<ChaosPlan, 'orders'>, state: PlantState, 
   for (const [id, pump] of Object.entries(state.intake.pumps)) {
     if (pump.wear >= ROUGH_WEAR) lines.push(`${id} is running rough.`);
   }
-  if (plan.hell && plan.warned) lines.push(...hintLines(plan));
+  if (plan.hell && plan.warned) {
+    const hints = hintLines(plan);
+    lines.push(...(hints.length > 0 ? hints : [ROUGH_SHIFT_LINE]));
+  }
   const briefing =
     plan.shiftNumber === 1
       ? [

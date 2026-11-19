@@ -220,6 +220,19 @@ function pump(running: boolean): Pump {
   return { running, wear: 0, cavitation: 0, bearingWearMult: 1, overhaulRemainingTicks: 0 };
 }
 
+/** Every per-shift fault cleared: the state a shift starts with. */
+export function noFaults(): PlantState['faults'] {
+  return {
+    tubeLeak: null,
+    ejectorFailed: false,
+    powerDipRemainingTicks: 0,
+    stormRemainingTicks: 0,
+    stormFouling: 0,
+    sensors: {},
+    stageDerate: Array.from({ length: STAGE_COUNT }, () => 1),
+  };
+}
+
 export function createInitialState(seed: number, startPlantTime: number, gameId: string): PlantState {
   const stages: Stage[] = Array.from({ length: STAGE_COUNT }, (_, i) => ({
     tempC: NOMINAL.tbtC - (NOMINAL.tbtC - BOTTOM_C) * ((i + 0.5) / STAGE_COUNT),
@@ -282,14 +295,6 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
     run: { gameId, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
     chaos: { pending: null, active: null, lastWasHell: false },
     crew: null,
-    faults: {
-      tubeLeak: null,
-      ejectorFailed: false,
-      powerDipRemainingTicks: 0,
-      stormRemainingTicks: 0,
-      stormFouling: 0,
-      sensors: {},
-      stageDerate: Array.from({ length: STAGE_COUNT }, () => 1),
-    },
+    faults: noFaults(),
   };
 }

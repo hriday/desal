@@ -14,7 +14,6 @@ describe('escalating difficulty', () => {
     for (const n of [1, 2, 3, 10]) {
       const sc = scenarioForShift(n, 9);
       expect(sc.events).toEqual([]);
-      expect(sc.randomPerHour).toEqual([]);
       expect(sc.target.fuelBudgetUsd).toBe(Math.round(12000 * (1 + 0.04 * (n - 1))));
       expect(allFinite(sc)).toBe(true);
     }

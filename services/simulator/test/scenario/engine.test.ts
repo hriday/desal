@@ -107,21 +107,6 @@ describe('scenario engine', () => {
       bias: 0,
     });
   });
-
-  it('random events use state.seed and store the advanced seed', () => {
-    const base = running(1, 42);
-    const def = { ...base.scenario.definition!, randomPerHour: [{ kind: 'gasPriceSpike' as const, p: 3600 / 40 }] };
-    const s0 = { ...base, scenario: { ...base.scenario, definition: def } };
-    const r = stepScenario(s0);
-    expect(r.state.seed).not.toBe(s0.seed);
-    expect(r.events).toHaveLength(1);
-    expect(r.state.fuel.gas.priceUsdPerGJ).toBeGreaterThan(8);
-    expect(stepScenario(s0)).toEqual(r);
-    const never = { ...s0, scenario: { ...s0.scenario, definition: { ...def, randomPerHour: [{ kind: 'gasPriceSpike' as const, p: 0 }] } } };
-    const rn = stepScenario(never);
-    expect(rn.events).toHaveLength(0);
-    expect(rn.state.seed).not.toBe(never.seed);
-  });
 });
 
 describe('scenarioForShift', () => {

@@ -55,6 +55,9 @@ const tidy = (x: number): number => Number(x.toFixed(6));
 /** Difficulty multiplier for shift `n`: 4% harder per shift, uncapped. */
 export const difficulty = (n: number): number => 1 + TARGET_GROWTH_PER_SHIFT * (Math.max(1, n) - 1);
 
+/** Shift `n`'s fuel budget (USD). */
+export const shiftFuelBudgetUsd = (n: number): number => Math.round(BASE_FUEL_BUDGET_USD * difficulty(n));
+
 /** Shift `n`'s product target. */
 export const shiftTargetM3 = (n: number): number => Math.round(BASE_TARGET_M3 * difficulty(n));
 
@@ -161,14 +164,14 @@ export function scenarioForShift(shiftNumber: number, rngSeed: number): Scenario
   const target = {
     productM3: shiftTargetM3(n),
     maxSalinityPpm: 25,
-    fuelBudgetUsd: Math.round(BASE_FUEL_BUDGET_USD * difficulty(n)),
+    fuelBudgetUsd: shiftFuelBudgetUsd(n),
   };
   if (n === 1) {
-    return { id: 'shift-1', target, initial: { seawaterTempC: 30, chlorophyllUgL: 1 }, events: [], randomPerHour: [] };
+    return { id: 'shift-1', target, initial: { seawaterTempC: 30, chlorophyllUgL: 1 }, events: [] };
   }
   let s = rngSeed >>> 0;
   let tempC: number, chl: number;
   [tempC, s] = range(s, 28, 33, 0.5);
   [chl, s] = range(s, 0.5, 2, 0.1);
-  return { id: `shift-${n}`, target, initial: { seawaterTempC: tempC, chlorophyllUgL: chl }, events: [], randomPerHour: [] };
+  return { id: `shift-${n}`, target, initial: { seawaterTempC: tempC, chlorophyllUgL: chl }, events: [] };
 }

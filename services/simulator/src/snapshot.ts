@@ -37,6 +37,13 @@ const ChaosPlanSchema = z.object({
   hell: z.boolean(),
   warned: z.boolean(),
   targetM3: num,
+  /** The seawater and gas conditions the shift starts in, drawn with the plan so the orders can quote them. */
+  initial: z.object({
+    seawaterTempC: num,
+    chlorophyllUgL: num,
+    gasCapMW: num.optional(),
+    gasPriceUsdPerGJ: num.optional(),
+  }),
   orders: ShiftOrdersSchema,
   queue: z.array(QueuedEventSchema),
 });
@@ -71,7 +78,6 @@ const ScenarioSchema = z.object({
       message: z.string(),
     }),
   ),
-  randomPerHour: z.array(z.object({ kind: ScenarioKindSchema, p: num })),
 });
 
 /** Mirrors PlantState exactly; the assignability checks below fail to compile if the two drift. */

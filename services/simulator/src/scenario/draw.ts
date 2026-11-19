@@ -1,10 +1,10 @@
 import { SHARP_KINDS, type ScenarioKind } from '@desal/schema';
-import { BASE_FUEL_BUDGET_USD } from '../constants.js';
 import { nextRandom } from '../rng.js';
 import type { PlantState } from '../state.js';
 import type { ChaosPlan, QueuedEvent } from './chaosTypes.js';
-import { difficulty, drawEvent, shiftTargetM3 } from './library.js';
+import { drawEvent, shiftFuelBudgetUsd, shiftTargetM3 } from './library.js';
 import { buildOrders } from './orders.js';
+import type { Scenario } from './types.js';
 
 const HELL_WATER_FACTOR = 0.85;
 const HELL_WARNED_P = 0.7;
@@ -35,16 +35,22 @@ function take<T>(pool: T[], seed: number): [T | null, number] {
 
 /**
  * Draw shift `shiftNumber`'s chaos plan. Pure: all randomness comes from `seed`, and the next seed is
- * returned. `state` is read only for pump availability and, in the orders, equipment and seawater.
+ * returned. `state` is read only for pump availability and, in the orders, equipment; the orders quote
+ * `initial` (the conditions the shift will start in, default: the state's current seawater).
  */
 export function drawChaosPlan(input: {
   shiftNumber: number;
   seed: number;
   lastWasHell: boolean;
   state: PlantState;
+  initial?: Scenario['initial'];
 }): [ChaosPlan, number] {
   const n = Math.max(1, input.shiftNumber);
   const { state } = input;
+  const initial = input.initial ?? {
+    seawaterTempC: state.seawater.tempC,
+    chlorophyllUgL: state.seawater.chlorophyllUgL,
+  };
   let s = input.seed >>> 0;
 
   const pumps = Object.entries(state.intake.pumps);
@@ -100,7 +106,10 @@ export function drawChaosPlan(input: {
 
   const base = shiftTargetM3(n);
   const targetM3 = hell ? Math.round(base * HELL_WATER_FACTOR) : base;
-  const partial = { shiftNumber: n, hell, warned, targetM3, queue };
-  const budgetUsd = Math.round(BASE_FUEL_BUDGET_USD * difficulty(n));
-  return [{ ...partial, orders: buildOrders(partial, state, budgetUsd) }, s];
+  const partial = { shiftNumber: n, hell, warned, targetM3, initial, queue };
+  const view: PlantState = {
+    ...state,
+    seawater: { ...state.seawater, tempC: initial.seawaterTempC, chlorophyllUgL: initial.chlorophyllUgL },
+  };
+  return [{ ...partial, orders: buildOrders(partial, view, shiftFuelBudgetUsd(n)) }, s];
 }

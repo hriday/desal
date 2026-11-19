@@ -34,6 +34,13 @@ describe('GameHost', () => {
     expect(r.hostEvents).toEqual([]);
   });
 
+  it('draws shift 1 pending plan at creation, deterministically from the host seed', () => {
+    const a = started([gid(1)], { seed: 9 }).games().get(gid(1))!.state;
+    const b = started([gid(1)], { seed: 9 }).games().get(gid(1))!.state;
+    expect(a.chaos.pending?.shiftNumber).toBe(1);
+    expect(a.chaos.pending).toEqual(b.chaos.pending);
+  });
+
   it('isolates games: a command to A does not change B', () => {
     const h = started([gid(1), gid(2)]);
     const before = h.games().get(gid(2))!.state;
