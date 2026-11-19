@@ -1,5 +1,5 @@
 import type { FuelKind } from '@desal/schema';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { orderFuel, selectFuel } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
 import { canSend, pendingCommand, type ControlCtx } from '../controls/ctx';
@@ -52,7 +52,16 @@ function FuelOrder(ctl: ControlCtx) {
   const cost = valid ? backupOrderCostUsd(t, grade) : undefined;
   const bal = ctl.status?.balanceUsd;
   const affordable = cost !== undefined && num(bal) && bal >= cost;
-  const order = () => { if (valid && affordable) ctl.send?.(orderFuel(t)); };
+  const pending = pendingCommand(ctl, 'orderFuel') !== undefined;
+  // A paid order has no status echo and the balance only moves on the next status, so allow one
+  // order per status: block while one is pending, and also until a new status after a send.
+  const sentAt = useRef<unknown>(null);
+  const sentThisStatus = () => sentAt.current !== null && sentAt.current === ctl.status;
+  const blocked = pending || sentThisStatus();
+  const order = () => {
+    if (!valid || !affordable || pending || sentThisStatus()) return; // read the ref now, not at render
+    if (ctl.send?.(orderFuel(t))) sentAt.current = ctl.status;
+  };
   return (
     <div className="ctl">
       <span className="ctl__label">Order backup fuel ({(label(GRADE_TEXT, grade) ?? DASH).toLowerCase()})</span>
@@ -61,9 +70,9 @@ function FuelOrder(ctl: ControlCtx) {
         <ActionButton
           label="Order"
           costUsd={cost}
-          disabled={!canSend(ctl) || !affordable}
+          disabled={!canSend(ctl) || !affordable || blocked}
           hint={!valid ? `${ORDER_MIN_T}–${ORDER_MAX_T} t` : affordable ? undefined : 'not enough budget'}
-          pending={pendingCommand(ctl, 'orderFuel') !== undefined}
+          pending={pending}
           onAction={order}
         />
       </span>

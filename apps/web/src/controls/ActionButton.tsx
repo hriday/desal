@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { usd } from '../equipment/format';
 
 export interface ActionButtonProps {
@@ -21,13 +21,17 @@ export function ActionButton({ label, onAction, costUsd, confirm, disabled, pend
   const text = costUsd !== undefined ? `${label} (${usd(costUsd)})` : label;
   const off = disabled || pending;
   const cls = `btn${danger ? ' btn--danger' : ''}`;
+  // A confirm armed before the action became unavailable must not come back armed.
+  useEffect(() => { if (off) setAsking(false); }, [off]);
+  // Esc backs out of an open confirm (and is marked handled, so the expanded view stays open).
+  const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); setAsking(false); } };
   if (asking && !off) {
     return (
-      <span className="ctl__row action action--confirm">
+      <span className="ctl__row action action--confirm" onKeyDown={onKeyDown}>
         <button type="button" className={cls} aria-label={`Confirm ${label}`} onClick={() => { setAsking(false); onAction(); }}>
           Confirm {text}
         </button>
-        <button type="button" className="btn" onClick={() => setAsking(false)}>Cancel</button>
+        <button type="button" className="btn" autoFocus onClick={() => setAsking(false)}>Cancel</button>
       </span>
     );
   }

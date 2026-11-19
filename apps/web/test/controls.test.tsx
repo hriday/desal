@@ -225,6 +225,16 @@ describe('IntakeView controls', () => {
 });
 
 describe('StagesView controls', () => {
+  it('"All stage levels" does not show S1\'s pending edit as its own', () => {
+    const pending = new Map([['setSetpoint:level1', { command: { type: 'setSetpoint', loop: 'level1', value: 0.3 } as Command, age: 0 }]]);
+    const { container } = withSend(StagesView, demoStatus(), { pending });
+    const all = container.querySelector('[data-control="All stage levels"]')!;
+    const s1 = container.querySelector('[data-control="S1 level setpoint"]')!;
+    expect(all.textContent).not.toContain('sending…');
+    expect((within(all as HTMLElement).getByRole('spinbutton') as HTMLInputElement).value).toBe('0.35');
+    expect(s1.textContent).toContain('sending…');
+  });
+
   it('ball cleaning toggles; acid clean only when tripped, with its cost', () => {
     const online = withSend(StagesView, demoStatus());
     fireEvent.click(within(online.container).getByRole('button', { name: /ball cleaning/i }));
@@ -285,6 +295,16 @@ describe('FuelView controls', () => {
     expect((within(container).getByRole('button', { name: /^order/i }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('Enter pressed twice in the tonnes field places one order (no status in between)', () => {
+    const { container, sent } = withSend(FuelView, demoStatus());
+    const input = within(container).getByRole('spinbutton', { name: /tonnes/i });
+    fireEvent.change(input, { target: { value: '20' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.click(within(container).getByRole('button', { name: /^order/i }));
+    expect(sent).toEqual([{ type: 'orderFuel', tonnes: 20 }]);
+  });
+
   it('prices an off-grade offer at the off-grade LHV', () => {
     const { container } = withSend(FuelView, demoStatus({ offeredGrade: 'offgrade' }));
     fireEvent.change(within(container).getByRole('spinbutton', { name: /tonnes/i }), { target: { value: '20' } });
@@ -319,11 +339,48 @@ describe('widgets', () => {
     fireEvent.click(getByRole('button', { name: /confirm acid clean/i }));
     expect(onAction).toHaveBeenCalledTimes(1);
   });
+
+  it('ActionButton drops an armed confirm when it becomes disabled', () => {
+    const onAction = vi.fn();
+    const { getByRole, queryByRole, rerender } = render(<ActionButton label="Quit run" confirm onAction={onAction} />);
+    fireEvent.click(getByRole('button', { name: /quit run/i }));
+    expect(getByRole('button', { name: /confirm quit run/i })).toBeTruthy();
+    rerender(<ActionButton label="Quit run" confirm disabled onAction={onAction} />);
+    rerender(<ActionButton label="Quit run" confirm onAction={onAction} />);
+    expect(queryByRole('button', { name: /confirm quit run/i })).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('Esc while a confirm is open cancels the confirm and does not close the view', () => {
+    const { getByRole, queryByRole } = render(<ActionButton label="Manual trip" confirm onAction={() => {}} />);
+    fireEvent.click(getByRole('button', { name: /manual trip/i }));
+    const cancel = getByRole('button', { name: /cancel/i });
+    expect(document.activeElement).toBe(cancel);
+    const ev = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    act(() => { cancel.dispatchEvent(ev); });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(queryByRole('button', { name: /confirm manual trip/i })).toBeNull();
+  });
+
+  it('Toast dismisses after 6 s even when onDismiss changes identity on every render', () => {
+    vi.useFakeTimers();
+    try {
+      const onDismiss = vi.fn();
+      const toast = { kind: 'rejected' as const, message: 'insufficient funds' };
+      const { rerender } = render(<Toast toast={toast} onDismiss={() => onDismiss()} />);
+      act(() => { vi.advanceTimersByTime(4000); });
+      rerender(<Toast toast={toast} onDismiss={() => onDismiss()} />);
+      act(() => { vi.advanceTimersByTime(2100); });
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('pending and rejection', () => {
   // The real store, a sending view and the toast, as the control room will wire them.
-  function Room({ onSend }: { onSend: (msg: { commandId: string; command: Command }) => void }) {
+  function Room({ onSend, View = HeaterView }: { onSend: (msg: { commandId: string; command: Command }) => void; View?: ComponentType<ExpandedProps> }) {
     const [s, dispatch] = useReducer(reducer, undefined, () =>
       reducer(initialState(), { type: 'server', msg: { t: 'status', status: demoStatus() } }));
     (Room as unknown as { dispatch: typeof dispatch }).dispatch = dispatch;
@@ -335,7 +392,7 @@ describe('pending and rejection', () => {
     };
     return (
       <>
-        <HeaterView status={s.status} readings={demoReadings()} target={demoTarget} trends={{}} events={[]} pending={s.pending} send={send} />
+        <View status={s.status} readings={demoReadings()} target={demoTarget} trends={{}} events={[]} pending={s.pending} send={send} />
         <Toast toast={s.toast} onDismiss={() => dispatch({ type: 'dismissToast' })} />
       </>
     );
@@ -355,6 +412,29 @@ describe('pending and rejection', () => {
     expect(input.value).toBe('108.0');
     expect(container.textContent).not.toContain('sending…');
     expect(container.textContent).toContain('reported 108.0 °C');
+  });
+
+  it('a paid fuel order cannot repeat until a status arrives', () => {
+    const sends: { commandId: string; command: Command }[] = [];
+    const { container } = render(<Room View={FuelView} onSend={(m) => sends.push(m)} />);
+    const input = within(container).getByRole('spinbutton', { name: /tonnes/i });
+    fireEvent.change(input, { target: { value: '20' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(sends.map((m) => m.command)).toEqual([{ type: 'orderFuel', tonnes: 20 }]);
+    expect(container.textContent).toContain('sending…');
+    dispatchServer({ t: 'status', status: demoStatus({ balanceUsd: 5000, tick: 1721 }) });
+    fireEvent.change(input, { target: { value: '1' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(sends).toHaveLength(2);
+  });
+
+  it('"All stage levels" shows its own pending state after sending to all stages', () => {
+    const { container } = render(<Room View={StagesView} onSend={() => {}} />);
+    enter(container, /all stage levels/i, '0.4');
+    const all = container.querySelector('[data-control="All stage levels"]')!;
+    expect(all.textContent).toContain('sending…');
+    expect((within(all as HTMLElement).getByRole('spinbutton') as HTMLInputElement).value).toBe('0.40');
   });
 
   it('the next status reporting the new value clears the pending entry', () => {

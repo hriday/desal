@@ -38,16 +38,21 @@ const STAGE_NS = Array.from({ length: STAGE_COUNT }, (_, i) => i + 1);
 /** Stage level setpoints (setpoint-driven in both modes): all stages at once, or one picked stage. */
 function LevelControls(ctl: ControlCtx) {
   const [stage, setStage] = useState(1);
+  // Its own pending state: the value last sent to all stages, shown while any stage still awaits it.
+  const [sentAll, setSentAll] = useState<number | undefined>(undefined);
   const sps = STAGE_NS.map((n) => ctl.status?.loops?.[levelLoop(n)]?.setpoint);
   const common = sps.every((v) => num(v) && v === sps[0]) ? sps[0] : undefined;
-  const p = pendingCommand(ctl, `setSetpoint:${levelLoop(1)}`);
+  const allPending = sentAll !== undefined && STAGE_NS.some((n) => {
+    const c = pendingCommand(ctl, `setSetpoint:${levelLoop(n)}`);
+    return c?.type === 'setSetpoint' && c.value === sentAll;
+  });
   const { min, max } = loopRange(levelLoop(1), 'setSetpoint');
   return (
     <>
       <Setpoint
         label="All stage levels"
         reported={common}
-        pending={p?.type === 'setSetpoint' ? p.value : undefined}
+        pending={allPending ? sentAll : undefined}
         min={min}
         max={max}
         step={0.01}
@@ -55,7 +60,10 @@ function LevelControls(ctl: ControlCtx) {
         digits={2}
         disabled={!canSend(ctl)}
         note={common === undefined && sps.some(num) ? 'stages differ' : undefined}
-        onCommit={(v) => { for (const n of STAGE_NS) if (!ctl.send?.(setpoint(levelLoop(n), v))) break; }}
+        onCommit={(v) => {
+          setSentAll(v);
+          for (const n of STAGE_NS) if (!ctl.send?.(setpoint(levelLoop(n), v))) break;
+        }}
       />
       <div className="ctl-group">
         <label className="ctl">
