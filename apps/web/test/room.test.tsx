@@ -163,6 +163,66 @@ describe('Connection overlay', () => {
   });
 });
 
+describe('Liveness watchdog', () => {
+  it('shows "Telemetry lost" after 5 s without a status while connected, and clears it on the next status', () => {
+    vi.useFakeTimers();
+    try {
+      const { queryByText, ws } = mount(running());
+      act(() => { vi.advanceTimersByTime(4900); });
+      expect(queryByText(/Telemetry lost/)).toBeNull();
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(queryByText("Telemetry lost — the plant isn't responding")).not.toBeNull();
+      ws.push({ t: 'status', status: running({ tick: 1721 }) });
+      expect(queryByText(/Telemetry lost/)).toBeNull();
+      // Each status restarts the 5 s.
+      act(() => { vi.advanceTimersByTime(3000); });
+      ws.push({ t: 'status', status: running({ tick: 1722 }) });
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(queryByText(/Telemetry lost/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('works in handover too, and stays quiet while the connection is down (the overlay says so)', () => {
+    vi.useFakeTimers();
+    try {
+      const { queryByText, ws } = mount(demoStatus({ phase: 'handover', shiftNumber: 0, shiftTarget: null }));
+      act(() => { vi.advanceTimersByTime(5100); });
+      expect(queryByText(/Telemetry lost/)).not.toBeNull();
+      ws.drop();
+      expect(queryByText(/Telemetry lost/)).toBeNull();
+      act(() => { vi.advanceTimersByTime(900); }); // before the reconnect (1 s backoff)
+      expect(queryByText(/Telemetry lost/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('Starting timeout', () => {
+  it('returns to Start after 10 s with a toast', () => {
+    vi.useFakeTimers();
+    try {
+      sessionStorage.clear();
+      FakeWS.all = [];
+      const { getByRole, container, getByText } = render(
+        <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
+      );
+      fireEvent.click(getByRole('button', { name: 'Start a run' }));
+      FakeWS.all[0]!.open();
+      act(() => { vi.advanceTimersByTime(9900); });
+      expect(getByRole('button', { name: 'Starting…' })).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(200); });
+      expect(container.querySelector('[data-screen="start"]')).not.toBeNull();
+      expect(getByRole('button', { name: 'Start a run' })).toBeTruthy();
+      expect(getByText(/Couldn't start a game, try again/)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('Gateway at capacity (close 1013)', () => {
   it('in a game: says the plant is at capacity, with a Retry button that reconnects at once', () => {
     const { getByRole, ws } = mount(running());

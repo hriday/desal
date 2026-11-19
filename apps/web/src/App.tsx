@@ -74,6 +74,9 @@ export function Screens() {
       {/* Under the connection overlay nothing can be focused (inert) or clicked (the capture guard
           also covers synthetic clicks and browsers without inert). */}
       <div className="app" inert={blocked} onClickCapture={blocked ? swallow : undefined}>{body}</div>
+      {state.telemetryLost && !blocked && (
+        <div className="banner banner--bad" role="status">Telemetry lost — the plant isn't responding</div>
+      )}
       <ConnOverlay conn={state.conn} everOpen={state.everOpen} onRetry={retry} />
       <Toast toast={capacity ? null : state.toast} onDismiss={() => dispatch({ type: 'dismissToast' })} />
     </>

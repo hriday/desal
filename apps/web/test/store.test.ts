@@ -95,6 +95,41 @@ describe('store reducer', () => {
     expect(server(s, eventMsg({ type: 'online', seq: 1, epoch: 1 })).events).toEqual([]);
   });
 
+  it('a start that takes too long returns to Start with a toast', () => {
+    const s = reducer(reducer(initialState(), { type: 'startClicked' }), { type: 'startTimeout' });
+    expect(s.session).toBe('start');
+    expect(s.toast).toEqual({ kind: 'error', message: "Couldn't start a game, try again" });
+    // Only a start in progress times out.
+    const room = server(initialState(), statusMsg());
+    expect(reducer(room, { type: 'startTimeout' })).toBe(room);
+  });
+
+  it('a socket that dropped while starting, before any game was assigned, returns to Start on reconnect', () => {
+    let s = reducer(initialState(), { type: 'startClicked' });
+    s = reducer(s, { type: 'conn', conn: 'connecting' });
+    s = reducer(s, { type: 'conn', conn: 'open' }); // the first open: newGame goes out
+    expect(s.session).toBe('starting');
+    s = reducer(s, { type: 'conn', conn: 'closed' });
+    expect(s.session).toBe('starting');
+    s = reducer(s, { type: 'conn', conn: 'open' });
+    expect(s.session).toBe('start');
+    expect(s.toast).toEqual({ kind: 'error', message: "Couldn't start a game, try again" });
+    // With a gameId the reconnect resumes it instead.
+    let g = reducer(initialState(), { type: 'startClicked' });
+    g = reducer(g, { type: 'conn', conn: 'open' });
+    g = server(g, { t: 'game', gameId });
+    g = reducer(reducer(g, { type: 'conn', conn: 'closed' }), { type: 'conn', conn: 'open' });
+    expect(g.session).toBe('starting');
+  });
+
+  it('telemetry lost: set by the watchdog, cleared by the next status or a connection change', () => {
+    let s = server(initialState(), statusMsg());
+    s = reducer(s, { type: 'telemetryLost' });
+    expect(s.telemetryLost).toBe(true);
+    expect(server(s, statusMsg()).telemetryLost).toBe(false);
+    expect(reducer(s, { type: 'conn', conn: 'closed' }).telemetryLost).toBe(false);
+  });
+
   it('status phases drive the session', () => {
     let s = server(initialState(), statusMsg({ phase: 'handover' }));
     expect(s.session).toBe('handover');

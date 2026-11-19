@@ -1,7 +1,7 @@
 import { TOPICS, type CommandEnvelope, type ServerMsg } from '@desal/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { StatusBook, type GatewayTopic } from '../src/kafka.js';
-import { MAX_MSG_BYTES, RESUME_WAIT_MS } from '../src/protocol.js';
+import { MAX_MSG_BYTES, RESUME_WAIT_MS, START_WAIT_MS } from '../src/protocol.js';
 import { Sessions } from '../src/sessions.js';
 import { GAME_A, GAME_B, gameEnd, gameRejected, gameStart, noSuchGame, online, reading, status } from './fixtures.js';
 
@@ -93,6 +93,32 @@ describe('newGame', () => {
     client('s1', { t: 'newGame' });
     expect(sent).toHaveLength(1);
     expect(box).toEqual([{ t: 'error', reason: 'already in a game' }]);
+  });
+
+  it('gives up on a start the simulator never answers: capacity after 10 s, and unbinds', () => {
+    const box = open('s1');
+    client('s1', { t: 'newGame' });
+    expect(START_WAIT_MS).toBe(10_000);
+    expect(timers.map((t) => t.ms)).toEqual([START_WAIT_MS]);
+    fire();
+    expect(box).toEqual([{ t: 'error', reason: 'capacity' }]);
+    client('s1', { t: 'cmd', command: { type: 'pause' } });
+    expect(box.at(-1)).toEqual({ t: 'error', reason: 'no game' });
+    deliver(TOPICS.events, GAME_A, gameStart(GAME_A)); // too late: nobody is bound any more
+    expect(box.filter((m) => m.t === 'game')).toEqual([]);
+  });
+
+  it('a gameStart (or closing the socket) cancels the start timeout', () => {
+    const box = open('s1');
+    client('s1', { t: 'newGame' });
+    deliver(TOPICS.events, GAME_A, gameStart(GAME_A));
+    fire();
+    expect(box).toEqual([{ t: 'game', gameId: GAME_A }, { t: 'event', event: gameStart(GAME_A) }]);
+    open('s2');
+    client('s2', { t: 'newGame' });
+    expect(timers.at(-1)!.cancelled).toBe(false);
+    sessions.close('s2');
+    expect(timers.at(-1)!.cancelled).toBe(true);
   });
 
   it('answers gameRejected with a capacity error and unbinds', () => {

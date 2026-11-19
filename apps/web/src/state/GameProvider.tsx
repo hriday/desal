@@ -16,6 +16,10 @@ export interface Game {
 }
 
 export const RESUME_TIMEOUT_MS = 5000;
+/** A start (Start pressed, no game yet) gives up after this long. */
+export const START_TIMEOUT_MS = 10_000;
+/** In the room or handover, no status for this long while connected shows "Telemetry lost". */
+export const WATCHDOG_MS = 5000;
 
 const Ctx = createContext<Game | null>(null);
 
@@ -93,6 +97,22 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
     }, RESUME_TIMEOUT_MS);
     return () => clearTimeout(t);
   }, [resuming]);
+
+  // Start pressed but no game came of it in time: back to Start with a toast.
+  const starting = state.session === 'starting';
+  useEffect(() => {
+    if (!starting) return;
+    const t = setTimeout(() => rawDispatch({ type: 'startTimeout' }), START_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [starting]);
+
+  // Liveness watchdog: every status restarts it (the plant sends one per tick, also when paused).
+  const watching = (state.session === 'room' || state.session === 'handover') && state.conn === 'open';
+  useEffect(() => {
+    if (!watching) return;
+    const t = setTimeout(() => rawDispatch({ type: 'telemetryLost' }), WATCHDOG_MS);
+    return () => clearTimeout(t);
+  }, [watching, state.status]);
 
   const send = useCallback((command: Command) => {
     const { msg, commandId } = cmdMsg(command);

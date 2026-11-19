@@ -24,3 +24,8 @@
   border: 1px solid var(--water); border-radius: 4px; cursor: pointer;
 }
 .overlay button:focus-visible { outline: 2px solid var(--water); outline-offset: 2px; }
+.banner {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 15;
+  padding: 8px 16px; background: var(--panel); color: var(--text);
+  border: 1px solid var(--bad); border-left-width: 4px; border-radius: 4px; font-weight: 600;
+}

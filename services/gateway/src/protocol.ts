@@ -21,6 +21,8 @@ export const MAX_SOCKETS_PER_CLIENT = 3;
 export const NEW_GAME_INTERVAL_MS = 10_000;
 /** ... and at most this many live games; extra newGame answers 'capacity'. */
 export const MAX_GAMES_PER_CLIENT = 3;
+/** A newGame waits this long for the simulator's gameStart before answering 'capacity' (and unbinding). */
+export const START_WAIT_MS = 10_000;
 /** A resume for a game with no known status waits this long for one (e.g. right after a gateway restart). */
 export const RESUME_WAIT_MS = 5_000;
 /** How often each bound game gets a heartbeat (the simulator abandons a game after 90 s without one). */

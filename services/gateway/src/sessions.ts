@@ -23,6 +23,7 @@ import {
   RATE_REFILL_PER_S,
   RESUME_WAIT_MS,
   RESUME_WINDOW_MS,
+  START_WAIT_MS,
 } from './protocol.js';
 
 /** How Sessions reaches one client socket. */
@@ -53,6 +54,8 @@ interface Socket {
   gameId: string | null;
   /** Sent newGame; the 'game' reply waits for the simulator's gameStart. */
   awaitingStart: boolean;
+  /** Cancels the START_WAIT_MS timeout of a newGame still awaiting its gameStart. */
+  cancelStartWait: (() => void) | null;
   /** Message rate limit (protocol.ts, RATE_*). */
   bucket: TokenBucket;
   /** Who this socket belongs to (an IP address, see server.ts), for the per-client limits. */
@@ -109,7 +112,7 @@ export class Sessions {
   /** clientId defaults to the socket itself (no per-client grouping). */
   open(socketId: string, sink: SocketSink, clientId: string = socketId): void {
     const bucket = new TokenBucket({ burst: RATE_BURST, refillPerS: RATE_REFILL_PER_S, abuseMs: RATE_ABUSE_MS }, this.now());
-    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, bucket, clientId, resuming: null });
+    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, cancelStartWait: null, bucket, clientId, resuming: null });
   }
 
   /**
@@ -154,6 +157,13 @@ export class Sessions {
         this.limits.started(s.clientId, gameId);
         this.bind(socketId, s, gameId);
         s.awaitingStart = true;
+        // No gameStart in time (the simulator is down, or lost the command): free the socket.
+        s.cancelStartWait = this.schedule(() => {
+          s.cancelStartWait = null;
+          if (!s.awaitingStart || s.gameId !== gameId) return;
+          this.error(s, 'capacity');
+          this.unbind(socketId, s);
+        }, START_WAIT_MS);
         this.dispatch(this.envelope(gameId, { type: 'startGame' }), () => this.startFailed(gameId));
         return;
       }
@@ -235,6 +245,8 @@ export class Sessions {
           const s = this.sockets.get(id)!;
           if (!s.awaitingStart) continue;
           s.awaitingStart = false;
+          s.cancelStartWait?.();
+          s.cancelStartWait = null;
           s.sink.send({ t: 'game', gameId });
         }
       }
@@ -340,6 +352,8 @@ export class Sessions {
     }
     s.gameId = null;
     s.awaitingStart = false;
+    s.cancelStartWait?.();
+    s.cancelStartWait = null;
   }
 
   private unbindGame(gameId: string): void {

@@ -35,6 +35,8 @@ export interface State {
    * de-duplicated on (epoch, seq): a higher epoch starts the de-dup afresh, an older one is stale.
    */
   epoch: number;
+  /** No status for a while although the socket is open (the watchdog in GameProvider). */
+  telemetryLost: boolean;
 }
 
 export type Action =
@@ -46,20 +48,27 @@ export type Action =
   | { type: 'resumeTimeout' }
   // Dispatch only when socket.send() returned true; a command that was never sent must not show as pending.
   | { type: 'sent'; command: Command; commandId?: string }
-  | { type: 'dismissToast' };
+  | { type: 'dismissToast' }
+  // No gameStart answer within the start timeout.
+  | { type: 'startTimeout' }
+  // No status within the watchdog window while connected.
+  | { type: 'telemetryLost' };
 
 export const MAX_EVENTS = 200;
 
 export const CAPACITY_MESSAGE = 'The plant is at capacity, try again in a minute';
 /** The gateway itself is full (close 1013). */
 export const GATEWAY_FULL_MESSAGE = 'The plant is at capacity, try again shortly';
+export const START_FAILED_MESSAGE = "Couldn't start a game, try again";
+
+const startFailed = (s: State): State => ({ ...s, session: 'start', toast: { kind: 'error', message: START_FAILED_MESSAGE } });
 
 /** `resuming`: a gameId is stored, so the socket will try to resume it. */
 export function initialState(resuming = false): State {
   return {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
     pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
-    epoch: 0,
+    epoch: 0, telemetryLost: false,
   };
 }
 
@@ -144,7 +153,7 @@ function onServer(s: State, msg: ServerMsg): State {
       // Once over, only reset or startClicked leave it: a late status (of any phase) never revives the run.
       const session = s.session === 'over' ? 'over' : sessionFor(msg.status);
       const epoch = Math.max(s.epoch, msg.status.epoch);
-      return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch };
+      return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch, telemetryLost: false };
     }
     case 'frame':
       return { ...s, readings: { ...s.readings, ...msg.readings }, trends: pushFrame(s.trends, msg.plantTime, msg.readings) };
@@ -170,13 +179,18 @@ export function reducer(s: State, a: Action): State {
     case 'server': return onServer(s, a.msg);
     case 'conn':
       switch (a.conn) {
-        case 'idle': return { ...s, conn: 'idle', everOpen: false };
-        case 'connecting':
-        case 'open': return { ...s, conn: a.conn, everOpen: s.everOpen || a.conn === 'open' };
+        case 'idle': return { ...s, conn: 'idle', everOpen: false, telemetryLost: false };
+        case 'connecting': return { ...s, conn: a.conn, telemetryLost: false };
+        case 'open': {
+          const opened: State = { ...s, conn: 'open', everOpen: true, telemetryLost: false };
+          // A reconnect while starting with no game assigned: the newGame's fate is unknown, so
+          // back to Start (the newGame is never resent; a game it may have made is abandoned).
+          return s.everOpen && s.session === 'starting' && s.gameId === null ? startFailed(opened) : opened;
+        }
         case 'closed':
         case 'full': {
           // On a drop, fall back to plant-reported values; anything in flight is unknowable.
-          const dropped: State = { ...s, conn: a.conn, pending: new Map(), commandKeys: new Map() };
+          const dropped: State = { ...s, conn: a.conn, pending: new Map(), commandKeys: new Map(), telemetryLost: false };
           // Full before any game was assigned: back to Start (which holds no socket) to try again.
           if (a.conn === 'full' && s.session === 'starting' && s.gameId === null) {
             return { ...dropped, session: 'start', toast: { kind: 'capacity', message: GATEWAY_FULL_MESSAGE } };
@@ -195,5 +209,7 @@ export function reducer(s: State, a: Action): State {
       return { ...s, pending: new Map(s.pending).set(key, { command: a.command, age: 0 }), commandKeys };
     }
     case 'dismissToast': return { ...s, toast: null };
+    case 'startTimeout': return s.session === 'starting' ? startFailed(s) : s;
+    case 'telemetryLost': return s.telemetryLost ? s : { ...s, telemetryLost: true };
   }
 }
