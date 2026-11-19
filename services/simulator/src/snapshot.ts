@@ -50,6 +50,7 @@ const ChaosPlanSchema = z.object({
 const FiredEventSchema = z.object({
   eventId: num,
   kind: ScenarioKindSchema,
+  params: z.record(z.string(), z.union([num, z.string()])),
   atMinute: num,
   cleared: z.boolean(),
   how: z.enum(['player', 'crew', 'expired', 'noted']).nullable(),

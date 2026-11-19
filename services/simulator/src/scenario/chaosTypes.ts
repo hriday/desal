@@ -25,6 +25,11 @@ export interface ChaosPlan {
 export interface FiredEvent {
   eventId: number;
   kind: ScenarioKind;
+  /**
+   * The params the event fired with (after any substitution), which its cleared condition reads.
+   * A bloom also records `chlorineAtFireMgL`, the chlorine dose when it fired.
+   */
+  params: Record<string, number | string>;
   atMinute: number;
   cleared: boolean;
   how: 'player' | 'crew' | 'expired' | 'noted' | null;

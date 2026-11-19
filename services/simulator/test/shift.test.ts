@@ -31,17 +31,15 @@ describe('startShift resets per-shift supply conditions and controller faults', 
     // A career that has played shifts 1 and 2; shift 3 is given a curtailment and a price spike by hand.
     const career = { ...createInitialState(1, T0, GAME_ID), run: { ...createInitialState(1, T0, GAME_ID).run, shiftNumber: 2 } };
     const started = startShift(career, 'auto').state;
-    const ev = (atMinute: number, kind: 'offgradeOnly' | 'gasCurtailNotice' | 'gasPriceSpike', params: Record<string, number>) => ({ atMinute, kind, params, message: kind });
-    const shift3: PlantState = {
-      ...started,
-      scenario: {
-        ...started.scenario,
-        definition: {
-          ...started.scenario.definition!,
-          events: [ev(0, 'offgradeOnly', {}), ev(60, 'gasCurtailNotice', { capMW: 25, effectiveMinute: 180 }), ev(240, 'gasPriceSpike', { mult: 1.8 })],
-        },
-      },
+    const ev = (eventId: number, kind: 'offgradeOnly' | 'gasCurtailNotice' | 'gasPriceSpike', params: Record<string, number>) => ({ eventId, kind, params, earliestMinute: 0, cascade: false });
+    // A hell plan fires all three by minute 200 (first by 120, then 10–40 apart).
+    const active = started.chaos.active!;
+    const plan = {
+      ...active.plan,
+      hell: true,
+      queue: [ev(1, 'offgradeOnly', {}), ev(2, 'gasCurtailNotice', { capMW: 25, effectiveMinute: 240 }), ev(3, 'gasPriceSpike', { mult: 1.8 })],
     };
+    const shift3: PlantState = { ...started, chaos: { ...started.chaos, active: { ...active, plan, nextEventId: 4 } } };
     const ended = runShift(shift3);
     expect(ended.phase).toBe('handover');
     // Shift 3 really did curtail and spike the gas.
@@ -186,8 +184,9 @@ describe('chaos plan lifecycle', () => {
     const s0 = startShift(fresh(), 'auto').state;
     const active = {
       ...s0.chaos.active!,
-      plan: { ...s0.chaos.active!.plan, hell: true },
-      fired: [{ eventId: 1, kind: 'pumpTrip' as const, atMinute: 40, cleared: true, how: 'player' as const }],
+      // Queue entries pinned past minute 420 never fire, and the summary leaves them out.
+      plan: { ...s0.chaos.active!.plan, hell: true, queue: s0.chaos.active!.plan.queue.map((e) => ({ ...e, earliestMinute: 430 })) },
+      fired: [{ eventId: 1, kind: 'pumpTrip' as const, params: { pumpId: 'P-101' }, atMinute: 40, cleared: true, how: 'player' as const }],
     };
     let s: PlantState = { ...s0, chaos: { ...s0.chaos, active } };
     const ends: unknown[] = [];

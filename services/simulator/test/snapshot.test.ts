@@ -79,7 +79,7 @@ describe('snapshots', () => {
         pending: plan,
         active: {
           plan,
-          fired: [{ eventId: 1, kind: 'pumpTrip', atMinute: 5, cleared: true, how: 'crew' }],
+          fired: [{ eventId: 1, kind: 'pumpTrip', params: { pumpId: 'P-101' }, atMinute: 5, cleared: true, how: 'crew' }],
           lastFiredMinute: 5,
           nextEventId: 3,
         },
