@@ -140,7 +140,11 @@ export const _schemaToState = (x: Inferred): PlantState => x;
 export const _stateToSchema = (x: PlantState): Inferred => x;
 
 const FORMAT = 'desal-snapshot';
-const VERSION = 1;
+/**
+ * 2 = the multi-game era (economy and game-over state, one save per gameId). Version 1 saves are
+ * single-career saves from before games existed; they are rejected and skipped on load.
+ */
+const VERSION = 2;
 
 export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });

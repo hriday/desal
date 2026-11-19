@@ -54,7 +54,10 @@ describe('ensureTopics', () => {
         ],
         { encoding: 'utf8' },
       );
-    expect(describe(TOPICS.state)).toContain('cleanup.policy=compact');
+    const state = describe(TOPICS.state);
+    expect(state).toContain('cleanup.policy=compact');
+    expect(state).toContain('segment.ms=3600000');
+    expect(state).toContain('min.cleanable.dirty.ratio=0.1');
     expect(describe(TOPICS.status)).toContain('retention.ms=3600000');
     for (const t of [TOPICS.telemetry, TOPICS.status, TOPICS.events]) {
       expect(describe(t), t).toContain('message.timestamp.type=LogAppendTime');
