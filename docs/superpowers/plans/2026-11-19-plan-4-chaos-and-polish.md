@@ -475,6 +475,39 @@ Keep the tick-0 equilibrium (state.ts derives NOMINAL/BALANCE from the physics).
 - [ ] **Step 4:** Run `pnpm --filter @desal/web test && pnpm --filter @desal/web typecheck`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(web): crew controls, shift orders handover, event debrief`.
 
+### Task 10b: Standing cost, so an idle plant goes broke; pump wear back down
+
+Ruling R14 (the user was offered this default on 2026-11-19 and did not object). After Task 8b, an untouched game whose plant has tripped costs nothing and earns nothing, so 8 of 20 seeds still run past 40 shifts. Task 8b's lever, cavitation pump wear raised 10× (`PUMP_WEAR_CAVITATION_PER_TICK` 3e-5 → 3e-4), also punishes active players during storms.
+
+**Files:**
+- Modify:
+  - `packages/schema/src/events.ts`: add `'standing'` to `AccountCauseSchema`.
+  - `services/simulator/src/economy.ts` and `constants.ts`: add `STANDING_COST_USD_PER_HOUR`.
+  - `services/simulator/src/tick.ts`: charge the standing cost every running tick, whatever the plant status (online, tripped, restarting, acid cleaning). Don't charge in handover, paused or over.
+  - `apps/web/src/expanded/labels.ts`: add `CAUSE_TEXT.standing`, "Staff and standby".
+  - The debrief, if it lists costs by cause.
+- Test: `services/simulator/test/economy.test.ts`, `test/gameover.test.ts`, `apps/web/test/*` where cause labels are tested.
+
+**Behaviour:**
+- **Standing cost:** a fixed cost per plant hour (staff, standby power, chemicals on hold), charged with cause `standing`.
+  - Bankruptcy is still checked only at a shift end, as today.
+  - To avoid flooding `plant.events`, emit one `accountChange` per plant hour (every 90 ticks) or one per shift end, not one per tick. Pick one and say which in the report.
+- **Pump wear:** put `PUMP_WEAR_CAVITATION_PER_TICK` back to 3e-5. Use 1e-4 only if the standing cost alone can't satisfy the idle criterion below.
+- **Tuning (the builder picks the value):**
+  - An untouched Auto game ends within 40 shifts for **every** seed 1–20. The usual reason should be `bankrupt`.
+  - A well-played run does not go broke from the standing cost: the calibration-style nominal plant, operated with no faults, stays solvent for 30 shifts. The fixed cost should be at most about 15 % of a nominal shift's allocation.
+  - `test/calibration.test.ts` is unchanged. Fuel cost is separate from the standing cost.
+
+- [ ] **Step 1: Failing tests:**
+  - A tripped plant held for one shift loses `STANDING_COST_USD_PER_HOUR × 8` (to within one event's rounding).
+  - Paused and handover charge nothing.
+  - `test/gameover.test.ts` gets a new sweep: an untouched Auto game for each of seeds 1–20 ends within 40 shifts. Keep it fast; reuse the existing untouched-run helper.
+  - A nominal plant with no faults (chaos disabled, if the test helpers allow it) stays solvent for 30 shifts.
+- [ ] **Step 2:** Run. Expected: FAIL.
+- [ ] **Step 3:** Implement and tune.
+- [ ] **Step 4:** Run the simulator tests, `test:int`, the schema tests and the web tests, plus `tsc` for each. Report a before/after table: shifts survived and game-over reason for seeds 1–20.
+- [ ] **Step 5:** Commit `feat(sim): standing cost; idle plants go broke`.
+
 ### Task 11: Visual polish — wall, monitors, animation
 
 **Files:**
