@@ -28,7 +28,12 @@ const TargetSchema = z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetU
 const ScenarioSchema = z.object({
   id: z.string(),
   target: TargetSchema,
-  initial: z.object({ seawaterTempC: num, chlorophyllUgL: num }),
+  initial: z.object({
+    seawaterTempC: num,
+    chlorophyllUgL: num,
+    gasCapMW: num.optional(),
+    gasPriceUsdPerGJ: num.optional(),
+  }),
   events: z.array(
     z.object({
       atMinute: num,

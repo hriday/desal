@@ -25,7 +25,11 @@ export interface ScenarioEvent {
 export interface Scenario {
   id: string;
   target: { productM3: number; maxSalinityPpm: number; fuelBudgetUsd: number };
-  initial: { seawaterTempC: number; chlorophyllUgL: number };
+  /**
+   * Conditions at the shift start. Gas supply defaults to GAS_CAP_MW at GAS_BASE_PRICE_USD_PER_GJ;
+   * a scenario may start the shift already curtailed or at a different price.
+   */
+  initial: { seawaterTempC: number; chlorophyllUgL: number; gasCapMW?: number; gasPriceUsdPerGJ?: number };
   events: ScenarioEvent[];
   randomPerHour: { kind: ScenarioKind; p: number }[];
 }

@@ -21,6 +21,8 @@ import {
   CF_NOMINAL,
   CP_BRINE,
   DISTILLATE_DENSITY,
+  GAS_BASE_PRICE_USD_PER_GJ,
+  GAS_CAP_MW,
   HEATER_DT0_C,
   INTAKE_REQUIRED_BASE_M3H,
   LATENT_J_kg,
@@ -209,7 +211,7 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
     fuel: {
       active: 'gas',
       changeover: null,
-      gas: { capMW: 60, priceUsdPerGJ: 8, curtailmentNotice: null },
+      gas: { capMW: GAS_CAP_MW, priceUsdPerGJ: GAS_BASE_PRICE_USD_PER_GJ, curtailmentNotice: null },
       backup: { tonnes: 200, grade: 'standard', priceUsdPerGJ: 14 },
       deliveries: [],
       burnMW: NOMINAL.heatMW,

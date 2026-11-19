@@ -84,6 +84,10 @@ export const PUMP_WEAR_CAVITATION_PER_TICK = 3e-5;
 
 /** Maximum burner thermal output (MW). */
 export const BURNER_MAX_MW = 60;
+/** Uncurtailed gas supply cap (MW): each shift starts here unless its scenario says otherwise. */
+export const GAS_CAP_MW = 60;
+/** Base gas price (USD/GJ): each shift starts here unless its scenario says otherwise. */
+export const GAS_BASE_PRICE_USD_PER_GJ = 8;
 /** Off-grade backup fuel limits the burner to this fraction of BURNER_MAX_MW. */
 export const OFFGRADE_CAP_FRACTION = 0.85;
 /** Burner output cap during a fuel changeover, as a fraction of BURNER_MAX_MW. */
