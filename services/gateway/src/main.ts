@@ -13,13 +13,8 @@ async function main(): Promise<void> {
 
   const kafka = new GatewayKafka(createKafka(), { log });
   const gateway = createGateway({ kafka, allowedOrigins });
-  // Listen first: a taken port fails before we join Kafka (and leave a consumer group behind).
-  // Until Kafka is up, /healthz answers 503 and /ws upgrades are refused.
-  await gateway.listen(port);
-  await kafka.start(gateway.onRecord);
-  log(`listening on :${port} (/ws, /healthz); origins: ${allowedOrigins.length ? allowedOrigins.join(', ') : 'any'}`);
-  log(`consumer group ${kafka.groupId}`);
 
+  // Registered before Kafka starts: a SIGTERM during startup still closes Kafka and deletes the group.
   let stopping = false;
   const shutdown = async (signal: string) => {
     if (stopping) return;
@@ -31,6 +26,18 @@ async function main(): Promise<void> {
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+  // Listen first: a taken port fails before we join Kafka (and leave a consumer group behind).
+  // Until Kafka is up, /healthz answers 503 and /ws upgrades are refused.
+  await gateway.listen(port);
+  try {
+    await kafka.start(gateway.onRecord);
+  } catch (e) {
+    await kafka.stop(); // start may have failed after joining: delete the group
+    throw e;
+  }
+  log(`listening on :${port} (/ws, /healthz); origins: ${allowedOrigins.length ? allowedOrigins.join(', ') : 'any'}`);
+  log(`consumer group ${kafka.groupId}`);
 }
 
 main().catch((e: unknown) => {

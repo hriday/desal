@@ -4,7 +4,14 @@ import type { Duplex } from 'node:stream';
 import type { CommandEnvelope } from '@desal/schema';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { RecordHandler, SeenStatus } from './kafka.js';
-import { CLOSE_GOING_AWAY, CLOSE_TRY_AGAIN_LATER, HEARTBEAT_MS, MAX_MSG_BYTES, MAX_SOCKETS } from './protocol.js';
+import {
+  CLOSE_GOING_AWAY,
+  CLOSE_TRY_AGAIN_LATER,
+  HEARTBEAT_MS,
+  MAX_MSG_BYTES,
+  MAX_SOCKETS,
+  MAX_SOCKETS_PER_CLIENT,
+} from './protocol.js';
 import { Sessions } from './sessions.js';
 
 /** The part of GatewayKafka the server uses (a fake in tests). */
@@ -12,6 +19,7 @@ export interface GatewayKafkaLike {
   readonly connected: boolean;
   sendCommand(env: CommandEnvelope): Promise<void>;
   latestStatus(gameId: string): SeenStatus | undefined;
+  gameEnded(gameId: string): boolean;
 }
 
 export interface GatewayOptions {
@@ -36,9 +44,26 @@ export interface Gateway {
 /** A client that stops reading while we queue this much for it is dropped instead of growing memory. */
 const MAX_BUFFERED_BYTES = 1 << 20;
 
+/** Answer a refused upgrade, then make sure the socket goes away even if the peer never reads. */
 function refuse(socket: Duplex, code: number): void {
+  if (socket.destroyed) return;
   socket.end(`HTTP/1.1 ${code} ${STATUS_CODES[code]}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
-  socket.destroy();
+  // end() flushes the reply first; destroying at once could drop it before it is sent.
+  setTimeout(() => socket.destroy(), 1000).unref();
+}
+
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * Who a connection belongs to, for the per-client limits. Behind Caddy on the same host every
+ * TCP peer is loopback, so the real client is X-Forwarded-For's first address. That header is
+ * trusted only from a loopback peer; anyone else could just make it up.
+ */
+export function clientIdOf(peer: string | undefined, forwardedFor: string | string[] | undefined): string {
+  const xff = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  const first = xff?.split(',')[0]?.trim();
+  if (peer !== undefined && LOOPBACK.has(peer) && first) return first;
+  return peer ?? 'unknown';
 }
 
 /** HTTP (GET /healthz) plus the WebSocket endpoint /ws. */
@@ -50,6 +75,7 @@ export function createGateway(opts: GatewayOptions): Gateway {
   const sessions = new Sessions({
     send: (env) => kafka.sendCommand(env),
     latestStatus: (id) => kafka.latestStatus(id),
+    gameEnded: (id) => kafka.gameEnded(id),
     log,
   });
   const alive = new WeakMap<WebSocket, boolean>();
@@ -66,22 +92,35 @@ export function createGateway(opts: GatewayOptions): Gateway {
   // maxPayload: ws itself closes a socket (1009) whose message exceeds 16 KB, before buffering it.
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MSG_BYTES });
 
+  // Internet-facing: nothing a raw request carries may throw out of this listener (an uncaught
+  // exception here would kill the process), so the path is compared as a string, never parsed.
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    if (new URL(req.url ?? '/', 'http://gateway').pathname !== '/ws') return refuse(socket, 404);
-    const origin = req.headers.origin;
-    if (origin !== undefined && allowed.size > 0 && !allowed.has(origin)) return refuse(socket, 403);
-    // Without Kafka a socket could neither start a game nor see one: refuse until it is up.
-    if (!kafka.connected) return refuse(socket, 503);
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      if (sessions.socketCount() >= maxSockets) {
-        ws.close(CLOSE_TRY_AGAIN_LATER, 'gateway full');
-        return;
-      }
-      accept(ws);
-    });
+    socket.on('error', (e) => log(`upgrade socket: ${e.message}`));
+    try {
+      if ((req.url ?? '').split('?')[0] !== '/ws') return refuse(socket, 404);
+      const origin = req.headers.origin;
+      if (origin !== undefined && allowed.size > 0 && !allowed.has(origin)) return refuse(socket, 403);
+      // Without Kafka a socket could neither start a game nor see one: refuse until it is up.
+      if (!kafka.connected) return refuse(socket, 503);
+      const clientId = clientIdOf(req.socket.remoteAddress, req.headers['x-forwarded-for']);
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        if (sessions.socketCount() >= maxSockets) {
+          ws.close(CLOSE_TRY_AGAIN_LATER, 'gateway full');
+          return;
+        }
+        if (sessions.clientSocketCount(clientId) >= MAX_SOCKETS_PER_CLIENT) {
+          ws.close(CLOSE_TRY_AGAIN_LATER, 'too many connections');
+          return;
+        }
+        accept(ws, clientId);
+      });
+    } catch (e) {
+      log(`bad upgrade request: ${e instanceof Error ? e.message : String(e)}`);
+      refuse(socket, 400);
+    }
   });
 
-  function accept(ws: WebSocket): void {
+  function accept(ws: WebSocket, clientId: string): void {
     const id = randomUUID();
     alive.set(ws, true);
     sessions.open(id, {
@@ -95,7 +134,7 @@ export function createGateway(opts: GatewayOptions): Gateway {
         ws.send(JSON.stringify(msg));
       },
       close: (code, reason) => ws.close(code, reason),
-    });
+    }, clientId);
     ws.on('message', (data) => sessions.onClient(id, data.toString()));
     ws.on('pong', () => alive.set(ws, true));
     ws.on('close', () => sessions.close(id));

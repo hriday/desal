@@ -74,6 +74,10 @@ export class StatusBook {
     return this.latest.get(gameId);
   }
 
+  hasEnded(gameId: string): boolean {
+    return this.ended.has(gameId);
+  }
+
   private prune(now: number): void {
     this.lastPrune = now;
     for (const [id, s] of this.latest) if (now - s.seenAt > STATUS_MEMORY_MS) this.latest.delete(id);
@@ -107,6 +111,8 @@ export class GatewayKafka {
   private readonly producer;
   private readonly consumer;
   private started = false;
+  /** start() got as far as connecting: there is something for stop() to close and delete. */
+  private opened = false;
 
   constructor(
     private readonly kafka: KafkaInstance,
@@ -139,6 +145,8 @@ export class GatewayKafka {
   async start(onRecord: RecordHandler): Promise<void> {
     const names = new Map(CONSUMED.map((t) => [topicName(t), t] as const));
     const ends = await this.topicEnds([...names.keys()]);
+    // From here on the group may exist on the broker, so stop() must clean up even if start fails.
+    this.opened = true;
     await this.producer.connect();
     await this.consumer.connect();
     await this.consumer.subscribe({ topics: [...names.keys()] });
@@ -163,7 +171,19 @@ export class GatewayKafka {
     // offset captured above means everything produced after start() is called is seen.
     // (seek before assignment is remembered and applied on assignment.)
     for (const [topic, parts] of ends) for (const p of parts) this.consumer.seek({ topic, ...p });
+    // Only report connected (which opens the /ws gate) once the group owns every partition:
+    // before that no record flows, and a resume would see no status at all.
+    const partitions = [...ends.values()].reduce((n, parts) => n + parts.length, 0);
+    const deadline = this.now() + this.topicWaitMs;
+    while (this.consumer.assignment().length < partitions) {
+      if (this.now() >= deadline) throw new Error(`partitions not assigned after ${this.topicWaitMs} ms`);
+      await new Promise((r) => setTimeout(r, 100));
+    }
     this.started = true;
+  }
+
+  gameEnded(gameId: string): boolean {
+    return this.book.hasEnded(gameId);
   }
 
   /** Commands are keyed by gameId like every record, so one game's commands stay in order on one partition. */
@@ -171,9 +191,10 @@ export class GatewayKafka {
     await this.producer.send({ topic: topicName(TOPICS.commands), messages: [{ key: env.gameId, value: JSON.stringify(env) }] });
   }
 
-  /** Disconnects and deletes this instance's consumer group. Never rejects. */
+  /** Disconnects and deletes this instance's consumer group, also after a failed start(). Never rejects. */
   async stop(): Promise<void> {
-    if (!this.started) return;
+    if (!this.opened) return;
+    this.opened = false;
     this.started = false;
     await this.consumer.disconnect().catch((e: unknown) => this.log(`consumer disconnect failed: ${String(e)}`));
     await this.producer.disconnect().catch((e: unknown) => this.log(`producer disconnect failed: ${String(e)}`));

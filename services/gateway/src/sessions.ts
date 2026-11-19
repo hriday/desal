@@ -11,7 +11,15 @@ import {
 } from '@desal/schema';
 import { FrameAssembler } from './frames.js';
 import type { GatewayTopic, SeenStatus } from './kafka.js';
-import { CLOSE_TOO_LARGE, MAX_MSG_BYTES, MAX_MSGS_PER_S, parseClientMsg, RESUME_WINDOW_MS } from './protocol.js';
+import { ClientLimits } from './limits.js';
+import {
+  CLOSE_TOO_LARGE,
+  MAX_MSG_BYTES,
+  MAX_MSGS_PER_S,
+  parseClientMsg,
+  RESUME_WAIT_MS,
+  RESUME_WINDOW_MS,
+} from './protocol.js';
 
 /** How Sessions reaches one client socket. */
 export interface SocketSink {
@@ -23,6 +31,10 @@ export interface SessionsDeps {
   /** Produce a command envelope to plant.commands. */
   send(env: CommandEnvelope): void | Promise<void>;
   latestStatus(gameId: string): SeenStatus | undefined;
+  /** True if a gameEnd for this game was consumed (recently). */
+  gameEnded?(gameId: string): boolean;
+  /** Run fn after ms; returns a cancel function. Injected so tests control time. */
+  schedule?(fn: () => void, ms: number): () => void;
   /** Wall clock, ms. */
   now?: () => number;
   /** UUID v4 source (game ids and command ids). */
@@ -37,6 +49,16 @@ interface Socket {
   awaitingStart: boolean;
   /** When each message accepted in the last second arrived (oldest first; at most MAX_MSGS_PER_S). */
   recent: number[];
+  /** Who this socket belongs to (an IP address, see server.ts), for the per-client limits. */
+  clientId: string;
+  /** A resume waiting for the game's first status (none known yet). */
+  resuming: { gameId: string; cancel: () => void } | null;
+}
+
+function defaultSchedule(fn: () => void, ms: number): () => void {
+  const t = setTimeout(fn, ms);
+  t.unref();
+  return () => clearTimeout(t);
 }
 
 /** Commands only the gateway may issue: startGame (via newGame) and heartbeat (its own timer). */
@@ -51,7 +73,11 @@ export class Sessions {
   private readonly sockets = new Map<string, Socket>();
   /** gameId -> the sockets bound to it. A game is here only while at least one socket is bound. */
   private readonly games = new Map<string, Set<string>>();
+  /** gameId -> sockets whose resume waits for that game's first status. */
+  private readonly resuming = new Map<string, Set<string>>();
   private readonly frames = new FrameAssembler();
+  private readonly limits: ClientLimits;
+  private readonly schedule: (fn: () => void, ms: number) => () => void;
   private readonly now: () => number;
   private readonly newId: () => string;
   private readonly log: (msg: string) => void;
@@ -60,21 +86,36 @@ export class Sessions {
     this.now = deps.now ?? Date.now;
     this.newId = deps.newId ?? randomUUID;
     this.log = deps.log ?? ((m) => console.warn(`[gateway] ${m}`));
+    this.schedule = deps.schedule ?? defaultSchedule;
+    this.limits = new ClientLimits(this.now);
+  }
+
+  clientSocketCount(clientId: string): number {
+    let n = 0;
+    for (const s of this.sockets.values()) if (s.clientId === clientId) n++;
+    return n;
   }
 
   socketCount(): number {
     return this.sockets.size;
   }
 
-  open(socketId: string, sink: SocketSink): void {
-    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, recent: [] });
+  /** clientId defaults to the socket itself (no per-client grouping). */
+  open(socketId: string, sink: SocketSink, clientId: string = socketId): void {
+    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, recent: [], clientId, resuming: null });
   }
 
-  /** Unbind the socket. Its game's heartbeats stop with the last socket, so the simulator abandons it after 90 s unless someone resumes. */
+  /**
+   * Unbind the socket. When it was the game's last socket, one heartbeat goes out now and then
+   * they stop: the simulator abandons the game 90 s from now unless a socket resumes it.
+   */
   close(socketId: string): void {
     const s = this.sockets.get(socketId);
     if (!s) return;
+    this.stopResuming(socketId, s);
+    const gameId = s.gameId;
     this.unbind(socketId, s);
+    if (gameId && !this.games.has(gameId)) this.dispatch(this.envelope(gameId, { type: 'heartbeat' }));
     this.sockets.delete(socketId);
   }
 
@@ -100,11 +141,13 @@ export class Sessions {
         s.sink.send({ t: 'pong' });
         return;
       case 'newGame': {
-        if (s.gameId) return this.error(s, 'already in a game');
+        if (s.gameId || s.resuming) return this.error(s, 'already in a game');
+        if (!this.limits.canStart(s.clientId, (id, at) => this.isLive(id, at))) return this.error(s, 'capacity');
         const gameId = this.newId();
+        this.limits.started(s.clientId, gameId);
         this.bind(socketId, s, gameId);
         s.awaitingStart = true;
-        this.dispatch(this.envelope(gameId, { type: 'startGame' }));
+        this.dispatch(this.envelope(gameId, { type: 'startGame' }), () => this.startFailed(gameId));
         return;
       }
       case 'resume': {
@@ -113,10 +156,18 @@ export class Sessions {
           else this.error(s, 'already in a game');
           return;
         }
+        if (s.resuming) return this.error(s, 'already in a game');
+        if (this.deps.gameEnded?.(msg.gameId)) return this.error(s, 'game ended');
         const seen = this.deps.latestStatus(msg.gameId);
-        if (!seen || now - seen.seenAt > RESUME_WINDOW_MS) return this.error(s, 'game ended');
-        this.bind(socketId, s, msg.gameId);
-        s.sink.send({ t: 'game', gameId: msg.gameId });
+        if (seen) {
+          if (now - seen.seenAt > RESUME_WINDOW_MS) return this.error(s, 'game ended');
+          this.bind(socketId, s, msg.gameId);
+          s.sink.send({ t: 'game', gameId: msg.gameId });
+          return;
+        }
+        // No status known: right after a gateway (re)start the consumer may not have caught up
+        // yet, so wait up to RESUME_WAIT_MS for one before answering 'game ended'.
+        this.waitForStatus(socketId, s, msg.gameId);
         return;
       }
       case 'cmd': {
@@ -131,19 +182,22 @@ export class Sessions {
   /** One heartbeat per game with at least one bound socket (server.ts runs this every 15 s). */
   everyHeartbeat(): void {
     for (const gameId of this.games.keys()) this.dispatch(this.envelope(gameId, { type: 'heartbeat' }));
+    this.limits.prune();
   }
 
   /** Route one consumed record to its game's sockets. Records for games nobody here plays are ignored. */
   onRecord(topic: GatewayTopic, gameId: string, value: unknown): void {
-    if (!this.games.has(gameId)) return;
     if (topic === TOPICS.telemetry) {
+      if (!this.games.has(gameId)) return;
       const r = TelemetryReadingSchema.safeParse(value);
       if (!r.success) return;
       const frame = this.frames.add(r.data);
       if (frame) this.broadcast(gameId, frame);
     } else if (topic === TOPICS.status) {
+      if (!this.games.has(gameId) && !this.resuming.has(gameId)) return;
       const r = PlantStatusSchema.safeParse(value);
       if (!r.success) return;
+      this.endWait(gameId, true);
       // Frame N before status N: the status closes its tick's frame.
       const frame = this.frames.flush(gameId, r.data.tick);
       if (frame) this.broadcast(gameId, frame);
@@ -152,6 +206,11 @@ export class Sessions {
       const r = PlantEventSchema.safeParse(value);
       if (!r.success) return;
       const event = r.data;
+      if (event.type === 'gameEnd' || event.type === 'gameRejected') {
+        this.limits.ended(gameId);
+        this.endWait(gameId, false);
+      }
+      if (!this.games.has(gameId)) return;
       if (event.type === 'gameRejected') {
         // 'duplicate' cannot happen with a fresh random gameId; either way the socket has no game.
         this.broadcast(gameId, { t: 'error', reason: 'capacity' });
@@ -181,14 +240,65 @@ export class Sessions {
     };
   }
 
-  private dispatch(env: CommandEnvelope): void {
+  /** Is a game this client started still live? Not ended, and a status (or its start) within 90 s. */
+  private isLive(gameId: string, startedAt: number): boolean {
+    if (this.deps.gameEnded?.(gameId)) return false;
+    const last = Math.max(this.deps.latestStatus(gameId)?.seenAt ?? 0, startedAt);
+    return this.now() - last <= RESUME_WINDOW_MS;
+  }
+
+  /** Produce in the background; a failure is logged, and onError (if any) runs. */
+  private dispatch(env: CommandEnvelope, onError?: () => void): void {
     void (async () => {
       try {
         await this.deps.send(env);
       } catch (e) {
         this.log(`sending ${env.command.type} for game ${env.gameId} failed: ${e instanceof Error ? e.message : String(e)}`);
+        onError?.();
       }
     })();
+  }
+
+  /** The startGame never reached Kafka: free the socket. The UI treats 'capacity' as "try again". */
+  private startFailed(gameId: string): void {
+    this.limits.ended(gameId);
+    this.broadcast(gameId, { t: 'error', reason: 'capacity' });
+    this.unbindGame(gameId);
+  }
+
+  private waitForStatus(socketId: string, s: Socket, gameId: string): void {
+    const cancel = this.schedule(() => {
+      this.stopResuming(socketId, s);
+      this.error(s, 'game ended');
+    }, RESUME_WAIT_MS);
+    s.resuming = { gameId, cancel };
+    let set = this.resuming.get(gameId);
+    if (!set) this.resuming.set(gameId, (set = new Set()));
+    set.add(socketId);
+  }
+
+  /** For resumes waiting on this game: a status arrived (bind, answer 'game') or it ended ('game ended'). */
+  private endWait(gameId: string, alive: boolean): void {
+    for (const id of [...(this.resuming.get(gameId) ?? [])]) {
+      const s = this.sockets.get(id);
+      if (!s) continue;
+      this.stopResuming(id, s);
+      if (alive) {
+        this.bind(id, s, gameId);
+        s.sink.send({ t: 'game', gameId });
+      } else {
+        this.error(s, 'game ended');
+      }
+    }
+  }
+
+  private stopResuming(socketId: string, s: Socket): void {
+    if (!s.resuming) return;
+    s.resuming.cancel();
+    const set = this.resuming.get(s.resuming.gameId);
+    set?.delete(socketId);
+    if (set?.size === 0) this.resuming.delete(s.resuming.gameId);
+    s.resuming = null;
   }
 
   private error(s: Socket, reason: ServerErrorReason): void {

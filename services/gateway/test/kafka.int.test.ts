@@ -79,6 +79,7 @@ describe('GatewayKafka', () => {
     await producer.send({ topic: topicName(TOPICS.events), messages: [{ key: GAME_A, value: JSON.stringify(gameEnd(GAME_A)) }] });
     await waitFor(() => got.length >= 9, 30_000, 'gameEnd');
     expect(gw.latestStatus(GAME_A)).toBeUndefined();
+    expect(gw.gameEnded(GAME_A)).toBe(true);
     expect(gw.latestStatus(GAME_B)).toBeDefined();
 
     // sendCommand lands on plant.commands keyed by gameId.

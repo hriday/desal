@@ -1,8 +1,9 @@
+import net from 'node:net';
 import { TOPICS, type CommandEnvelope } from '@desal/schema';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { StatusBook } from '../src/kafka.js';
-import { createGateway, type Gateway } from '../src/server.js';
+import { clientIdOf, createGateway, type Gateway } from '../src/server.js';
 import { gameStart } from './fixtures.js';
 
 /** A fake GatewayKafka: records commands, and is "connected" unless told otherwise. */
@@ -16,6 +17,7 @@ function fakeKafka(connected = true) {
       sent.push(env);
     },
     latestStatus: (id: string) => book.get(id),
+    gameEnded: (id: string) => book.hasEnded(id),
   };
 }
 
@@ -39,8 +41,12 @@ async function start(opts: { connected?: boolean; allowedOrigins?: string[]; max
   return { kafka, port, url: `ws://127.0.0.1:${port}/ws` };
 }
 
-function connect(url: string, origin?: string): WebSocket {
-  const ws = new WebSocket(url, origin ? { origin } : {});
+/** `forwardedFor` sets X-Forwarded-For (honoured because the test connects from loopback, like Caddy). */
+function connect(url: string, origin?: string, forwardedFor?: string): WebSocket {
+  const ws = new WebSocket(url, {
+    ...(origin ? { origin } : {}),
+    ...(forwardedFor ? { headers: { 'x-forwarded-for': forwardedFor } } : {}),
+  });
   sockets.push(ws);
   return ws;
 }
@@ -86,16 +92,45 @@ describe('gateway server', () => {
 
   it('refuses the 51st socket with close code 1013', async () => {
     const { url } = await start();
-    const first = Array.from({ length: 50 }, () => connect(url));
+    // Distinct clients, so the per-client cap (3) does not kick in first.
+    const first = Array.from({ length: 50 }, (_, i) => connect(url, undefined, `198.51.100.${i}`));
     await Promise.all(first.map(opened));
-    const extra = connect(url);
+    const extra = connect(url, undefined, '203.0.113.1');
     expect(await closedWith(extra)).toBe(1013);
     // Room again once one leaves.
     const left = closedWith(first[0]!);
     first[0]!.close();
     await left;
     await expect.poll(() => gw!.socketCount()).toBe(49);
-    await opened(connect(url));
+    await opened(connect(url, undefined, '203.0.113.1'));
+  });
+
+  it('allows 3 sockets per client (X-Forwarded-For behind a loopback proxy); the 4th gets 1013', async () => {
+    const { url } = await start();
+    const mine = [1, 2, 3].map(() => connect(url, undefined, '192.0.2.7, 10.0.0.1'));
+    await Promise.all(mine.map(opened));
+    expect(await closedWith(connect(url, undefined, '192.0.2.7'))).toBe(1013);
+    await opened(connect(url, undefined, '192.0.2.8')); // another client
+  });
+
+  it('survives a malformed request target on /ws upgrade (pre-auth DoS)', async () => {
+    const { port } = await start();
+    for (const target of ['//[', '/%zz', 'http://[::', '*']) {
+      const reply = await new Promise<string>((resolve, reject) => {
+        const sock = net.connect(port, '127.0.0.1', () => {
+          sock.write(
+            `GET ${target} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+              'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n',
+          );
+        });
+        let data = '';
+        sock.on('data', (d) => (data += String(d)));
+        sock.on('close', () => resolve(data));
+        sock.on('error', reject);
+      });
+      expect(reply).toMatch(/^HTTP\/1\.1 (400|404)/);
+    }
+    expect((await fetch(`http://127.0.0.1:${port}/healthz`)).status).toBe(200);
   });
 
   it('checks the Origin against ALLOWED_ORIGINS, allowing clients that send none', async () => {
@@ -127,5 +162,16 @@ describe('gateway server', () => {
     const closed = closedWith(ws);
     ws.send('x'.repeat(16 * 1024 + 1));
     expect(await closed).toBe(1009);
+  });
+});
+
+describe('clientIdOf', () => {
+  it('trusts X-Forwarded-For only from a loopback peer (Caddy on the host)', () => {
+    expect(clientIdOf('127.0.0.1', '192.0.2.7, 10.0.0.1')).toBe('192.0.2.7');
+    expect(clientIdOf('::1', ' 192.0.2.7 ')).toBe('192.0.2.7');
+    expect(clientIdOf('::ffff:127.0.0.1', '2001:db8::1')).toBe('2001:db8::1');
+    expect(clientIdOf('127.0.0.1', undefined)).toBe('127.0.0.1');
+    expect(clientIdOf('198.51.100.9', '192.0.2.7')).toBe('198.51.100.9'); // spoofed header from outside
+    expect(clientIdOf(undefined, undefined)).toBe('unknown');
   });
 });

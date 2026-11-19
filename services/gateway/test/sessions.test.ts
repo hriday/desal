@@ -1,7 +1,7 @@
 import { TOPICS, type CommandEnvelope, type ServerMsg } from '@desal/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { StatusBook, type GatewayTopic } from '../src/kafka.js';
-import { MAX_MSG_BYTES } from '../src/protocol.js';
+import { MAX_MSG_BYTES, RESUME_WAIT_MS } from '../src/protocol.js';
 import { Sessions } from '../src/sessions.js';
 import { GAME_A, GAME_B, gameEnd, gameRejected, gameStart, online, reading, status } from './fixtures.js';
 
@@ -12,13 +12,20 @@ let sent: CommandEnvelope[];
 let book: StatusBook;
 let sessions: Sessions;
 let ids: number;
+/** Command types whose send should fail (a Kafka produce error). */
+let failing: Set<string>;
+/** Fake scheduler: tests fire timers by hand. */
+let timers: { fn: () => void; ms: number; cancelled: boolean }[];
+const fire = () => {
+  for (const t of timers.splice(0)) if (!t.cancelled) t.fn();
+};
 const inbox = new Map<string, ServerMsg[]>();
 const closed = new Map<string, number>();
 
-function open(socketId: string): ServerMsg[] {
+function open(socketId: string, clientId?: string): ServerMsg[] {
   const box: ServerMsg[] = [];
   inbox.set(socketId, box);
-  sessions.open(socketId, { send: (m) => box.push(m), close: (code) => closed.set(socketId, code) });
+  sessions.open(socketId, { send: (m) => box.push(m), close: (code) => closed.set(socketId, code) }, clientId);
   return box;
 }
 
@@ -43,14 +50,23 @@ beforeEach(() => {
   clock = 1_000_000;
   sent = [];
   ids = 0;
+  failing = new Set();
+  timers = [];
   inbox.clear();
   closed.clear();
   book = new StatusBook();
   sessions = new Sessions({
-    send: (env) => {
+    send: async (env) => {
+      if (failing.has(env.command.type)) throw new Error('produce failed');
       sent.push(env);
     },
     latestStatus: (id) => book.get(id),
+    gameEnded: (id) => book.hasEnded(id),
+    schedule: (fn, ms) => {
+      const t = { fn, ms, cancelled: false };
+      timers.push(t);
+      return () => (t.cancelled = true);
+    },
     now: () => clock,
     // The first generated id becomes the game id for newGame; later ones are command ids.
     newId: () => (ids++ === 0 ? GAME_A : `00000000-0000-4000-8000-${(ids).toString(16).padStart(12, '0')}`),
@@ -203,9 +219,12 @@ describe('resume', () => {
     expect(late).toEqual([{ t: 'error', reason: 'game ended' }]);
   });
 
-  it('fails for an unknown game, and for one that ended', () => {
+  it('fails for an unknown game once the wait is over, and at once for one that ended', () => {
     const box = open('s1');
     client('s1', { t: 'resume', gameId: GAME_B });
+    expect(box).toEqual([]); // no status known yet: wait for one
+    expect(timers.map((t) => t.ms)).toEqual([RESUME_WAIT_MS]);
+    fire();
     deliver(TOPICS.status, GAME_B, status(GAME_B, 9));
     deliver(TOPICS.events, GAME_B, gameEnd(GAME_B));
     deliver(TOPICS.status, GAME_B, status(GAME_B, 10)); // a straggling final status does not revive it
@@ -269,5 +288,110 @@ describe('routing', () => {
     deliver(TOPICS.status, GAME_A, { gameId: GAME_A, tick: 'x' });
     deliver(TOPICS.events, GAME_A, { type: 'online' });
     expect(a).toEqual([]);
+  });
+});
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+describe('resume right after a gateway (re)start', () => {
+  it('waits for the first status of an unknown game, then binds', () => {
+    const box = open('s1');
+    client('s1', { t: 'resume', gameId: GAME_B });
+    client('s1', { t: 'cmd', command: { type: 'pause' } });
+    expect(box).toEqual([{ t: 'error', reason: 'no game' }]);
+    deliver(TOPICS.status, GAME_B, status(GAME_B, 3));
+    expect(box.slice(1)).toEqual([
+      { t: 'game', gameId: GAME_B },
+      { t: 'status', status: status(GAME_B, 3) },
+    ]);
+    expect(timers[0]!.cancelled).toBe(true);
+  });
+
+  it('answers game ended at once when the game ends while waiting, and forgets a closed socket', () => {
+    const box = open('s1');
+    open('s2');
+    client('s1', { t: 'resume', gameId: GAME_B });
+    client('s2', { t: 'resume', gameId: GAME_B });
+    sessions.close('s2');
+    deliver(TOPICS.events, GAME_B, gameEnd(GAME_B));
+    expect(box).toEqual([{ t: 'error', reason: 'game ended' }]);
+    expect(timers.every((t) => t.cancelled)).toBe(true);
+  });
+});
+
+describe('failed sends', () => {
+  it('a failed startGame unbinds the socket and answers capacity', async () => {
+    failing.add('startGame');
+    const box = open('s1');
+    client('s1', { t: 'newGame' });
+    await flush();
+    expect(box).toEqual([{ t: 'error', reason: 'capacity' }]);
+    client('s1', { t: 'cmd', command: { type: 'pause' } });
+    expect(box.at(-1)).toEqual({ t: 'error', reason: 'no game' });
+    sessions.everyHeartbeat();
+    expect(sent).toEqual([]);
+  });
+
+  it('a failed ordinary command is only logged', async () => {
+    const box = bound('s1');
+    failing.add('pause');
+    client('s1', { t: 'cmd', command: { type: 'pause' } });
+    await flush();
+    expect(box).toEqual([]);
+  });
+});
+
+describe('per-client limits', () => {
+  /** newGame on a fresh socket of client c1; returns its inbox and the new game's id. */
+  function newGame(socketId: string) {
+    const box = open(socketId, 'c1');
+    const before = sent.length;
+    client(socketId, { t: 'newGame' });
+    const gameId = sent.length > before ? sent.at(-1)!.gameId : null;
+    if (gameId) deliver(TOPICS.status, gameId, status(gameId, 0));
+    return { box, gameId };
+  }
+
+  it('one newGame per 10 s per client', () => {
+    expect(newGame('s1').gameId).not.toBeNull();
+    clock += 9_999;
+    const second = newGame('s2');
+    expect(second.gameId).toBeNull();
+    expect(second.box).toEqual([{ t: 'error', reason: 'capacity' }]);
+    clock += 1;
+    expect(newGame('s3').gameId).not.toBeNull();
+    // Another client is not affected.
+    open('x1', 'c2');
+    client('x1', { t: 'newGame' });
+    expect(sent.at(-1)!.command.type).toBe('startGame');
+    expect(sessions.clientSocketCount('c1')).toBe(3);
+  });
+
+  it('at most 3 live games per client, freed by gameEnd or by going quiet', () => {
+    const games = [0, 1, 2].map((i) => {
+      clock += 10_000;
+      return newGame(`s${i}`).gameId!;
+    });
+    clock += 10_000;
+    expect(newGame('s3').box).toEqual([{ t: 'error', reason: 'capacity' }]);
+    deliver(TOPICS.events, games[0]!, gameEnd(games[0]!));
+    expect(newGame('s4').gameId).not.toBeNull();
+    clock += 10_000;
+    expect(newGame('s5').gameId).toBeNull(); // 3 live again
+    // Closing sockets does not free a slot: the games live on for 90 s.
+    for (const id of ['s1', 's2', 's4']) sessions.close(id);
+    expect(newGame('s6').gameId).toBeNull();
+    clock += 91_000; // no status for 90 s: those games are gone
+    expect(newGame('s7').gameId).not.toBeNull();
+  });
+});
+
+describe('last socket leaving', () => {
+  it('sends a heartbeat at once, so the full 90 s resume window applies', () => {
+    bound('s1');
+    sent.length = 0;
+    sessions.close('s1');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ gameId: GAME_A, command: { type: 'heartbeat' } });
   });
 });
