@@ -89,24 +89,26 @@ curl -s http://127.0.0.1:8081/healthz   # ok
 cat basic-auth.txt                      # Kafka UI (/kafka) login
 ```
 
-**Playing from a terminal.** The CLI client talks to the public gateway:
+**Playing.** Normally just open https://desal.moosha.org. From a terminal, the CLI client talks to the public gateway:
 
 ```bash
 pnpm --filter @desal/gateway play --url wss://desal.moosha.org/ws
 ```
 
-**Sending commands.** Run the CLIs over an SSH tunnel from the laptop:
+**Admin: talking to Kafka directly.** Run the CLIs over an SSH tunnel from the laptop:
 
 ```bash
 ssh -N -L 9092:localhost:9092 root@68.183.200.37 &
-pnpm --filter @desal/simulator send '{"type":"startShift","mode":"auto"}'
-pnpm --filter @desal/simulator watch events
+pnpm --filter @desal/simulator send --new                                   # starts a game, prints its id
+pnpm --filter @desal/simulator send --game <gameId> '{"type":"startShift","mode":"auto"}'
+pnpm --filter @desal/simulator watch events --game <gameId>
 ```
 
-Or, in Kafka UI, produce to `plant.commands` with key `plant-1` and a value like
-`{"commandId":"<uuid>","issuedAt":0,"shiftId":null,"command":{"type":"startShift","mode":"auto"}}`.
-`shiftId` must be the current shift's id for everything except `startShift` and `newCareer`. Read it from the latest
-`plant.status` message.
+Or, in Kafka UI, produce to `plant.commands` with key `<gameId>` and a value like
+`{"commandId":"<uuid>","issuedAt":0,"gameId":"<gameId>","shiftId":null,"command":{"type":"startShift","mode":"auto"}}`.
+`gameId` in the value must match the key. `shiftId` must be the game's current shift id for everything except
+`startGame` (which takes `null`); read it from the latest `plant.status` message with that key. A new game is
+`startGame` with a fresh UUID as `gameId`.
 
 **Kafka/Flink dashboards over SSH:** `ssh -N -L 8080:localhost:8080 root@68.183.200.37` then http://localhost:8080/kafka
 (no basic auth on the tunnel; the UI is served under `/kafka` everywhere).

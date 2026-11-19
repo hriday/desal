@@ -45,7 +45,7 @@ pnpm test                                 # unit tests, no Kafka needed
 pnpm typecheck
 pnpm --filter @desal/simulator test:int   # integration tests, need the Docker stack running
 pnpm --filter @desal/gateway test:int
-pnpm --filter @desal/web e2e              # browser tests (Playwright)
+pnpm --filter @desal/web e2e              # browser tests (Playwright); needs the simulator + gateway running, see apps/web/e2e/README.md
 ```
 
 Integration tests set `DESAL_TOPIC_SUFFIX` to a unique value, so they create throwaway topics (and consumer groups such as `desal-sim<suffix>`) and never touch your real games.
