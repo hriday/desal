@@ -147,7 +147,7 @@ const countTrips = (events: SimEvent[]): number => events.filter((e) => e.type =
  * per-game seq in emission order (consumers de-duplicate at-least-once deliveries on it). Returns the
  * state with the seq counter advanced.
  */
-function stamped(events: SimEvent[], s: PlantState): { state: PlantState; events: PlantEvent[] } {
+export function stamped(events: SimEvent[], s: PlantState): { state: PlantState; events: PlantEvent[] } {
   const seq0 = s.run.eventSeq;
   const out = events.map(
     (e, i) => ({ ...e, gameId: s.run.gameId, seq: seq0 + i, tick: s.tick, plantTime: s.plantTime }) as PlantEvent,

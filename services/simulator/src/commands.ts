@@ -84,7 +84,7 @@ function apply(s: PlantState, id: string, c: Command): Out {
       return s.phase === 'handover' ? startShift(s, c.mode) : no('startShift only allowed during handover');
     case 'quitGame':
       return endGame(s, 'quit');
-    // Game creation and liveness belong to the multi-game host.
+    // Game creation and liveness belong to the multi-game host and never reach a plant (fallback only).
     case 'startGame':
     case 'heartbeat':
       return no('not implemented');

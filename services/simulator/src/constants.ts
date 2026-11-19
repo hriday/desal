@@ -246,3 +246,6 @@ export const TARGET_GROWTH_PER_SHIFT = 0.04;
 export const BASE_FUEL_BUDGET_USD = 12000;
 /** Ticks a pump overhaul lasts (1 plant hour); counted only while the shift runs. */
 export const PUMP_OVERHAUL_TICKS = 90;
+
+/** Concurrency cap: live games per simulator; over it, startGame is answered with gameRejected capacity. */
+export const MAX_GAMES = 10;
