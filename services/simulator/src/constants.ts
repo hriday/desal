@@ -4,6 +4,13 @@ export const TICK_PLANT_S = 40;
 export const SHIFT_TICKS = 720;
 /** Number of evaporator stages. */
 export const STAGE_COUNT = 20;
+/**
+ * Best product flow the plant can make (m3/h): a clean plant flat out at the hottest TBT setpoint
+ * (112 C) and the most recirculation (6500 m3/h). The nominal 93.5 C point makes NOMINAL.productM3h
+ * (about 532). The web's quota bar uses this to call a target out of reach. Pinned by
+ * test/maxproduct.test.ts.
+ */
+export const PLANT_MAX_PRODUCT_M3H = 857;
 /** Ticks between full state snapshots. */
 export const SNAPSHOT_EVERY_TICKS = 30;
 

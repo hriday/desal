@@ -1,4 +1,4 @@
-import { DESIGN_PRODUCT_M3H, TICK_PLANT_S } from '../plantConstants';
+import { PLANT_MAX_PRODUCT_M3H, TICK_PLANT_S } from '../plantConstants';
 
 export type Pace = 'done' | 'onPace' | 'behind' | 'outOfReach';
 
@@ -6,13 +6,13 @@ export interface PaceInput { productM3: number; targetM3: number; flowM3h: numbe
 
 const fin = (v: number) => (Number.isFinite(v) ? v : 0);
 
-/** Where the shift quota stands: met, on pace at the current flow, behind, or out of reach even at design flow. */
+/** Where the shift quota stands: met, on pace at the current flow, behind, or out of reach even with the plant flat out. */
 export function paceState(input: PaceInput): Pace {
   const product = fin(input.productM3);
   const target = fin(input.targetM3);
   if (product >= target) return 'done';
   const hoursLeft = Math.max(0, fin(input.ticksRemaining)) * TICK_PLANT_S / 3600;
-  if (product + DESIGN_PRODUCT_M3H * hoursLeft < target) return 'outOfReach';
+  if (product + PLANT_MAX_PRODUCT_M3H * hoursLeft < target) return 'outOfReach';
   if (product + Math.max(0, fin(input.flowM3h)) * hoursLeft >= target) return 'onPace';
   return 'behind';
 }

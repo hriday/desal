@@ -191,7 +191,7 @@ The existing shift-end summary gains a list of the shift's events, each with its
 - **Quota-bar data.**
   - Status gains `shiftProductM3` and `shiftOffSpecM3` (from `shift.acc`), `productFlowM3h`, `crew: { job, remainingTicks } | null`, and `orders` (handover only).
   - It already has `shiftTarget` and `shiftTicksRemaining`.
-  - The maximum rate for "out of reach" is a constant: the plant's design product flow.
+  - The maximum rate for "out of reach" is a constant, `PLANT_MAX_PRODUCT_M3H` (857 m³/h): the product flow of a clean plant flat out at TBT 112 °C and recirculation 6500 m³/h. It is not the 93.5 °C design flow (about 532 m³/h), because running hotter is the intended way to catch up (§4.12).
 
 ### 4.11 Visual polish
 
