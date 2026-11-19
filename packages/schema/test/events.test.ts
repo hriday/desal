@@ -7,7 +7,7 @@ const summary = {
 };
 
 const events: PlantEvent[] = [
-  { ...base, type: 'shiftStart', scenarioId: 's1', mode: 'auto', target: 1500 },
+  { ...base, type: 'shiftStart', scenarioId: 's1', mode: 'auto', target: { productM3: 1500, maxSalinityPpm: 25, fuelBudgetUsd: 1000 } },
   { ...base, type: 'shiftEnd', summary },
   { ...base, type: 'trip', cause: 'tbtHighHigh' },
   { ...base, type: 'restartProgress', step: 'vacuum', ok: false, reason: 'low vacuum' },

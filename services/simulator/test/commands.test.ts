@@ -105,7 +105,8 @@ describe('applyCommand', () => {
     expect(r.state.controlMode).toBe('manual');
     expect(r.state.loops.tbt.mode).toBe('manual');
     expect(r.state.loops.levels.every((l) => l.mode === 'auto')).toBe(true);
-    expect(r.events[0]).toMatchObject({ type: 'shiftStart', shiftId: 1, mode: 'manual' });
+    expect(r.events[0]).toMatchObject({ type: 'shiftStart', shiftId: 1, mode: 'manual', target: r.state.shift?.target });
+    expect(r.events[0]).toHaveProperty('target.maxSalinityPpm');
     const again = applyCommand(r.state, env({ type: 'startShift', mode: 'auto' }, 1));
     expect(again.state).toBe(r.state);
     rejection(again.events);

@@ -4,6 +4,9 @@ import { TripCauseSchema } from './status.js';
 
 const num = z.number().finite();
 
+export const ShiftTargetSchema = z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num });
+export type ShiftTarget = z.infer<typeof ShiftTargetSchema>;
+
 export const ShiftSummarySchema = z.object({
   productM3: num,
   targetM3: num,
@@ -39,7 +42,7 @@ export type DamageComponent = z.infer<typeof DamageComponentSchema>;
 const base = { tick: num, plantTime: num, shiftId: num.nullable() };
 
 export const PlantEventSchema = z.discriminatedUnion('type', [
-  z.object({ ...base, type: z.literal('shiftStart'), scenarioId: z.string(), mode: LoopModeSchema, target: num }),
+  z.object({ ...base, type: z.literal('shiftStart'), scenarioId: z.string(), mode: LoopModeSchema, target: ShiftTargetSchema }),
   z.object({ ...base, type: z.literal('shiftEnd'), summary: ShiftSummarySchema }),
   z.object({ ...base, type: z.literal('trip'), cause: TripCauseSchema }),
   z.object({ ...base, type: z.literal('restartProgress'), step: RestartStepSchema, ok: z.boolean(), reason: z.string().optional() }),

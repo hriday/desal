@@ -46,7 +46,7 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
         shiftId: careerShiftCount,
         scenarioId: scenario.id,
         mode,
-        target: scenario.target.productM3,
+        target: { ...scenario.target },
       },
     ],
   };
