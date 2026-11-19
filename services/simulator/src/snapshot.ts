@@ -1,4 +1,5 @@
 import {
+  CrewJobSchema,
   FuelGradeSchema,
   GameEndReasonSchema,
   FuelKindSchema,
@@ -6,6 +7,7 @@ import {
   PhaseSchema,
   PlantStatusKindSchema,
   RestartStepSchema,
+  ShiftOrdersSchema,
   ScenarioKindSchema,
   TripCauseSchema,
 } from '@desal/schema';
@@ -23,6 +25,32 @@ const LoopSchema = z.object({
   prevError: num,
   fault: z.object({ kind: z.enum(['stuck', 'drift', 'oscillate']), bias: num }).nullable(),
 });
+const QueuedEventSchema = z.object({
+  eventId: num,
+  kind: ScenarioKindSchema,
+  params: z.record(z.string(), z.union([num, z.string()])),
+  earliestMinute: num,
+  cascade: z.boolean(),
+});
+const ChaosPlanSchema = z.object({
+  shiftNumber: num,
+  hell: z.boolean(),
+  warned: z.boolean(),
+  targetM3: num,
+  orders: ShiftOrdersSchema,
+  queue: z.array(QueuedEventSchema),
+});
+const FiredEventSchema = z.object({
+  eventId: num,
+  kind: ScenarioKindSchema,
+  atMinute: num,
+  cleared: z.boolean(),
+  how: z.enum(['player', 'crew', 'expired', 'noted']).nullable(),
+});
+const SensorFaultSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('freeze'), value: num }),
+  z.object({ kind: z.literal('noise'), amplitude: num }),
+]);
 const PumpSchema = z.object({ running: z.boolean(), wear: num, cavitation: num, bearingWearMult: num, overhaulRemainingTicks: num });
 const StageSchema = z.object({ tempC: num, levelM: num, softScaleMm: num, hardScaleMm: num });
 const TargetSchema = z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num });
@@ -134,6 +162,29 @@ export const PlantStateSchema = z.object({
     epoch: z.number().int().min(0).default(0),
     over: z.object({ reason: GameEndReasonSchema, atTick: num }).nullable(),
   }),
+  chaos: z.object({
+    pending: ChaosPlanSchema.nullable(),
+    active: z
+      .object({ plan: ChaosPlanSchema, fired: z.array(FiredEventSchema), lastFiredMinute: num.nullable(), nextEventId: num })
+      .nullable(),
+    lastWasHell: z.boolean(),
+  }),
+  crew: z.object({ job: CrewJobSchema, remainingTicks: num }).nullable(),
+  faults: z.object({
+    tubeLeak: z.object({ stage: num, ppm: num }).nullable(),
+    ejectorFailed: z.boolean(),
+    powerDipRemainingTicks: num,
+    stormRemainingTicks: num,
+    stormFouling: num,
+    sensors: z.object({
+      tbt: SensorFaultSchema.optional(),
+      intakeFlow: SensorFaultSchema.optional(),
+      recirc: SensorFaultSchema.optional(),
+      blowdown: SensorFaultSchema.optional(),
+      vacuum: SensorFaultSchema.optional(),
+    }),
+    stageDerate: z.array(num).length(STAGE_COUNT),
+  }),
 });
 
 // Compile-time drift guard: the schema's type and PlantState must be mutually assignable.
@@ -145,8 +196,9 @@ const FORMAT = 'desal-snapshot';
 /**
  * 2 = the multi-game era (economy and game-over state, one save per gameId). Version 1 saves are
  * single-career saves from before games existed; they are rejected and skipped on load.
+ * 3 = chaos plan, crew and fault fields.
  */
-const VERSION = 2;
+const VERSION = 3;
 
 export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });

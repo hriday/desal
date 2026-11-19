@@ -25,7 +25,7 @@ function midShift2(): PlantState {
 const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0, GAME_ID)));
 
 function wrap(state: unknown, over: Record<string, unknown> = {}): string {
-  return JSON.stringify({ format: 'desal-snapshot', version: 2, savedAt: 0, state, ...over });
+  return JSON.stringify({ format: 'desal-snapshot', version: 3, savedAt: 0, state, ...over });
 }
 
 describe('snapshots', () => {
@@ -49,11 +49,51 @@ describe('snapshots', () => {
 
   it('rejects garbage, wrong format and unknown version', () => {
     const s = createInitialState(1, T0, GAME_ID);
-    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 3 })]) {
+    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 4 })]) {
       const r = restore(bad);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason.length).toBeGreaterThan(0);
     }
+  });
+
+  it('rejects a version 2 save with its reason', () => {
+    const r = restore(wrap(createInitialState(1, T0, GAME_ID), { version: 2 }));
+    expect(r).toEqual({ ok: false, reason: 'unknown version: 2' });
+  });
+
+  it('round-trips populated chaos, crew and fault state', () => {
+    const s = createInitialState(3, T0, GAME_ID);
+    const orders = { targetM3: 100, maxSalinityPpm: 50, budgetUsd: 1000, lines: ['a'], briefing: [] };
+    const plan = {
+      shiftNumber: 4,
+      hell: true,
+      warned: false,
+      targetM3: 100,
+      orders,
+      queue: [{ eventId: 2, kind: 'tubeLeak' as const, params: { stage: 3, ppm: 40, note: 'x' }, earliestMinute: 15, cascade: true }],
+    };
+    const populated: PlantState = {
+      ...s,
+      chaos: {
+        pending: plan,
+        active: {
+          plan,
+          fired: [{ eventId: 1, kind: 'pumpTrip', atMinute: 5, cleared: true, how: 'crew' }],
+          lastFiredMinute: 5,
+          nextEventId: 3,
+        },
+        lastWasHell: true,
+      },
+      crew: { job: 'replaceSensor', remainingTicks: 12 },
+      faults: {
+        ...s.faults,
+        tubeLeak: { stage: 3, ppm: 40 },
+        sensors: { tbt: { kind: 'freeze', value: 107.5 }, vacuum: { kind: 'noise', amplitude: 0.02 } },
+      },
+    };
+    const r = restore(serialize(populated));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.state).toEqual(populated);
   });
 
   it('rejects a null in a numeric field and reports its path', () => {

@@ -1,4 +1,5 @@
 import type {
+  CrewJob,
   FuelGrade,
   GameEndReason,
   PlantEvent,
@@ -38,7 +39,11 @@ import {
   VACUUM_QUALITY_MIN,
   VACUUM_QUALITY_NOMINAL,
 } from './constants.js';
+import type { ActiveChaos, ChaosPlan, SensorFault } from './scenario/chaosTypes.js';
 import type { Scenario } from './scenario/types.js';
+
+/** The loops' process values, which a sensor fault can corrupt (the names match the LoopId of the same loops). */
+export type LoopSensorId = 'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum';
 
 export type LoopFault = { kind: 'stuck' | 'drift' | 'oscillate'; bias: number };
 export interface Loop {
@@ -153,6 +158,18 @@ export interface PlantState {
   shift: ShiftState | null;
   scenario: { id: string; definition: Scenario | null; nextEventIndex: number; effects: ScenarioEffects };
   run: Run;
+  chaos: { pending: ChaosPlan | null; active: ActiveChaos | null; lastWasHell: boolean };
+  crew: { job: CrewJob; remainingTicks: number } | null;
+  faults: {
+    tubeLeak: { stage: number; ppm: number } | null;
+    ejectorFailed: boolean;
+    powerDipRemainingTicks: number;
+    stormRemainingTicks: number;
+    stormFouling: number;
+    sensors: Partial<Record<LoopSensorId, SensorFault>>;
+    /** Per-stage capacity multiplier, 1 = healthy. */
+    stageDerate: number[];
+  };
 }
 
 const SEAWATER_C = 30;
@@ -263,5 +280,16 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
       effects: { offgradeOnly: false, deliveryDelayTicks: 0, chlorophyllTarget: 1, chlorophyllRampPerTick: 0 },
     },
     run: { gameId, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
+    chaos: { pending: null, active: null, lastWasHell: false },
+    crew: null,
+    faults: {
+      tubeLeak: null,
+      ejectorFailed: false,
+      powerDipRemainingTicks: 0,
+      stormRemainingTicks: 0,
+      stormFouling: 0,
+      sensors: {},
+      stageDerate: Array.from({ length: STAGE_COUNT }, () => 1),
+    },
   };
 }
