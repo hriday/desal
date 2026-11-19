@@ -63,7 +63,9 @@ export class StatusBook {
       if (now - this.lastPrune >= PRUNE_EVERY_MS) this.prune(now);
     } else if (topic === TOPICS.events) {
       const e = PlantEventSchema.safeParse(value);
-      if (e.success && e.data.type === 'gameEnd') {
+      // A host 'no such game' means the simulator does not hold the game any more: as good as ended.
+      const gone = e.success && e.data.host === true && e.data.type === 'commandRejected' && e.data.reason === 'no such game';
+      if (e.success && (e.data.type === 'gameEnd' || gone)) {
         this.latest.delete(gameId);
         this.ended.set(gameId, now);
       }

@@ -59,6 +59,15 @@ describe('GameHost', () => {
     });
   });
 
+  it('marks host-level events host: true (seq 0, no plant to stamp from); plant events carry no host flag', () => {
+    const h = started([gid(1)]);
+    const r = h.step([cmd(gid(9), { type: 'pause' }), cmd(gid(1), { type: 'resume' })], 1000);
+    expect(r.hostEvents).toEqual([expect.objectContaining({ host: true, seq: 0, type: 'commandRejected', reason: 'no such game' })]);
+    const plant = r.perGame.get(gid(1))!.events;
+    expect(plant.map((e) => e.type)).toEqual(['commandRejected']);
+    expect(plant[0]!.host).toBeUndefined();
+  });
+
   it('rejects a duplicate startGame', () => {
     const h = started([gid(1)]);
     const r = h.step([cmd(gid(1), { type: 'startGame' })], 1000);

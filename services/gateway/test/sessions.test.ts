@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { StatusBook, type GatewayTopic } from '../src/kafka.js';
 import { MAX_MSG_BYTES, RESUME_WAIT_MS } from '../src/protocol.js';
 import { Sessions } from '../src/sessions.js';
-import { GAME_A, GAME_B, gameEnd, gameRejected, gameStart, online, reading, status } from './fixtures.js';
+import { GAME_A, GAME_B, gameEnd, gameRejected, gameStart, noSuchGame, online, reading, status } from './fixtures.js';
 
 const CMD_ID = '6f1c1a3e-2b7d-4c1a-9f3e-1d2c3b4a5f60';
 
@@ -289,6 +289,29 @@ describe('heartbeats and close', () => {
     expect(sent).toEqual([]);
     client('s1', { t: 'cmd', command: { type: 'pause' } });
     expect(box.at(-1)).toEqual({ t: 'error', reason: 'no game' });
+  });
+});
+
+describe('host events', () => {
+  it("maps a host 'no such game' rejection for a bound game to 'game ended', and unbinds it", () => {
+    const box = bound('s1');
+    const other = open('s2');
+    deliver(TOPICS.events, GAME_A, noSuchGame(GAME_A));
+    expect(box).toEqual([{ t: 'error', reason: 'game ended' }]);
+    expect(other).toEqual([]);
+    sent.length = 0;
+    sessions.everyHeartbeat();
+    expect(sent).toEqual([]); // nothing left to keep alive
+    client('s1', { t: 'cmd', command: { type: 'pause' } });
+    expect(box.at(-1)).toEqual({ t: 'error', reason: 'no game' });
+    client('s1', { t: 'resume', gameId: GAME_A });
+    expect(box.at(-1)).toEqual({ t: 'error', reason: 'game ended' });
+  });
+
+  it('ignores a host rejection for a game nobody here plays', () => {
+    const box = open('s1');
+    deliver(TOPICS.events, GAME_B, noSuchGame(GAME_B));
+    expect(box).toEqual([]);
   });
 });
 

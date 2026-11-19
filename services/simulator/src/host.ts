@@ -116,9 +116,10 @@ export class GameHost {
     const pending = new Map<string, unknown[]>();
     const lead = new Map<string, PlantEvent[]>();
 
-    // Host-level events have no plant to stamp from: seq 0, tick 0, wall-clock plantTime, no shift.
+    // Host-level events have no plant to stamp from: seq 0, tick 0, wall-clock plantTime, no shift,
+    // flagged host: true so consumers keep them out of the game's seq de-dup.
     const hostEvent = (gameId: string, e: HostEventBody): void => {
-      hostEvents.push({ gameId, epoch: 0, seq: 0, tick: 0, plantTime: nowMs, shiftId: null, ...e } as PlantEvent);
+      hostEvents.push({ gameId, host: true, epoch: 0, seq: 0, tick: 0, plantTime: nowMs, shiftId: null, ...e } as PlantEvent);
     };
 
     for (const raw of envelopes) {

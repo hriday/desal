@@ -217,7 +217,14 @@ export class Sessions {
         this.limits.ended(gameId);
         this.endWait(gameId, false);
       }
+      const noSuchGame = event.host === true && event.type === 'commandRejected' && event.reason === 'no such game';
+      if (noSuchGame) this.limits.ended(gameId);
       if (!this.games.has(gameId)) return;
+      if (noSuchGame) {
+        // The simulator has no such game (it ended, or was lost): the player's game is over.
+        this.broadcast(gameId, { t: 'error', reason: 'game ended' });
+        return this.unbindGame(gameId);
+      }
       if (event.type === 'gameRejected') {
         // 'duplicate' cannot happen with a fresh random gameId; either way the socket has no game.
         this.broadcast(gameId, { t: 'error', reason: 'capacity' });

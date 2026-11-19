@@ -98,9 +98,12 @@ function withoutRejected(s: State, commandId: string): Pick<State, 'pending' | '
 }
 
 function addEvent(s: State, e: PlantEvent): State {
-  if (e.epoch < s.epoch) return s; // from before the game was restored: superseded
-  if (e.epoch === s.epoch && s.events.some((x) => x.epoch === e.epoch && x.seq === e.seq)) return s;
-  let next: State = { ...s, epoch: e.epoch, events: [...s.events, e].slice(-MAX_EVENTS) };
+  // Host events (seq 0, outside the game's seq order) are never de-duplicated and never move the epoch.
+  if (!e.host) {
+    if (e.epoch < s.epoch) return s; // from before the game was restored: superseded
+    if (s.events.some((x) => !x.host && x.epoch === e.epoch && x.seq === e.seq)) return s;
+  }
+  let next: State = { ...s, epoch: e.host ? s.epoch : e.epoch, events: [...s.events, e].slice(-MAX_EVENTS) };
   switch (e.type) {
     case 'gameEnd':
       next = { ...next, session: 'over', score: e.score, endReason: e.reason };

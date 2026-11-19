@@ -61,6 +61,9 @@ export type DamageComponent = z.infer<typeof DamageComponentSchema>;
 // seq is a per-game monotonically increasing counter so consumers can de-duplicate at-least-once deliveries.
 // epoch counts how often the game was restored from a snapshot. A restore can rewind seq (and tick) to
 // the snapshot's, so consumers de-duplicate on (gameId, epoch, seq), and a higher epoch resets their marks.
+// host: true marks a host-level event (the simulator's GameHost answering for a game it does not hold, e.g.
+// a commandRejected 'no such game' or a gameRejected): seq 0, epoch 0, tick 0, wall-clock plantTime. It is
+// not part of the game's seq order, so consumers must never de-duplicate host events.
 const base = {
   gameId: z.uuid(),
   epoch: z.number().int().min(0),
@@ -68,6 +71,7 @@ const base = {
   tick: num,
   plantTime: num,
   shiftId: num.nullable(),
+  host: z.boolean().optional(),
 };
 
 export const PlantEventSchema = z.discriminatedUnion('type', [

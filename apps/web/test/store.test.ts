@@ -73,6 +73,22 @@ describe('store reducer', () => {
     expect(s.epoch).toBe(1);
   });
 
+  it('host events (seq 0, epoch 0) are never de-duplicated and do not move the epoch', () => {
+    let s = server(initialState(), statusMsg({ epoch: 3 }));
+    s = server(s, eventMsg({ type: 'online', seq: 0, epoch: 3 }));
+    const rejected = { type: 'commandRejected', host: true, seq: 0, epoch: 0, commandId: 'x', reason: 'invalid: bad' };
+    s = server(s, eventMsg(rejected));
+    expect(s.toast).toEqual({ kind: 'rejected', message: 'invalid: bad' });
+    s = reducer(s, { type: 'dismissToast' });
+    s = server(s, eventMsg(rejected));
+    expect(s.toast).toEqual({ kind: 'rejected', message: 'invalid: bad' });
+    expect(s.events.filter((e) => e.host)).toHaveLength(2);
+    expect(s.epoch).toBe(3);
+    // And they do not count as seq 0 of the game: the game's own seq 0 is still accepted.
+    const fresh = server(server(initialState(), eventMsg(rejected)), eventMsg({ type: 'gameStart', seq: 0, epoch: 0 }));
+    expect(fresh.events.map((e) => e.type)).toEqual(['commandRejected', 'gameStart']);
+  });
+
   it('a status from a newer epoch moves the epoch too', () => {
     const s = server(initialState(), statusMsg({ epoch: 2 }));
     expect(s.epoch).toBe(2);

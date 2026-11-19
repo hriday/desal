@@ -55,6 +55,14 @@ export const gameEnd = (gameId: string, tick = 10): PlantEvent => ({
   score: { shiftsCompleted: 0, totalProductM3: 0, balanceUsd: 15000 },
 });
 export const online = (gameId: string, tick = 1): PlantEvent => ({ ...base(gameId, tick), type: 'online' });
+/** The simulator's answer to a command for a game it does not have (a host-level event). */
+export const noSuchGame = (gameId: string): PlantEvent => ({
+  ...base(gameId),
+  host: true,
+  type: 'commandRejected',
+  commandId: '00000000-0000-4000-8000-00000000abcd',
+  reason: 'no such game',
+});
 
 export function reading(gameId: string, tick: number, sensorId: string, value = tick, epoch = 0): TelemetryReading {
   return { gameId, epoch, sensorId, unitId: 'stages', shiftId: 1, tick, plantTime: tick * 40, value };
