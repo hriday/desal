@@ -184,6 +184,7 @@ export const PlantStateSchema = z.object({
     powerDipRecircFactor: num,
     stormRemainingTicks: num,
     stormFouling: num,
+    stormCleanedByCrew: z.boolean(),
     sensors: z.object({
       tbt: SensorFaultSchema.optional(),
       intakeFlow: SensorFaultSchema.optional(),

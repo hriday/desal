@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { POWER_DIP_MAX_MINUTES, PUMP_TRIP_WEAR, RECIRC_PUMP_MAX_M3H, STORM_FOULING_PER_TICK } from '../../src/constants.js';
+import type { FiredEvent } from '../../src/scenario/chaosTypes.js';
+import { isCleared } from '../../src/scenario/director.js';
 import { applyEffect } from '../../src/scenario/effects.js';
 import { drawEvent } from '../../src/scenario/library.js';
 import { startShift } from '../../src/shift.js';
@@ -98,6 +100,26 @@ describe('storm', () => {
     expect(later.faults.stormFouling).toBe(grown);
     // The fouling stays (it is not relaxed away) until the crew cleans the screens.
     expect(later.intake.screenFouling).toBeGreaterThanOrEqual(s0.intake.screenFouling + grown - 0.01);
+  });
+});
+
+describe('storm clearing', () => {
+  const ev = { eventId: 1, kind: 'storm', atMinute: 0, params: {}, cleared: false, how: null } as unknown as FiredEvent;
+
+  it('a storm at full screen fouling is not cleared by the crew; it expires', () => {
+    const s0 = settle();
+    const full: PlantState = { ...s0, intake: { ...s0.intake, screenFouling: 1 } };
+    const hit = applyEffect(full, 'storm', { fouling: 0.1, deltaC: 1, minutes: 10 });
+    expect(hit.faults.stormFouling).toBe(0);
+    expect(isCleared(hit, ev)).toBeNull();
+    expect(isCleared(run(hit, 1), ev)).toBeNull();
+    expect(isCleared(run(hit, 14), ev)).toBeNull();
+    expect(isCleared(run(hit, 15), ev)).toBe('expired');
+  });
+
+  it('with the crew flag set it clears as crew', () => {
+    const hit = applyEffect(settle(), 'storm', { fouling: 0.1, deltaC: 1, minutes: 10 });
+    expect(isCleared({ ...hit, faults: { ...hit.faults, stormCleanedByCrew: true } }, ev)).toBe('crew');
   });
 });
 

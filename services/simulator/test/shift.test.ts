@@ -213,6 +213,7 @@ describe('chaos plan lifecycle', () => {
         powerDipRecircFactor: 0.5,
         stormRemainingTicks: 9,
         stormFouling: 0.2,
+        stormCleanedByCrew: true,
         sensors: { tbt: { kind: 'freeze', value: 100 } },
         stageDerate: s0.faults.stageDerate.map(() => 0.5),
       },
@@ -243,6 +244,13 @@ describe('startShift lines up two intake pumps', () => {
     expect(running(tripped)).toEqual(['P-101']);
     const next = startShift({ ...tripped, phase: 'handover' }, 'auto').state;
     expect(running(next)).toEqual(['P-101', 'P-102']);
+  });
+
+  it('does not start a worn-out pump', () => {
+    const s = withPumps(fresh(), { 'P-102': { running: false, wear: 1 }, 'P-103': { running: false } });
+    expect(running(startShift(s, 'auto').state)).toEqual(['P-101', 'P-103']);
+    const only = withPumps(fresh(), { 'P-102': { running: false, wear: 1 }, 'P-103': { running: false, wear: 1 } });
+    expect(running(startShift(only, 'auto').state)).toEqual(['P-101']);
   });
 
   it('starts the standby when a duty pump is under overhaul, but never a pump under overhaul', () => {

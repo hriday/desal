@@ -76,9 +76,8 @@ export function isCleared(s: PlantState, e: FiredEvent): ClearHow | null {
     case 'sensorFailure':
       return f.sensors[e.params.loop as LoopSensorId] === undefined ? 'crew' : null;
     case 'storm':
-      // A storm always adds fouling, which only cleanScreens removes; with it gone the crew cleared
-      // the storm. Otherwise the storm clears when it passes (its fouling stays until cleaned).
-      if (f.stormFouling === 0) return 'crew';
+      // Cleared by the crew once cleanScreens has run, else when the storm passes (its fouling stays).
+      if (f.stormCleanedByCrew) return 'crew';
       return f.stormRemainingTicks === 0 ? 'expired' : null;
     case 'controllerFault':
       return loopMode(s, String(e.params.loop)) === 'manual' ? 'player' : null;

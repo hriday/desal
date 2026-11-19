@@ -168,6 +168,8 @@ export interface PlantState {
     powerDipRecircFactor: number;
     stormRemainingTicks: number;
     stormFouling: number;
+    /** Set by the cleanScreens crew job (Task 8); it alone makes a storm count as cleared by the crew. */
+    stormCleanedByCrew: boolean;
     sensors: Partial<Record<LoopSensorId, SensorFault>>;
     /** Per-stage capacity multiplier, 1 = healthy. */
     stageDerate: number[];
@@ -231,6 +233,7 @@ export function noFaults(): PlantState['faults'] {
     powerDipRecircFactor: 1,
     stormRemainingTicks: 0,
     stormFouling: 0,
+    stormCleanedByCrew: false,
     sensors: {},
     stageDerate: Array.from({ length: STAGE_COUNT }, () => 1),
   };

@@ -343,9 +343,9 @@ describe('isCleared', () => {
   });
 
   it('storm: crew when the screens are cleaned, expired when it passes with fouling left', () => {
-    const storming = { ...s, faults: { ...s.faults, stormRemainingTicks: 50, stormFouling: 0.2 } };
+    const storming = { ...s, faults: { ...s.faults, stormRemainingTicks: 50, stormFouling: 0.2, stormCleanedByCrew: false } };
     expect(isCleared(storming, ev('storm'))).toBeNull();
-    expect(isCleared({ ...storming, faults: { ...storming.faults, stormFouling: 0 } }, ev('storm'))).toBe('crew');
+    expect(isCleared({ ...storming, faults: { ...storming.faults, stormCleanedByCrew: true } }, ev('storm'))).toBe('crew');
     expect(isCleared({ ...storming, faults: { ...storming.faults, stormRemainingTicks: 0 } }, ev('storm'))).toBe('expired');
   });
 

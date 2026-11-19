@@ -52,7 +52,7 @@ export function applySharpEffect(s: PlantState, kind: SharpKind, p: Params): Pla
       return {
         ...fouled,
         seawater: { ...fouled.seawater, tempC: fouled.seawater.tempC - Number(p.deltaC) },
-        faults: { ...fouled.faults, stormRemainingTicks: (Number(p.minutes) * 60) / TICK_PLANT_S },
+        faults: { ...fouled.faults, stormCleanedByCrew: false, stormRemainingTicks: (Number(p.minutes) * 60) / TICK_PLANT_S },
       };
     }
     case 'tubeLeak':
