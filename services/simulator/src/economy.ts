@@ -1,5 +1,12 @@
 import type { AccountCause } from '@desal/schema';
-import { ALLOC_BASE_USD, ALLOC_DECAY_PER_SHIFT, LHV_OFFGRADE_MJkg, LHV_STANDARD_MJkg } from './constants.js';
+import {
+  ALLOC_BASE_USD,
+  ALLOC_DECAY_PER_SHIFT,
+  LHV_OFFGRADE_MJkg,
+  LHV_STANDARD_MJkg,
+  STANDING_COST_USD_PER_HOUR,
+  TICK_PLANT_S,
+} from './constants.js';
 import type { PlantState, SimEvent } from './state.js';
 
 /**
@@ -48,6 +55,19 @@ const accountChange = (s: PlantState, deltaUsd: number, cause: AccountCause): Si
 export function charge(s: PlantState, usd: number, cause: AccountCause): { state: PlantState; event: SimEvent } {
   const state = spend(s, usd);
   return { state, event: accountChange(state, -usd, cause) };
+}
+
+const TICKS_PER_HOUR = 3600 / TICK_PLANT_S;
+
+/**
+ * Charge one running tick's share of the standing cost, whatever the plant status. Call after the
+ * clock has advanced. The charge is spent every tick, but reported as one accountChange per plant
+ * hour of the shift (carrying that hour's total), so plant.events is not flooded.
+ */
+export function chargeStanding(s: PlantState): { state: PlantState; events: SimEvent[] } {
+  const state = spend(s, STANDING_COST_USD_PER_HOUR / TICKS_PER_HOUR);
+  const hourDone = s.shift !== null && (s.tick - s.shift.startTick) % TICKS_PER_HOUR === 0;
+  return { state, events: hourDone ? [accountChange(state, -STANDING_COST_USD_PER_HOUR, 'standing')] : [] };
 }
 
 /** Credit an allocation and report it. */

@@ -79,11 +79,8 @@ export const CAVITATION_RISE_PER_TICK = 0.04;
 export const CAVITATION_DECAY_PER_TICK = 0.01;
 /** Baseline pump wear per tick (thousands of plant hours to wear out). */
 export const PUMP_WEAR_BASE_PER_TICK = 2.2e-6;
-/**
- * Extra pump wear per tick at full cavitation: a shift of it costs about a fifth of a pump's life,
- * so leaving fouled screens unattended wears the intake out (an untouched game ends within 40 shifts).
- */
-export const PUMP_WEAR_CAVITATION_PER_TICK = 3e-4;
+/** Extra pump wear per tick at full cavitation: a shift of it costs about 2 % of a pump's life. */
+export const PUMP_WEAR_CAVITATION_PER_TICK = 3e-5;
 
 /** Maximum burner thermal output (MW). */
 export const BURNER_MAX_MW = 60;
@@ -257,6 +254,12 @@ export const START_BALANCE_USD = 15000;
 export const ALLOC_BASE_USD = 10000;
 /** Cut of the base allocation per shift: shift n gets 1 - ALLOC_DECAY_PER_SHIFT x (n - 1) of it. */
 export const ALLOC_DECAY_PER_SHIFT = 0.03;
+/**
+ * Standing cost per plant hour of a running shift (staff, standby power, chemicals on hold), whatever
+ * the plant status, so an idle or tripped plant slowly goes broke: an untouched game ends bankrupt
+ * within 40 shifts (R14/R15). $720 a shift, 7.2 % of shift 1's allocation.
+ */
+export const STANDING_COST_USD_PER_HOUR = 90;
 /** Cost of an acid clean, charged when it starts (USD). */
 export const ACID_CLEAN_COST_USD = 6000;
 /** Cost of a pump overhaul, charged when it starts (USD). */

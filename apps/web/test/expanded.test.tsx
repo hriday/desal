@@ -10,7 +10,7 @@ import { FuelView } from '../src/expanded/FuelView';
 import { HeaterView } from '../src/expanded/HeaterView';
 import { IntakeView } from '../src/expanded/IntakeView';
 import { ProductView } from '../src/expanded/ProductView';
-import { ShiftView } from '../src/expanded/ShiftView';
+import { ShiftView, shiftAccount } from '../src/expanded/ShiftView';
 import { StagesView } from '../src/expanded/StagesView';
 import type { ExpandedProps } from '../src/expanded/types';
 
@@ -171,6 +171,13 @@ describe('eventText', () => {
   });
   it('an account change by the crew reads naturally', () => {
     expect(eventText({ ...SAMPLES.accountChange, cause: 'crew' })).toBe('Paid $8,000 for a crew job; balance $4,450');
+  });
+  it('the hourly standing cost reads as staff and standby, and counts toward the shift spend', () => {
+    const standing = { ...SAMPLES.accountChange, deltaUsd: -90, cause: 'standing' as const };
+    expect(eventText(standing)).toBe('Paid $90 for staff and standby; balance $4,450');
+    expect(PlantEventSchema.parse(standing)).toEqual(standing);
+    const shiftId = standing.shiftId!;
+    expect(shiftAccount([standing, standing, SAMPLES.accountChange], shiftId)).toMatchObject({ standingUsd: 180, repairsUsd: 8000 });
   });
 
   it('reads the way an operator would say it', () => {

@@ -96,17 +96,22 @@ function ShiftControls(ctl: ControlCtx) {
   );
 }
 
-/** This shift's allocation and repair charges, from its accountChange events. */
+/**
+ * This shift's allocation, repair charges and standing cost, from its accountChange events. The
+ * standing cost is reported once per plant hour, so it lags by up to an hour.
+ */
 export function shiftAccount(events: readonly PlantEvent[], shiftId: number | null | undefined) {
   let allocationUsd: number | undefined;
   let repairsUsd = 0;
-  if (!num(shiftId)) return { allocationUsd, repairsUsd };
+  let standingUsd = 0;
+  if (!num(shiftId)) return { allocationUsd, repairsUsd, standingUsd };
   for (const e of events) {
     if (e?.type !== 'accountChange' || e.shiftId !== shiftId || !num(e.deltaUsd)) continue;
     if (e.cause === 'allocation') allocationUsd = (allocationUsd ?? 0) + e.deltaUsd;
     else if (e.cause === 'acidClean' || e.cause === 'overhaul') repairsUsd -= e.deltaUsd;
+    else if (e.cause === 'standing') standingUsd -= e.deltaUsd;
   }
-  return { allocationUsd, repairsUsd };
+  return { allocationUsd, repairsUsd, standingUsd };
 }
 
 /** The last EVENT_LOG_SIZE known events, newest first, as plain sentences. */
@@ -136,8 +141,8 @@ export function ShiftView(props: ExpandedProps) {
   const goal = num(target?.productM3) ? target.productM3 : undefined;
   const frac = made !== undefined && goal !== undefined && goal > 0 ? clamp01(made / goal) : undefined;
   const fuelUsd = get(readings, 'fuel.shiftCostUsd');
-  const { allocationUsd, repairsUsd } = shiftAccount(events, status?.shiftId);
-  const spent = fuelUsd === undefined ? undefined : fuelUsd + repairsUsd;
+  const { allocationUsd, repairsUsd, standingUsd } = shiftAccount(events, status?.shiftId);
+  const spent = fuelUsd === undefined ? undefined : fuelUsd + repairsUsd + standingUsd;
   const bal = num(status?.balanceUsd) ? status.balanceUsd : undefined;
   const plant = label(PLANT_TEXT, status?.status);
   const trip = label(TRIP_TEXT, status?.tripCause);
@@ -155,6 +160,7 @@ export function ShiftView(props: ExpandedProps) {
           <Row k="Spent this shift" v={usd(spent)} />
           <Row k="of which fuel" v={usd(fuelUsd)} />
           <Row k="of which repairs" v={usd(repairsUsd)} />
+          <Row k="of which staff and standby" v={usd(standingUsd)} />
           <Row k="Mode" v={label(MODE_TEXT, status?.controlMode) ?? DASH} />
           <Row k="Plant" v={plant ?? DASH} tone={status?.status === 'tripped' ? 'bad' : plant && status?.status !== 'online' ? 'warn' : undefined} />
           <Row k="Restart step" v={step ?? (status?.status === 'restarting' ? DASH : 'None')} />

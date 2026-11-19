@@ -64,7 +64,7 @@ export type GameEndReason = z.infer<typeof GameEndReasonSchema>;
 export const GameScoreSchema = z.object({ shiftsCompleted: num, totalProductM3: num, balanceUsd: num });
 export type GameScore = z.infer<typeof GameScoreSchema>;
 
-export const AccountCauseSchema = z.enum(['allocation', 'fuel', 'delivery', 'acidClean', 'overhaul', 'crew']);
+export const AccountCauseSchema = z.enum(['allocation', 'fuel', 'delivery', 'acidClean', 'overhaul', 'crew', 'standing']);
 export type AccountCause = z.infer<typeof AccountCauseSchema>;
 
 

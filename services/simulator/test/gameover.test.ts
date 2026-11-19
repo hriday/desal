@@ -1,6 +1,6 @@
 import { PlantEventSchema, type PlantEvent } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
-import { SHIFT_TICKS } from '../src/constants.js';
+import { SHIFT_TICKS, STANDING_COST_USD_PER_HOUR } from '../src/constants.js';
 import { checkGameOver, scoreOf } from '../src/gameover.js';
 import { startShift } from '../src/shift.js';
 import { createInitialState, type PlantState } from '../src/state.js';
@@ -190,22 +190,52 @@ describe('quitGame', () => {
   });
 });
 
-describe('runs end', () => {
-  it('an untouched Auto run, starting each shift at handover, reaches game over within 40 shifts', () => {
-    let s = createInitialState(7, T0, GAME_ID);
-    let end: PlantEvent | undefined;
-    for (let t = 0; t < 40 * (SHIFT_TICKS + 1) && s.phase !== 'over'; t++) {
-      const cmds = s.phase === 'handover' ? [env(s, { type: 'startShift', mode: 'auto' }, null)] : [];
-      const r = tick(s, cmds);
-      s = r.state;
-      end ??= r.events.find((e) => e.type === 'gameEnd');
+/**
+ * An untouched Auto run: startShift at every handover, no other commands, for up to `maxShifts`.
+ * `calm` empties each shift's chaos queue (no events). `refundStanding` credits the standing cost
+ * back before every running tick, so the run plays as if STANDING_COST_USD_PER_HOUR were 0.
+ */
+function untouchedRun(seed: number, maxShifts: number, opts: { calm?: boolean; refundStanding?: boolean } = {}) {
+  let s = createInitialState(seed, T0, GAME_ID);
+  let end: PlantEvent | undefined;
+  for (let t = 0; t < maxShifts * (SHIFT_TICKS + 1) && s.phase !== 'over'; t++) {
+    if (opts.calm && s.chaos.active && s.chaos.active.plan.queue.length > 0) {
+      s = { ...s, chaos: { ...s.chaos, active: { ...s.chaos.active, plan: { ...s.chaos.active.plan, queue: [] } } } };
     }
-    expect(s.phase).toBe('over');
-    if (end?.type !== 'gameEnd') throw new Error('no gameEnd');
-    console.log(
-      `untouched run ended in shift ${s.run.shiftNumber}: ${end.reason}, score ${JSON.stringify(end.score)}`,
-    );
-    expect(s.run.shiftNumber).toBeLessThanOrEqual(40);
-    expect(end.score).toEqual(scoreOf(s));
-  });
+    if (opts.refundStanding && s.phase === 'running') s = withBalance(s, s.run.balanceUsd + STANDING_COST_USD_PER_HOUR / 90);
+    const cmds = s.phase === 'handover' ? [env(s, { type: 'startShift', mode: 'auto' }, null)] : [];
+    const r = tick(s, cmds);
+    s = r.state;
+    end ??= r.events.find((e) => e.type === 'gameEnd');
+  }
+  return { s, end };
+}
+
+describe('runs end', () => {
+  it('an untouched Auto run ends within 40 shifts for every seed 1-20, usually bankrupt', () => {
+    const results: string[] = [];
+    let bankrupt = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const { s, end } = untouchedRun(seed, 40);
+      expect(s.phase, `seed ${seed}`).toBe('over');
+      if (end?.type !== 'gameEnd') throw new Error(`seed ${seed}: no gameEnd`);
+      expect(s.run.shiftNumber, `seed ${seed}`).toBeLessThanOrEqual(40);
+      expect(end.score).toEqual(scoreOf(s));
+      if (end.reason === 'bankrupt') bankrupt++;
+      results.push(`${seed}:${s.run.shiftNumber}/${end.reason}`);
+    }
+    console.log(`untouched runs (seed:shift/reason): ${results.join(' ')}`);
+    expect(bankrupt).toBeGreaterThan(10);
+  }, 120_000);
+
+  it('the standing cost brings a calm nominal plant to bankruptcy at most 2 shifts earlier', () => {
+    const withCost = untouchedRun(1, 40, { calm: true });
+    const without = untouchedRun(1, 40, { calm: true, refundStanding: true });
+    for (const r of [withCost, without]) {
+      if (r.end?.type !== 'gameEnd') throw new Error('no gameEnd');
+      expect(r.end.reason).toBe('bankrupt');
+    }
+    console.log(`calm nominal plant bankrupt in shift ${withCost.s.run.shiftNumber} (without standing cost ${without.s.run.shiftNumber})`);
+    expect(withCost.s.run.shiftNumber).toBeGreaterThanOrEqual(without.s.run.shiftNumber - 2);
+  }, 60_000);
 });

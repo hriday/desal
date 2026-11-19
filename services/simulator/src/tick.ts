@@ -9,7 +9,7 @@ import {
 } from './constants.js';
 import { autoOutputRange } from './control/loops.js';
 import { pidStep } from './control/pid.js';
-import { spendPerTick } from './economy.js';
+import { chargeStanding, spendPerTick } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
 import { checkGameOver, endGame } from './gameover.js';
 import { applyTrip, checkInterlocks } from './safety/interlocks.js';
@@ -203,6 +203,10 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   // The operating account pays for the gas burned (backup fuel was paid on order).
   s = withAccumulators(spendPerTick(step.state, step.fuelCostUsd), { ...step, trips });
   s = { ...s, tick: s.tick + 1, plantTime: s.plantTime + TICK_PLANT_S * 1000 };
+  // Staff and standby cost money every running tick, online or not (reported hourly).
+  const standing = chargeStanding(s);
+  s = standing.state;
+  events.push(...standing.events);
   const telemetry = toTelemetry(s);
 
   let ended = false;

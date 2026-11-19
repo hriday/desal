@@ -43,7 +43,7 @@ function Summary({ s }: { s: ShiftSummary }) {
       <dl>
         <dt>In-spec water</dt><dd>{fmt(s.productM3)} / {fmt(s.targetM3)} m³</dd>
         <dt>Off-spec water</dt><dd>{fmt(s.offSpecM3)} m³ ({fmt(s.offSpecMinutes)} min)</dd>
-        <dt>Spent (fuel and repairs)</dt><dd>{usd(s.spentUsd)}</dd>
+        <dt>Spent (fuel, repairs, staff)</dt><dd>{usd(s.spentUsd)}</dd>
         <dt>Next allocation</dt><dd>{usd(s.nextAllocationUsd)}</dd>
         <dt>Trips</dt><dd>{fmt(s.trips)}</dd>
         <dt>Balance</dt><dd>{usd(s.balanceUsd)}</dd>

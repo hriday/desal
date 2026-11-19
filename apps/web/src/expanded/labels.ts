@@ -22,6 +22,7 @@ export const END_TEXT: Record<string, string> = {
 
 export const CAUSE_TEXT: Record<string, string> = {
   allocation: 'the shift allocation', fuel: 'gas', delivery: 'a backup fuel delivery', acidClean: 'an acid clean', overhaul: 'a pump overhaul', crew: 'a crew job',
+  standing: 'staff and standby',
 };
 
 export const KIND_TEXT: Record<string, string> = {
