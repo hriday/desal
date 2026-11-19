@@ -144,3 +144,13 @@ export const LEVEL_RECIRC_DISTURB_M = 0.5;
 export const LEVEL_MAX_M = 1.0;
 /** Stage level above which brine carries over into the distillate (m). */
 export const CARRYOVER_LEVEL_M = 0.6;
+/** Product salinity with clean separation and no carryover (ppm). */
+export const BASE_SALINITY_PPM = 8;
+/** Product salinity added per unit of brine carryover (ppm). */
+export const CARRYOVER_SALINITY_PPM = 400;
+/** Concentration factor above which product salinity starts to rise. */
+export const CF_SALINITY_KNEE = 1.5;
+/** Product salinity added per unit of concentration factor above the knee (ppm). */
+export const CF_SALINITY_PPM = 10;
+/** Product salinity limit when no shift target applies (ppm). */
+export const DEFAULT_MAX_SALINITY_PPM = 25;
