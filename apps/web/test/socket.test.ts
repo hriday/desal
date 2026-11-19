@@ -87,10 +87,11 @@ describe('socket', () => {
     ws().open();
     ws().recv({ t: 'pong' });
     ws().recv({ t: 'nope' });
+    ws().recv({ t: 'error', reason: 'something else' });
     ws().recv('not json');
     ws().recv({ t: 'frame', tick: 1, plantTime: 1, readings: { a: 'x' } });
     expect(msgs).toEqual([{ t: 'pong' }]);
-    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledTimes(4);
     warn.mockRestore();
     sock.close();
   });
@@ -101,6 +102,9 @@ describe('socket', () => {
     ws().recv({ t: 'game', gameId });
     expect(sessionStorage.getItem(GAME_ID_KEY)).toBe(gameId);
     ws().recv({ t: 'error', reason: 'game ended' });
+    expect(sessionStorage.getItem(GAME_ID_KEY)).toBeNull();
+    sessionStorage.setItem(GAME_ID_KEY, gameId);
+    ws().recv({ t: 'error', reason: 'no game' });
     expect(sessionStorage.getItem(GAME_ID_KEY)).toBeNull();
     sock.close();
   });

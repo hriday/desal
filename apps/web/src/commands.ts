@@ -1,4 +1,4 @@
-import type { Command, FuelKind, LoopId, LoopMode, PumpId, RestartStep } from '@desal/schema';
+import type { ClientMsg, Command, FuelKind, LoopId, LoopMode, PumpId, RestartStep } from '@desal/schema';
 
 type Chemical = Extract<Command, { type: 'setDose' }>['chemical'];
 
@@ -45,4 +45,10 @@ export function commandKey(cmd: Command): string {
     default:
       return cmd.type;
   }
+}
+
+/** Build a `cmd` message with a fresh commandId so a later rejection can be matched to this send. */
+export function cmdMsg(command: Command): { msg: ClientMsg; commandId: string } {
+  const commandId = crypto.randomUUID();
+  return { msg: { t: 'cmd', command, commandId }, commandId };
 }

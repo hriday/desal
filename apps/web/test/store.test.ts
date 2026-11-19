@@ -93,21 +93,80 @@ describe('store reducer', () => {
     expect(s.toast?.kind).toBe('capacity');
   });
 
-  it('commandRejected sets a toast and clears pending', () => {
-    let s = reducer(initialState(), { type: 'sent', key: commandKey(setpoint('tbt', 90)), value: 90 });
-    expect(s.pending.get('setSetpoint:tbt')).toBe(90);
-    s = server(s, eventMsg({ type: 'commandRejected', commandId: 'x', reason: 'not in manual' }));
+  const CID = '22222222-2222-4222-8222-222222222222';
+  const CID2 = '33333333-3333-4333-8333-333333333333';
+
+  it('commandRejected toasts and clears only the mapped pending entry', () => {
+    let s = reducer(initialState(), { type: 'sent', command: setpoint('tbt', 90), commandId: CID });
+    s = reducer(s, { type: 'sent', command: { type: 'setDose', chemical: 'chlorine', mgL: 1 }, commandId: CID2 });
+    s = server(s, eventMsg({ type: 'commandRejected', commandId: CID, reason: 'not in manual' }));
     expect(s.toast).toEqual({ kind: 'rejected', message: 'not in manual' });
-    expect(s.pending.size).toBe(0);
+    expect([...s.pending.keys()]).toEqual(['setDose:chlorine']);
     expect(reducer(s, { type: 'dismissToast' }).toast).toBeNull();
   });
 
+  it('commandRejected with an unknown id clears all pending', () => {
+    let s = reducer(initialState(), { type: 'sent', command: setpoint('tbt', 90), commandId: CID });
+    s = server(s, eventMsg({ type: 'commandRejected', commandId: 'unknown', reason: 'x' }));
+    expect(s.pending.size).toBe(0);
+  });
+
   it('status confirms a pending command only when the plant reports the value', () => {
-    let s = reducer(initialState(), { type: 'sent', key: 'setSetpoint:tbt', value: 90 });
+    let s = reducer(initialState(), { type: 'sent', command: setpoint('tbt', 90) });
     s = server(s, statusMsg()); // reports 100
     expect(s.pending.has('setSetpoint:tbt')).toBe(true);
     s = server(s, statusMsg({ loops: { tbt: { mode: 'auto', setpoint: 90, output: 50 } } as PlantStatus['loops'] }));
     expect(s.pending.has('setSetpoint:tbt')).toBe(false);
+  });
+
+  it('pump pending is confirmed by running state', () => {
+    let s = reducer(initialState(), { type: 'sent', command: { type: 'pump', pumpId: 'P-102', action: 'start' } });
+    s = server(s, statusMsg());
+    expect(s.pending.has('pump:P-102')).toBe(true);
+    s = server(s, statusMsg({ pumps: { ...status().pumps, 'P-102': { running: true, overhaulRemainingTicks: 0 } } }));
+    expect(s.pending.size).toBe(0);
+  });
+
+  it('an unconfirmed pending entry expires after 3 statuses', () => {
+    let s = reducer(initialState(), { type: 'sent', command: setpoint('tbt', 999), commandId: CID });
+    s = server(s, statusMsg());
+    s = server(s, statusMsg());
+    expect(s.pending.size).toBe(1);
+    s = server(s, statusMsg());
+    expect(s.pending.size).toBe(0);
+    expect(s.commandKeys.size).toBe(0);
+  });
+
+  it('connection drop clears pending', () => {
+    let s = reducer(initialState(), { type: 'sent', command: setpoint('tbt', 90), commandId: CID });
+    s = reducer(s, { type: 'conn', conn: 'closed' });
+    expect(s.pending.size).toBe(0);
+    expect(s.commandKeys.size).toBe(0);
+  });
+
+  it('server errors: game ended / no game go to over or start', () => {
+    for (const reason of ['game ended', 'no game'] as const) {
+      expect(server({ ...initialState(), gameId }, { t: 'error', reason }).gameId).toBeNull();
+      expect(server(initialState(), { t: 'error', reason }).session).toBe('start');
+      const score = { shiftsCompleted: 1, totalProductM3: 1, balanceUsd: 1 };
+      expect(server({ ...initialState(), session: 'room', score }, { t: 'error', reason }).session).toBe('over');
+    }
+  });
+
+  it('server error capacity -> start with capacity toast; others toast only', () => {
+    let s = server({ ...initialState(), session: 'starting' }, { t: 'error', reason: 'capacity' });
+    expect(s.session).toBe('start');
+    expect(s.toast?.kind).toBe('capacity');
+    s = server({ ...initialState(), session: 'room' }, { t: 'error', reason: 'rate limited' });
+    expect(s.session).toBe('room');
+    expect(s.toast).toEqual({ kind: 'error', message: 'rate limited' });
+  });
+
+  it('gameRejected duplicate returns to start with a toast', () => {
+    let s = reducer(initialState(), { type: 'startClicked' });
+    s = server(s, eventMsg({ type: 'gameRejected', reason: 'duplicate' }));
+    expect(s.session).toBe('start');
+    expect(s.toast?.kind).toBe('error');
   });
 
   it('conn action updates the connection state', () => {

@@ -1,5 +1,13 @@
-import { CommandSchema } from '@desal/schema';
+import { ClientMsgSchema, CommandSchema } from '@desal/schema';
 import * as c from '../src/commands';
+
+describe('cmdMsg', () => {
+  it('builds a schema-valid cmd message with a fresh commandId', () => {
+    const a = c.cmdMsg(c.pause());
+    expect(ClientMsgSchema.safeParse(a.msg).success).toBe(true);
+    expect(a.commandId).not.toBe(c.cmdMsg(c.pause()).commandId);
+  });
+});
 
 describe('command builders', () => {
   const all = [

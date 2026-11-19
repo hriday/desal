@@ -66,7 +66,7 @@ export function createSocket(
       }
       const m = r.data;
       if (m.t === 'game') storeGameId(m.gameId);
-      else if (m.t === 'error' && m.reason === 'game ended') storeGameId(null);
+      else if (m.t === 'error' && (m.reason === 'game ended' || m.reason === 'no game')) storeGameId(null);
       onMsg(m);
     };
     sock.onclose = () => {
