@@ -3,7 +3,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 0 12px 12px;
-  min-height: 100%;
+  /* The viewport, not 100%: in the live app the room sits inside `.app`, which has no height. */
+  min-height: 100vh;
+  min-height: 100dvh;
   /* A dim room behind the wall: a soft light from above. */
   background: radial-gradient(120% 70% at 50% 0%, #111c28 0%, var(--bg) 70%);
 }
