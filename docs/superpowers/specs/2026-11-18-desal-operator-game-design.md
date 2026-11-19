@@ -181,7 +181,7 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
 - **Every container is capped** (memory, CPU, processes) because the server is shared. Kafka plus Flink is the heavy part; the starting budget (my call) is about 3 GB in total: Kafka 1 GB, Flink JobManager 0.75 GB, TaskManager 1 GB, simulator and gateway 256 MB each. Tune it after measuring.
 - **Persistent data** lives in the Docker volume `desal_kafka-data`. The career save is the compacted `plant.state` topic, so this volume is the save game. Flink checkpoints go in `desal_flink-checkpoints`.
 - **`scripts/deploy/deploy.sh`** builds images from this machine (for `linux/amd64` unless the server says otherwise), ships them, writes `/opt/desal`, installs the Caddy site, and runs `docker compose up -d`. **`docs/hosting.md`** documents what lives where, how to deploy, roll back, back up the Kafka volume, and remove desal.
-- **Access:** single operator; not a public game. *(My call, pending confirmation: Caddy basic auth in front of the site, with credentials in `/opt/desal/.env`.)*
+- **Access:** single operator; not a public game. Caddy basic auth sits in front of the site, with credentials in `/opt/desal/.env`. *(Confirmed by the user, 2026-11-18.)*
 - Deployment is its own milestone plan, after the gateway and UI exist.
 
 ## 8. Learning support (my call, light-touch)
