@@ -21,7 +21,7 @@ A later phase adds a reverse osmosis (RO) unit.
 
 **Non-goals (for now)**
 - The RO unit (phase 2; the design should make it pluggable, see §10).
-- Multiplayer, accounts, cloud hosting. It runs locally via Docker Compose.
+- Multiplayer and user accounts. (It is hosted on a Linux server, see §7, but for one operator.)
 - An economy, tycoon, or upgrade shop. The player is an operator, not a manager.
 - High-fidelity engineering accuracy (no CFD, no full heat and mass balance solver).
 - Mobile layouts. The target is a desktop browser.
@@ -170,10 +170,19 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
 
 **Degradation:** if Flink is down, monitors still show raw telemetry, and the alarm and score panels show "MONITORING OFFLINE". If the simulator is down, the monitors show "TELEMETRY LOST".
 
-## 7. Local runtime
-- Docker Compose with Kafka (KRaft), Flink JobManager and TaskManager, and a Kafka UI (for learning and inspecting topics).
-- Simulator, gateway, and frontend run as Node processes during development (optionally containerised later).
-- One command brings up infra and one starts the app. *(Exact tooling is the builder's call.)*
+## 7. Runtime: local development and the Linux server
+
+**Local development:** Docker Compose runs Kafka (KRaft), Flink JobManager and TaskManager, and Kafka UI. The simulator, gateway, and frontend run as Node processes. One command brings up the infrastructure and one starts the app.
+
+**Production** (the user's direction: "this will run on a Linux server, similar to all our other projects"). It follows the convention of the user's other projects, for example `compliance_platform/docs/hosting.md`:
+- An Ubuntu 24.04 server that also runs other applications. Everything desal adds is named `desal*`, and removing it leaves the other applications untouched.
+- **Compose project `desal`** in `/opt/desal` (`compose.yml`, `.env`). Every service runs as a container: kafka, flink-jobmanager, flink-taskmanager, simulator, gateway. Images are tagged `desal-<service>:<commit>`, and the two newest of each are kept.
+- **Caddy on the host** already holds ports 80 and 443. desal adds `/etc/caddy/desal.caddy`, imported from the main Caddyfile. Caddy serves the built frontend's static files and reverse-proxies the WebSocket to the gateway, which listens on `127.0.0.1` only. Kafka, Flink, and Kafka UI are never exposed publicly. Kafka UI and the Flink dashboard are reached over an SSH tunnel when needed.
+- **Every container is capped** (memory, CPU, processes) because the server is shared. Kafka plus Flink is the heavy part; the starting budget (my call) is about 3 GB in total: Kafka 1 GB, Flink JobManager 0.75 GB, TaskManager 1 GB, simulator and gateway 256 MB each. Tune it after measuring.
+- **Persistent data** lives in the Docker volume `desal_kafka-data`. The career save is the compacted `plant.state` topic, so this volume is the save game. Flink checkpoints go in `desal_flink-checkpoints`.
+- **`scripts/deploy/deploy.sh`** builds images from this machine (for `linux/amd64` unless the server says otherwise), ships them, writes `/opt/desal`, installs the Caddy site, and runs `docker compose up -d`. **`docs/hosting.md`** documents what lives where, how to deploy, roll back, back up the Kafka volume, and remove desal.
+- **Access:** single operator; not a public game. *(My call, pending confirmation: Caddy basic auth in front of the site, with credentials in `/opt/desal/.env`.)*
+- Deployment is its own milestone plan, after the gateway and UI exist.
 
 ## 8. Learning support (my call, light-touch)
 Since the game comes first, there are no tutorial mode or lessons. Code comments explain the Kafka or Flink concept at the point it is used (for example, why a key was chosen, what a watermark does, why `plant.state` is compacted), and a short `docs/streaming-notes.md` maps each concept to where it lives in the code.
