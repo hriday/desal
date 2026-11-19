@@ -88,3 +88,59 @@ export const BURNER_WEAR_OFFGRADE_MULT = 6;
 export const BRINE_DENSITY = 1025;
 /** Floor on brine recirculation mass flow (kg/s) so zero flow stays finite. */
 export const MIN_RECIRC_KGS = 1;
+
+/** Latent heat of vaporisation used for flash distillate (J/kg). */
+export const LATENT_J_kg = 2.33e6;
+/** Distillate density used to convert mass flow to volume flow (kg/m3). */
+export const DISTILLATE_DENSITY = 1000;
+/** Total scale thickness at which stage effectiveness halves (mm). */
+export const SCALE_REF_MM = 1.0;
+/** Heater temperature rise needed with perfectly clean tubes (degC); divided by mean effectiveness. */
+export const HEATER_DT0_C = 8;
+/** Bottom-stage approach to seawater with perfect vacuum and full cooling flow (degC). */
+export const BOTTOM_APPROACH_C = 6;
+/** Bottom-stage temperature rise at zero vacuum quality (degC). */
+export const BOTTOM_VACUUM_PENALTY_C = 20;
+/** Bottom-stage temperature rise at zero cooling (intake) flow (degC). */
+export const BOTTOM_FLOW_PENALTY_C = 15;
+/** Soft scale growth rate at 110 C with no antiscalant and CF <= 1.5 (mm/s). */
+export const SCALE_K = 3e-6;
+/** Fraction of soft scale that hardens per second (1/s). */
+export const SOFT_TO_HARD_PER_S = 1e-6;
+/** Fractional removal of soft scale per second while ball cleaning runs (1/s). */
+export const BALL_CLEAN_RATE = 2e-4;
+/** Distillate multiplier while ball cleaning runs. */
+export const BALL_CLEAN_DISTILLATE_FACTOR = 0.95;
+
+/** Brine recirculation at full recirc pump output (m3/h). */
+export const RECIRC_PUMP_MAX_M3H = 5000;
+/** Nominal brine recirculation the stage levels are balanced against (m3/h). */
+export const RECIRC_NOMINAL_M3H = 4180;
+/** Recirc flow time constant (s). */
+export const RECIRC_TAU_S = 60;
+/** Vacuum quality with no ejector steam. */
+export const VACUUM_QUALITY_MIN = 0.3;
+/** Nominal vacuum quality. */
+export const VACUUM_QUALITY_NOMINAL = 0.95;
+/** Vacuum quality time constant (s). */
+export const VACUUM_TAU_S = 600;
+/** Concentration factor with blowdown fully closed. */
+export const CF_MAX = 1.8;
+/** Concentration factor with blowdown fully open. */
+export const CF_MIN = 1.2;
+/** Nominal concentration factor (blowdown loop setpoint). */
+export const CF_NOMINAL = 1.45;
+/** Concentration factor time constant (s). */
+export const CF_TAU_S = 3600;
+/** Blowdown flow at full blowdown valve (m3/h). */
+export const BLOWDOWN_MAX_M3H = 1800;
+/** Interstage valve opening (percent) that holds the level at nominal recirc. */
+export const LEVEL_BALANCE_VALVE_PCT = 50;
+/** Level rate per unit of inflow/outflow imbalance (m/s). */
+export const K_LEVEL = 0.002;
+/** Level jump per unit fractional change of recirc flow (m). */
+export const LEVEL_RECIRC_DISTURB_M = 0.5;
+/** Maximum stage level (m). */
+export const LEVEL_MAX_M = 1.0;
+/** Stage level above which brine carries over into the distillate (m). */
+export const CARRYOVER_LEVEL_M = 0.6;

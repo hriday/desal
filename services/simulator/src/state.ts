@@ -7,7 +7,18 @@ import type {
   RestartStep,
   TripCause,
 } from '@desal/schema';
-import { STAGE_COUNT } from './constants.js';
+import {
+  BLOWDOWN_MAX_M3H,
+  CF_MAX,
+  CF_MIN,
+  CF_NOMINAL,
+  LEVEL_BALANCE_VALVE_PCT,
+  RECIRC_NOMINAL_M3H,
+  RECIRC_PUMP_MAX_M3H,
+  STAGE_COUNT,
+  VACUUM_QUALITY_MIN,
+  VACUUM_QUALITY_NOMINAL,
+} from './constants.js';
 
 export type LoopFault = { kind: 'stuck' | 'drift' | 'oscillate'; bias: number };
 export interface Loop {
@@ -91,14 +102,22 @@ export interface PlantState {
 // Nominal steady-state values; a later calibration task tunes these.
 const NOMINAL = {
   tbtC: 108,
-  recircM3h: 4180,
+  recircM3h: RECIRC_NOMINAL_M3H,
   intakeM3h: 5500,
   intakePumpPct: 90,
-  blowdownM3h: 1000,
-  vacuumQuality: 0.95,
+  vacuumQuality: VACUUM_QUALITY_NOMINAL,
+  concentrationFactor: CF_NOMINAL,
   levelM: 0.3,
   firingPct: 63,
   heatMW: 45,
+};
+
+// Actuator outputs (percent) that hold the nominal plant at equilibrium with no PID action.
+const BALANCE = {
+  recircPct: (100 * NOMINAL.recircM3h) / RECIRC_PUMP_MAX_M3H,
+  vacuumPct: (100 * (NOMINAL.vacuumQuality - VACUUM_QUALITY_MIN)) / (1 - VACUUM_QUALITY_MIN),
+  blowdownPct: (100 * (CF_MAX - NOMINAL.concentrationFactor)) / (CF_MAX - CF_MIN),
+  levelPct: LEVEL_BALANCE_VALVE_PCT,
 };
 
 function loop(setpoint: number, output = 0): Loop {
@@ -130,10 +149,10 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
     loops: {
       tbt: loop(NOMINAL.tbtC, NOMINAL.firingPct),
       intakeFlow: loop(NOMINAL.intakeM3h, NOMINAL.intakePumpPct),
-      recirc: loop(NOMINAL.recircM3h),
-      blowdown: loop(NOMINAL.blowdownM3h),
-      vacuum: loop(NOMINAL.vacuumQuality),
-      levels: Array.from({ length: STAGE_COUNT }, () => loop(NOMINAL.levelM)),
+      recirc: loop(NOMINAL.recircM3h, BALANCE.recircPct),
+      blowdown: loop(NOMINAL.concentrationFactor, BALANCE.blowdownPct),
+      vacuum: loop(NOMINAL.vacuumQuality, BALANCE.vacuumPct),
+      levels: Array.from({ length: STAGE_COUNT }, () => loop(NOMINAL.levelM, BALANCE.levelPct)),
     },
     seawater: { tempC: 30, salinityGL: 45, chlorophyllUgL: 1 },
     intake: {
@@ -145,7 +164,11 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
     pretreat: { chlorineMgL: 1, antiscalantMgL: 2, biofouling: 0 },
     heater: { tbtC: NOMINAL.tbtC, firingPct: NOMINAL.firingPct, burnerCondition: 1, heatMW: NOMINAL.heatMW },
     stages,
-    brine: { recircM3h: NOMINAL.recircM3h, concentrationFactor: 1.45, blowdownM3h: NOMINAL.blowdownM3h },
+    brine: {
+      recircM3h: NOMINAL.recircM3h,
+      concentrationFactor: NOMINAL.concentrationFactor,
+      blowdownM3h: (BLOWDOWN_MAX_M3H * BALANCE.blowdownPct) / 100,
+    },
     vacuum: { quality: NOMINAL.vacuumQuality },
     product: { flowM3h: 510, salinityPpm: 10, divertToDrain: false },
     fuel: {
