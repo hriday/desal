@@ -137,6 +137,18 @@ export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });
 }
 
+function issueText(error: z.ZodError): string {
+  const issue = error.issues[0];
+  const path = ['state', ...(issue?.path ?? [])].join('.');
+  return `invalid state at ${path}: ${issue?.message ?? 'unknown'}`;
+}
+
+/** Why `s` would not restore (e.g. a NaN, which JSON writes as null), or null when it is a valid save. */
+export function snapshotIssue(s: PlantState): string | null {
+  const parsed = PlantStateSchema.safeParse(s);
+  return parsed.success ? null : issueText(parsed.error);
+}
+
 export type RestoreResult = { ok: true; state: PlantState } | { ok: false; reason: string };
 
 /** Decode and validate a snapshot. Never throws; anything suspect is reported, never loaded. */
@@ -154,10 +166,6 @@ export function restore(json: string): RestoreResult {
   if (d.format !== FORMAT) return { ok: false, reason: `wrong format: ${JSON.stringify(d.format)}` };
   if (d.version !== VERSION) return { ok: false, reason: `unknown version: ${JSON.stringify(d.version)}` };
   const parsed = PlantStateSchema.safeParse(d.state);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    const path = ['state', ...(issue?.path ?? [])].join('.');
-    return { ok: false, reason: `invalid state at ${path}: ${issue?.message ?? 'unknown'}` };
-  }
+  if (!parsed.success) return { ok: false, reason: issueText(parsed.error) };
   return { ok: true, state: parsed.data };
 }

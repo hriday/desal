@@ -150,6 +150,19 @@ describe('SimRunner + Kafka', () => {
     if (career.kind === 'corrupt') expect(career.reason).toMatch(/invalid JSON/);
   });
 
+  it('fallback: a good save followed by garbage → loadCareer returns the good save and reports the skip', async () => {
+    const good = { ...createInitialState(5, Date.now()), tick: 42 };
+    const { serialize } = await import('../../src/snapshot.js');
+    await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: serialize(good) }] });
+    await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: '{not json' }] });
+    const career = await loadCareer(kafka);
+    expect(career.kind).toBe('found');
+    if (career.kind !== 'found') return;
+    expect(career.state.tick).toBe(42);
+    expect(career.skipped).toHaveLength(1);
+    expect(career.skipped[0]!.reason).toMatch(/invalid JSON/);
+  });
+
   it('bad command: {"nonsense":true} → commandRejected, and the runner keeps ticking', async () => {
     const events = await collect<Event>(TOPICS.events);
     const runner = new SimRunner(kafka, createInitialState(3, Date.now()), { tickMs: 100, log: () => {} });

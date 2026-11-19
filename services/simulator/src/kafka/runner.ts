@@ -1,32 +1,55 @@
 import { PLANT_KEY, TOPICS } from '@desal/schema';
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
-import { restore, serialize } from '../snapshot.js';
+import { restore, serialize, snapshotIssue } from '../snapshot.js';
 import type { PlantState } from '../state.js';
 import { tick, type TickResult } from '../tick.js';
 import { topicName, type KafkaInstance } from './client.js';
-import { readToEnd } from './read.js';
+import { readToEnd, type ReadRecord } from './read.js';
 
 // ---------------------------------------------------------------------------
 // Career load
 // ---------------------------------------------------------------------------
 
-export type CareerLoad = { kind: 'found'; state: PlantState } | { kind: 'none' } | { kind: 'corrupt'; reason: string };
+export type CareerLoad =
+  | {
+      kind: 'found';
+      state: PlantState;
+      /** Newer saves that failed validation and were passed over, newest first. */
+      skipped: { offset: number; reason: string }[];
+    }
+  | { kind: 'none' }
+  | { kind: 'corrupt'; reason: string };
+
+/**
+ * Picks the career from plant.state records (in offset order): the newest save for PLANT_KEY
+ * that restores cleanly. Newer invalid saves are skipped and reported, so one bad write does not
+ * lose the career while an older valid save is still in the topic. A tombstone (null value, an
+ * explicit delete) as the newest record means no career. Corrupt only when no save is valid.
+ */
+export function pickCareer(records: ReadRecord[]): CareerLoad {
+  const saves = records.filter((r) => r.key === PLANT_KEY);
+  if (saves.length === 0 || saves.at(-1)!.value === null) return { kind: 'none' };
+  const skipped: { offset: number; reason: string }[] = [];
+  for (let i = saves.length - 1; i >= 0; i--) {
+    const { offset, value } = saves[i]!;
+    if (value === null) break; // an older delete: nothing before it belongs to this career
+    const r = restore(value);
+    if (r.ok) return { kind: 'found', state: r.state, skipped };
+    skipped.push({ offset, reason: r.reason });
+  }
+  return { kind: 'corrupt', reason: skipped[0]!.reason };
+}
 
 /**
  * Reads the saved career from plant.state.
  *
  * plant.state is compacted, so it holds (at least) the latest snapshot per key;
  * older ones may linger until the cleaner runs, which is why we read every record
- * up to the end and keep the *last* value for PLANT_KEY.
+ * up to the end: the newest is normally the one, and the older ones are the
+ * fallback if it is invalid (see pickCareer).
  */
 export async function loadCareer(kafka: KafkaInstance): Promise<CareerLoad> {
-  const records = await readToEnd(kafka, topicName(TOPICS.state));
-  let latest: string | null | undefined;
-  for (const r of records) if (r.key === PLANT_KEY) latest = r.value;
-  // A null value is a tombstone (an explicit delete), so treat it as no career.
-  if (latest === undefined || latest === null) return { kind: 'none' };
-  const r = restore(latest);
-  return r.ok ? { kind: 'found', state: r.state } : { kind: 'corrupt', reason: r.reason };
+  return pickCareer(await readToEnd(kafka, topicName(TOPICS.state)));
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +195,17 @@ export function isNonRetriableProduceError(e: unknown): boolean {
 
 const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** A state that would not restore: writing it would replace the good save with a corrupt one. */
+export class InvalidSnapshotError extends Error {}
+
+/**
+ * The save record for a state, validated first: JSON turns a NaN or Infinity into null, which
+ * restore() rejects, so an unvalidated write could overwrite the last good save with garbage.
+ * Throws InvalidSnapshotError instead of returning a record that would not restore.
+ */
 function snapshotRecord(s: PlantState): OutRecord {
+  const issue = snapshotIssue(s);
+  if (issue) throw new InvalidSnapshotError(`invalid snapshot at tick ${s.tick}: ${issue}`);
   // Keyed by PLANT_KEY so compaction keeps exactly one latest save per plant.
   return { topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: serialize(s) }] };
 }
@@ -339,13 +372,17 @@ export class SimRunner {
           // this.current is untouched, so the last good state is what gets saved.
           return await this.halt(`tick ${this.current.tick + 1} threw`, e);
         }
+        // Built before the tick is committed: an invalid snapshot throws here, leaving
+        // this.current at the last good state.
+        const records = tickRecords(r);
         // The tick is committed even if its produce fails; its records are kept and
         // resent (at-least-once: a retry may duplicate records that did get through).
         this.current = r.state;
-        await this.produce(tickRecords(r));
+        await this.produce(records);
       }
     } catch (e) {
       if (e instanceof FatalProduceError) return await this.halt('produce failed', e.original);
+      if (e instanceof InvalidSnapshotError) return await this.halt('refusing to save', e);
       return await this.halt('runner error', e);
     }
     if (!this.running) return;

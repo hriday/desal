@@ -53,7 +53,7 @@ pnpm --filter @desal/simulator start --new-career    # discard the save and star
 
 One tick runs per second and is 40 plant seconds. Ctrl-C saves a final snapshot and exits.
 
-The career save is the latest record (key `plant-1`) of the compacted `plant.state` topic. If the save is corrupt the simulator refuses to start and tells you to use `--new-career` (the old record stays in the topic history until compaction removes it).
+The career save is the latest record (key `plant-1`) of the compacted `plant.state` topic. Every snapshot is validated before it is written; a state that would not restore (e.g. a NaN) is never written, and the simulator halts instead (`FATAL ... refusing to save`), leaving the previous save in place. On start, if the newest save is invalid the simulator falls back to the newest valid one still in the topic and logs which saves it skipped. Only if none is valid does it refuse to start and tell you to use `--new-career`; older saves may still be in the topic until compaction removes them.
 
 If Kafka goes down mid-run, the plant freezes and retries the failed tick until Kafka acknowledges it again. Errors that retrying cannot fix halt the simulator instead: an exception inside the plant model, or a produce error the broker will never accept (message too large, invalid record, authorization or authentication failure). It logs `FATAL`, writes a final snapshot of the last good state, and exits with status 1.
 

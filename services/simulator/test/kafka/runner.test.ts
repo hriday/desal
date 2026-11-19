@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as tickModule from '../../src/tick.js';
 import { topicName } from '../../src/kafka/client.js';
 import { commandsGroup, SimRunner, type OutRecord, type SimIO } from '../../src/kafka/runner.js';
+import { restore } from '../../src/snapshot.js';
 import { createInitialState } from '../../src/state.js';
 import { env } from '../envelope.js';
 
@@ -199,13 +200,41 @@ describe('SimRunner fatal errors (fake I/O)', () => {
     expect(lastSnapshot().state.tick).toBe(runner.state.tick);
   });
 
-  it('a retriable produce error still freezes and retries (kafkaDown), not fatal', async () => {
+  it('refuses to write an invalid snapshot (NaN) and halts, keeping the last good save', async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+    const good = runner.state;
+    const real = tickModule.tick;
+    vi.spyOn(tickModule, 'tick').mockImplementation((s, c) => {
+      const r = real(s, c);
+      return { ...r, state: { ...r.state, heater: { ...r.state.heater, tbtC: Number.NaN } }, snapshotDue: true };
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(fatal).toHaveLength(1);
+    expect(logs.some((l) => /fatal/i.test(l) && /invalid snapshot/i.test(l))).toBe(true);
+    // Every save on the topic is valid; the newest is the last good state.
+    for (const r of io.on(TOPICS.state)) expect(restore(String(r.messages[0]!.value)).ok).toBe(true);
+    expect(lastSnapshot().state).toEqual(good);
+    expect(runner.state).toBe(good);
+  });
+
+    it('a retriable produce error still freezes and retries (kafkaDown), not fatal', async () => {
     await vi.advanceTimersByTimeAsync(1000);
     io.down = true;
     await vi.advanceTimersByTimeAsync(5000);
     expect(runner.kafkaDown).toBe(true);
     expect(fatal).toEqual([]);
     io.down = false;
+  });
+});
+
+describe('SimRunner snapshot validation at start', () => {
+  it('start() refuses an invalid initial state and writes nothing', async () => {
+    const io = new FakeIO();
+    const bad = { ...initial, seed: Number.NaN };
+    const runner = new SimRunner(io, bad, { log: () => {} });
+    await expect(runner.start()).rejects.toThrow(/invalid snapshot/i);
+    expect(io.on(TOPICS.state)).toEqual([]);
   });
 });
 
