@@ -7,6 +7,6 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@desal/schema": "workspace:*" },
+  "dependencies": { "@desal/schema": "workspace:*", "zod": "^4" },
   "devDependencies": { "typescript": "^5", "vitest": "^4" }
 }
