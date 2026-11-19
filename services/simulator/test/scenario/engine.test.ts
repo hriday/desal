@@ -110,20 +110,19 @@ describe('scenario engine', () => {
 describe('scenarioForShift', () => {
   it('matches the fixed shifts', () => {
     expect(scenarioForShift(1, 0).target).toEqual({ productM3: 3900, maxSalinityPpm: 25, fuelBudgetUsd: 12000 });
-    expect(scenarioForShift(3, 0).target.productM3).toBe(3700);
+    // Shift 3 keeps its hand-written events and budget; its target follows the run's difficulty.
+    expect(scenarioForShift(3, 0).target.productM3).toBe(Math.round(3900 * 1.08));
     expect(scenarioForShift(3, 0).target.fuelBudgetUsd).toBe(16000);
   });
   it('shift 7 is deterministic per seed and differs across seeds', () => {
     expect(scenarioForShift(7, 5)).toEqual(scenarioForShift(7, 5));
     const seen = new Set([1, 2, 3, 4, 5].map((k) => JSON.stringify(scenarioForShift(7, k))));
     expect(seen.size).toBeGreaterThan(1);
-    const n = scenarioForShift(7, 5).events.length;
-    expect(n).toBeGreaterThanOrEqual(2);
-    expect(n).toBeLessThanOrEqual(4);
+    expect(scenarioForShift(7, 5).events).toHaveLength(3);
     expect(allFinite(scenarioForShift(7, 5))).toBe(true);
   });
-  it('scales the target, capped at 1.15', () => {
-    expect(scenarioForShift(4, 1).target.productM3).toBe(Math.round(3900 * 1.02));
-    expect(scenarioForShift(30, 1).target.productM3).toBe(Math.round(3900 * 1.15));
+  it('scales the target 4% per shift, uncapped (see difficulty.test.ts)', () => {
+    expect(scenarioForShift(4, 1).target.productM3).toBe(Math.round(3900 * 1.12));
+    expect(scenarioForShift(30, 1).target.productM3).toBe(Math.round(3900 * 2.16));
   });
 });

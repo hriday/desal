@@ -1,4 +1,5 @@
 import type { ScenarioKind } from '@desal/schema';
+import { BASE_FUEL_BUDGET_USD, BASE_TARGET_M3, TARGET_GROWTH_PER_SHIFT } from '../constants.js';
 import { nextRandom } from '../rng.js';
 import type { Scenario, ScenarioEvent } from './types.js';
 
@@ -40,56 +41,56 @@ function range(seed: number, lo: number, hi: number, step = 1): [number, number]
   return [Number(n.toFixed(6)), next];
 }
 
-/** Draw sensible params and a message for an event of `kind` occurring at `atMinute`. */
-export function drawEvent(kind: ScenarioKind, atMinute: number, seed: number): [ScenarioEvent, number] {
+/** Round away float noise so params and messages stay readable. */
+const tidy = (x: number): number => Number(x.toFixed(6));
+
+/** Difficulty multiplier for shift `n`: 4% harder per shift, uncapped. */
+const difficulty = (n: number): number => 1 + TARGET_GROWTH_PER_SHIFT * (Math.max(1, n) - 1);
+
+/** Shift `n`'s product target. The hand-written shifts 2-3 follow it too. */
+export const shiftTargetM3 = (n: number): number => Math.round(BASE_TARGET_M3 * difficulty(n));
+
+/** Scheduled events drawn for procedural shift `n` (>= 4): two, one more every second shift, at most eight. */
+export const eventCountForShift = (n: number): number => Math.min(2 + Math.floor((n - 4) / 2), 8);
+
+/**
+ * Draw params and a message for an event of `kind` occurring at `atMinute` in shift `n`. Severity
+ * scales with `n`; timing details (ramp, notice lead) and which pump or loop is hit stay random.
+ */
+export function drawEvent(kind: ScenarioKind, atMinute: number, seed: number, n: number): [ScenarioEvent, number] {
   let s = seed;
   let params: Record<string, number | string> = {};
   switch (kind) {
     case 'bloom': {
-      let peakUgL: number, rampMinutes: number;
-      [peakUgL, s] = range(s, 4, 10);
+      let rampMinutes: number;
       [rampMinutes, s] = range(s, 60, 180, 10);
-      params = { peakUgL, rampMinutes };
+      params = { peakUgL: tidy(6 + 0.5 * n), rampMinutes };
       break;
     }
-    case 'seawaterTemp': {
-      let deltaC: number;
-      [deltaC, s] = range(s, 1, 4, 0.5);
-      params = { deltaC };
+    case 'seawaterTemp':
+      params = { deltaC: tidy(Math.min(8, 0.5 * n)) };
       break;
-    }
     case 'pumpBearing': {
-      let pumpId: string, mult: number;
+      let pumpId: string;
       [pumpId, s] = pick(s, PUMPS);
-      [mult, s] = range(s, 2, 6, 0.5);
-      params = { pumpId, mult };
+      params = { pumpId, mult: tidy(1 + 0.5 * n) };
       break;
     }
     case 'gasCurtailNotice': {
-      let capMW: number, lead: number;
-      [capMW, s] = range(s, 20, 35);
+      let lead: number;
       [lead, s] = range(s, 60, 120, 10);
-      params = { capMW, effectiveMinute: atMinute + lead };
+      params = { capMW: Math.max(0, 40 - 3 * n), effectiveMinute: atMinute + lead };
       break;
     }
-    case 'gasPriceSpike': {
-      let mult: number;
-      [mult, s] = range(s, 1.3, 2, 0.1);
-      params = { mult };
+    case 'gasPriceSpike':
+      params = { mult: tidy(1.2 + 0.05 * n) };
       break;
-    }
-    case 'deliveryDelay': {
-      let ticks: number;
-      [ticks, s] = range(s, 45, 180, 15);
-      params = { ticks };
+    case 'deliveryDelay':
+      params = { ticks: 15 * n };
       break;
-    }
-    case 'demandChange': {
-      let deltaM3: number;
-      [deltaM3, s] = range(s, -300, 300, 50);
-      params = { deltaM3 };
+    case 'demandChange':
+      params = { deltaM3: 25 * n };
       break;
-    }
     case 'controllerFault': {
       let loop: string, fkind: string;
       [loop, s] = pick(s, FAULT_LOOPS);
@@ -107,7 +108,10 @@ function ev(atMinute: number, kind: ScenarioKind, params: ScenarioEvent['params'
   return { atMinute, kind, params, message: eventMessage(kind, params) };
 }
 
-const PROCEDURAL_KINDS: ScenarioKind[] = [
+/** Controller faults appear (scheduled or random) from this shift on. */
+const CONTROLLER_FAULTS_FROM_SHIFT = 5;
+
+const PROCEDURAL_KINDS: readonly ScenarioKind[] = [
   'bloom',
   'seawaterTemp',
   'pumpBearing',
@@ -119,29 +123,36 @@ const PROCEDURAL_KINDS: ScenarioKind[] = [
   'controllerFault',
 ];
 
+/**
+ * The scenario for shift `shiftNumber`. Shifts 1-3 are hand-written; later shifts are procedural,
+ * with more and more severe events as the run goes on (eventCountForShift, drawEvent). Every shift's
+ * target follows shiftTargetM3; the fuel budget (guidance only) scales with it.
+ */
 export function scenarioForShift(shiftNumber: number, rngSeed: number): Scenario {
-  if (shiftNumber <= 1) {
+  const n = Math.max(1, shiftNumber);
+  const target = { productM3: shiftTargetM3(n), maxSalinityPpm: 25 };
+  if (n === 1) {
     return {
       id: 'calm-seas',
-      target: { productM3: 3900, maxSalinityPpm: 25, fuelBudgetUsd: 12000 },
+      target: { ...target, fuelBudgetUsd: BASE_FUEL_BUDGET_USD },
       initial: { seawaterTempC: 30, chlorophyllUgL: 1 },
       events: [],
       randomPerHour: [],
     };
   }
-  if (shiftNumber === 2) {
+  if (n === 2) {
     return {
       id: 'green-water',
-      target: { productM3: 3900, maxSalinityPpm: 25, fuelBudgetUsd: 12000 },
+      target: { ...target, fuelBudgetUsd: BASE_FUEL_BUDGET_USD },
       initial: { seawaterTempC: 30, chlorophyllUgL: 1 },
       events: [ev(90, 'bloom', { peakUgL: 8, rampMinutes: 120 })],
       randomPerHour: [],
     };
   }
-  if (shiftNumber === 3) {
+  if (n === 3) {
     return {
       id: 'pipeline-notice',
-      target: { productM3: 3700, maxSalinityPpm: 25, fuelBudgetUsd: 16000 },
+      target: { ...target, fuelBudgetUsd: 16000 },
       initial: { seawaterTempC: 30, chlorophyllUgL: 1 },
       events: [
         ev(0, 'offgradeOnly', {}),
@@ -153,11 +164,10 @@ export function scenarioForShift(shiftNumber: number, rngSeed: number): Scenario
   }
 
   let s = rngSeed >>> 0;
-  const scale = Math.min(1.15, 1 + 0.02 * (shiftNumber - 3));
-  // Pick 2-4 distinct kinds without replacement.
-  let count: number;
-  [count, s] = range(s, 2, 4);
-  const pool = [...PROCEDURAL_KINDS];
+  // Controller faults join the mix from shift 5. Kinds are drawn without replacement.
+  const faults = n >= CONTROLLER_FAULTS_FROM_SHIFT;
+  const pool = PROCEDURAL_KINDS.filter((k) => faults || k !== 'controllerFault');
+  const count = Math.min(eventCountForShift(n), pool.length);
   const events: ScenarioEvent[] = [];
   for (let i = 0; i < count; i++) {
     let idx: number;
@@ -166,7 +176,7 @@ export function scenarioForShift(shiftNumber: number, rngSeed: number): Scenario
     let atMinute: number;
     [atMinute, s] = range(s, 0, 360, 10);
     let e: ScenarioEvent;
-    [e, s] = drawEvent(kind, atMinute, s);
+    [e, s] = drawEvent(kind, atMinute, s, n);
     events.push(e);
   }
   events.sort((a, b) => a.atMinute - b.atMinute);
@@ -174,16 +184,12 @@ export function scenarioForShift(shiftNumber: number, rngSeed: number): Scenario
   [tempC, s] = range(s, 28, 33, 0.5);
   [chl, s] = range(s, 0.5, 2, 0.1);
   return {
-    id: `procedural-${shiftNumber}`,
-    target: {
-      productM3: Math.round(3900 * scale),
-      maxSalinityPpm: 25,
-      fuelBudgetUsd: Math.round(12000 * scale),
-    },
+    id: `procedural-${n}`,
+    target: { ...target, fuelBudgetUsd: Math.round(BASE_FUEL_BUDGET_USD * difficulty(n)) },
     initial: { seawaterTempC: tempC, chlorophyllUgL: chl },
     events,
     randomPerHour: [
-      { kind: 'controllerFault', p: 0.05 },
+      ...(faults ? [{ kind: 'controllerFault' as const, p: 0.05 }] : []),
       { kind: 'gasPriceSpike', p: 0.05 },
     ],
   };

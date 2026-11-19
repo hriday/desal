@@ -239,5 +239,11 @@ export const SHORTFALL_FINE_PER_M3 = 4;
 export const ACID_CLEAN_COST_USD = 6000;
 /** Cost of a pump overhaul, charged when it starts (USD). */
 export const PUMP_OVERHAUL_COST_USD = 8000;
+/** Product target of shift 1 (m3); later shifts scale it by 1 + TARGET_GROWTH_PER_SHIFT x (n - 1). */
+export const BASE_TARGET_M3 = 3900;
+/** Fractional target growth per shift (uncapped): each shift of a run is harder than the last. */
+export const TARGET_GROWTH_PER_SHIFT = 0.04;
+/** Fuel guidance for shift 1 (USD), shown at handover; scales with the target. */
+export const BASE_FUEL_BUDGET_USD = 12000;
 /** Ticks a pump overhaul lasts (1 plant hour); counted only while the shift runs. */
 export const PUMP_OVERHAUL_TICKS = 90;

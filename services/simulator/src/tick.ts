@@ -11,6 +11,7 @@ import {
 import { pidStep } from './control/pid.js';
 import { settleTick, tickRevenue } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
+import { checkGameOver, endGame } from './gameover.js';
 import { applyTrip, checkInterlocks } from './safety/interlocks.js';
 import { stepAcidClean, stepRestart } from './safety/restart.js';
 import { stepScenario } from './scenario/engine.js';
@@ -159,7 +160,8 @@ function stamped(events: SimEvent[], s: PlantState): { state: PlantState; events
 
 /**
  * Advance the simulation one tick. Commands are applied first; outside a running shift
- * (handover, paused) only the status is emitted and the plant does not advance.
+ * (handover, paused, over) only the status is emitted and the plant does not advance. In a running
+ * tick the game-over rules are checked once, after the plant step and any shift end.
  *
  * Stamp contract: every record one call produces (events, telemetry, status) carries the tick
  * and plantTime of the returned state, i.e. the post-advance clock in a running tick and the
@@ -179,7 +181,8 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
     // A manual trip while paused still counts against the shift.
     s = withAccumulators(s, { ...NO_STEP, trips: commandTrips });
     const out = stamped(events, s);
-    return { state: out.state, telemetry: [], status: toStatus(out.state), events: out.events, snapshotDue: commandTrips > 0 };
+    const snapshotDue = commandTrips > 0 || (s.phase === 'over' && s0.phase !== 'over');
+    return { state: out.state, telemetry: [], status: toStatus(out.state), events: out.events, snapshotDue };
   }
 
   const step = stepPlant(s);
@@ -199,7 +202,13 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
     events.push(...end.events);
     ended = true;
   }
-  const snapshotDue = s.tick % SNAPSHOT_EVERY_TICKS === 0 || ended || trips > 0;
+  const reason = checkGameOver(s, ended);
+  if (reason) {
+    const over = endGame(s, reason);
+    s = over.state;
+    events.push(...over.events);
+  }
+  const snapshotDue = s.tick % SNAPSHOT_EVERY_TICKS === 0 || ended || trips > 0 || reason !== null;
   // Commands and the plant step used the pre-advance clock; stamping here (after the shift-end
   // events) gives every record of the tick the post-tick clock and a gap-free seq.
   const out = stamped(events, s);

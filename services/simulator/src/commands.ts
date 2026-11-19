@@ -8,6 +8,7 @@ import {
 } from './constants.js';
 import { loopKind } from './control/loops.js';
 import { backupOrderCostUsd, canAfford, charge } from './economy.js';
+import { endGame } from './gameover.js';
 import { applyTrip } from './safety/interlocks.js';
 import { beginAcidClean, beginRestart, restartStep, type Result } from './safety/restart.js';
 import { startShift } from './shift.js';
@@ -81,9 +82,10 @@ function apply(s: PlantState, id: string, c: Command): Out {
   switch (c.type) {
     case 'startShift':
       return s.phase === 'handover' ? startShift(s, c.mode) : no('startShift only allowed during handover');
-    // Game lifecycle arrives with game over and the multi-game host.
-    case 'startGame':
     case 'quitGame':
+      return endGame(s, 'quit');
+    // Game creation and liveness belong to the multi-game host.
+    case 'startGame':
     case 'heartbeat':
       return no('not implemented');
     case 'overhaulPump': {
@@ -180,6 +182,7 @@ export function applyCommand(s: PlantState, env: unknown): Out {
   }
   const { commandId, gameId, shiftId, command } = parsed.data;
   if (gameId !== s.run.gameId) return reject(s, commandId, 'wrong game');
+  if (s.phase === 'over') return reject(s, commandId, 'game over');
   const exempt =
     command.type === 'startShift' ||
     command.type === 'startGame' ||

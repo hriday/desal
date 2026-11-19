@@ -158,7 +158,7 @@ export function stepScenario(s: PlantState): { state: PlantState; events: SimEve
     let v: number;
     [v, seed] = nextRandom(seed);
     if (v < (p * TICK_PLANT_S) / 3600) {
-      const [e, next] = drawEvent(kind, elapsedMin, seed);
+      const [e, next] = drawEvent(kind, elapsedMin, seed, state.run.shiftNumber);
       seed = next;
       state = applyEffect(state, e.kind, e.params);
       events.push({ ...base, type: 'scenario', kind: e.kind, message: e.message });
