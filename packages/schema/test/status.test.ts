@@ -21,3 +21,9 @@ test('rejects non-finite new fields and accepts null shiftTarget / changeoverRem
   expect(PlantStatusSchema.safeParse({ ...status, doses: { chlorineMgL: Infinity, antiscalantMgL: 1 } }).success).toBe(false);
   expect(PlantStatusSchema.safeParse({ ...status, fuel: { ...status.fuel, gasCapMW: NaN } }).success).toBe(false);
 });
+
+test('crew, orders and hell are required; null crew parses', () => {
+  const { crew: _c, ...noCrew } = status;
+  expect(PlantStatusSchema.safeParse(noCrew).success).toBe(false);
+  expect(PlantStatusSchema.safeParse({ ...status, crew: null, orders: null, hell: true }).success).toBe(true);
+});

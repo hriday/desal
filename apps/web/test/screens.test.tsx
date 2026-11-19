@@ -17,6 +17,7 @@ const shiftEnd = {
     productM3: 3600, targetM3: 3900, offSpecMinutes: 12, offSpecM3: 80, fuelCostUsd: 5000, fuelBudgetUsd: 12000, trips: 2,
     spentUsd: 7000, nextAllocationUsd: 9000, balanceUsd: 12450,
     damage: { maxHardScaleMm: 0.8, pumpWear: { 'P-101': 0.1, 'P-102': 0.2, 'P-103': 0.3 }, burnerCondition: 0.9 },
+    hell: false, events: [],
   },
 } as unknown as PlantEvent;
 

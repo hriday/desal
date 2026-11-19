@@ -130,6 +130,9 @@ function applyEffect(s: PlantState, kind: ScenarioKind, p: Record<string, number
       };
     case 'controllerFault':
       return setLoopFault(s, String(p.loop), String(p.kind));
+    // Plan 4 Task 4 replaces
+    default:
+      return s;
   }
 }
 
@@ -148,7 +151,8 @@ export function stepScenario(s: PlantState): { state: PlantState; events: SimEve
   let idx = s.scenario.nextEventIndex;
   for (let e = def.events[idx]; e && elapsedMin >= e.atMinute; e = def.events[idx]) {
     state = applyEffect(state, e.kind, e.params);
-    events.push({ ...base, type: 'scenario', kind: e.kind, message: e.message });
+    // Plan 4 Task 5 replaces eventId and radio
+    events.push({ ...base, type: 'scenario', eventId: s.tick * 100 + events.length + 1, kind: e.kind, message: e.message, radio: e.message });
     idx++;
   }
   state = { ...state, scenario: { ...state.scenario, nextEventIndex: idx } };
@@ -161,7 +165,8 @@ export function stepScenario(s: PlantState): { state: PlantState; events: SimEve
       const [e, next] = drawEvent(kind, elapsedMin, seed, state.run.shiftNumber);
       seed = next;
       state = applyEffect(state, e.kind, e.params);
-      events.push({ ...base, type: 'scenario', kind: e.kind, message: e.message });
+      // Plan 4 Task 5 replaces eventId and radio
+      events.push({ ...base, type: 'scenario', eventId: s.tick * 100 + events.length + 1, kind: e.kind, message: e.message, radio: e.message });
     }
   }
   state = { ...state, seed };

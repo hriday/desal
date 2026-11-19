@@ -88,6 +88,8 @@ function apply(s: PlantState, id: string, c: Command): Out {
     case 'startGame':
     case 'heartbeat':
       return no('not implemented');
+    case 'dispatchCrew':
+      return no('not implemented'); // Plan 4 Task 7 replaces
     case 'overhaulPump': {
       const p = s.intake.pumps[c.pumpId];
       if (p.overhaulRemainingTicks > 0) return no('under overhaul');

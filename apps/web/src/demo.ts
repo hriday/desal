@@ -29,6 +29,7 @@ export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
     shiftTarget: demoTarget,
     ballCleaning: false, divertToDrain: false, shiftTicksRemaining: 330, deliveries: [],
     acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard',
+    shiftProductM3: 0, shiftOffSpecM3: 0, productFlowM3h: 0, crew: null, orders: null, hell: null, // Plan 4 Task 11 replaces
     ...over,
   };
 }
@@ -76,9 +77,9 @@ export function demoTrends(points = 600): Trends {
 export function demoEvents(): PlantEvent[] {
   const base = (seq: number, tick: number) => ({ gameId: DEMO_GAME_ID, epoch: 0, seq, tick, plantTime: tick * 40, shiftId: 3 });
   return [
-    { ...base(40, 1440), type: 'shiftStart', scenarioId: 'shift-3', mode: 'auto', target: demoTarget },
+    { ...base(40, 1440), type: 'shiftStart', scenarioId: 'shift-3', mode: 'auto', target: demoTarget, hell: false, orders: { targetM3: demoTarget.productM3, maxSalinityPpm: demoTarget.maxSalinityPpm, budgetUsd: demoTarget.fuelBudgetUsd, lines: [], briefing: [] } },
     { ...base(41, 1440), type: 'accountChange', deltaUsd: 20000, balanceUsd: 25570, cause: 'allocation' },
-    { ...base(42, 1500), type: 'scenario', kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.' },
+    { ...base(42, 1500), type: 'scenario', eventId: 1, kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.', radio: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.' },
     { ...base(43, 1610), type: 'accountChange', deltaUsd: -8000, balanceUsd: 17570, cause: 'overhaul' },
   ];
 }

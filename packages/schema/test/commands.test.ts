@@ -25,3 +25,7 @@ test('newCareer is gone; game lifecycle commands parse', () => {
   expect(CommandSchema.safeParse({ type: 'overhaulPump', pumpId: 'P-103' }).success).toBe(true);
   expect(CommandSchema.safeParse({ type: 'overhaulPump', pumpId: 'P-9' }).success).toBe(false);
 });
+test('dispatchCrew takes a crew job', () => {
+  expect(CommandSchema.safeParse({ type: 'dispatchCrew', job: 'plugTubes' }).success).toBe(true);
+  expect(CommandSchema.safeParse({ type: 'dispatchCrew', job: 'nope' }).success).toBe(false);
+});

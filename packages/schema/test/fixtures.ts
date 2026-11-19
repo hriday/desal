@@ -41,4 +41,10 @@ export const status: PlantStatus = {
   acidCleanRemainingTicks: 0,
   restartAuto: null,
   offeredGrade: 'standard',
+  shiftProductM3: 120,
+  shiftOffSpecM3: 4,
+  productFlowM3h: 55,
+  crew: { job: 'plugTubes', remainingTicks: 30 },
+  orders: { targetM3: 1000, maxSalinityPpm: 25, budgetUsd: 5000, lines: ['Hold salinity'], briefing: [] },
+  hell: null,
 };

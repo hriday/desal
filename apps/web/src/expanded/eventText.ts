@@ -26,6 +26,8 @@ export function eventText(e: PlantEvent): string | null {
       return 'Plant back online';
     case 'scenario':
       return typeof e.message === 'string' && e.message ? e.message.replace(/\bug\/L/g, 'µg/L') : 'Plant conditions changed';
+    case 'eventCleared': // Plan 4 Task 11 replaces
+      return 'A plant problem was cleared';
     case 'fuelChangeover': {
       const from = lower(label(FUEL_TEXT, e.from));
       const to = lower(label(FUEL_TEXT, e.to));

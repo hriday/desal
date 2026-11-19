@@ -132,5 +132,12 @@ export function toStatus(s: PlantState): PlantStatus {
     acidCleanRemainingTicks: s.acidCleanRemainingTicks,
     restartAuto: s.restart?.auto ?? null,
     offeredGrade: s.scenario.effects.offgradeOnly ? 'offgrade' : 'standard',
+    shiftProductM3: s.shift?.acc.productM3 ?? 0,
+    shiftOffSpecM3: s.shift?.acc.offSpecM3 ?? 0,
+    productFlowM3h: s.product.flowM3h,
+    // Plan 4 Tasks 3 and 7 replace
+    crew: null,
+    orders: null,
+    hell: null,
   };
 }

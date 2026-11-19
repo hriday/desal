@@ -27,6 +27,9 @@ export function eventMessage(kind: ScenarioKind, p: Record<string, number | stri
       return `Water demand changed by ${Number(p.deltaM3) >= 0 ? '+' : ''}${p.deltaM3} m3.`;
     case 'controllerFault':
       return `Controller fault on loop ${p.loop}: ${p.kind}.`;
+    // Plan 4 Task 4 replaces
+    default:
+      return kind;
   }
 }
 

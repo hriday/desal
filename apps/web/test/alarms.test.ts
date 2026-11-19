@@ -142,13 +142,14 @@ describe('alarmsFor', () => {
 });
 
 describe('alarmContext', () => {
+  const ORDERS = { targetM3: 1, maxSalinityPpm: 25, budgetUsd: 1, lines: [], briefing: [] };
   const base = { gameId: DEMO_GAME_ID, epoch: 0, tick: 0, plantTime: 0 };
   const events: PlantEvent[] = [
-    { ...base, seq: 1, shiftId: 2, type: 'shiftStart', scenarioId: 'a', mode: 'auto', target: { ...demoTarget, productM3: 1 } },
-    { ...base, seq: 2, shiftId: 2, type: 'scenario', kind: 'controllerFault', message: 'old fault' },
-    { ...base, seq: 3, shiftId: 3, type: 'shiftStart', scenarioId: 'b', mode: 'auto', target: demoTarget },
-    { ...base, seq: 4, shiftId: 3, type: 'scenario', kind: 'bloom', message: 'bloom' },
-    { ...base, seq: 5, shiftId: 3, type: 'scenario', kind: 'controllerFault', message: 'Controller fault on loop vacuum: stuck.' },
+    { ...base, seq: 1, shiftId: 2, type: 'shiftStart', scenarioId: 'a', mode: 'auto', target: { ...demoTarget, productM3: 1 }, hell: false, orders: ORDERS },
+    { ...base, seq: 2, shiftId: 2, type: 'scenario', kind: 'controllerFault', message: 'old fault', eventId: 1, radio: 'old fault' },
+    { ...base, seq: 3, shiftId: 3, type: 'shiftStart', scenarioId: 'b', mode: 'auto', target: demoTarget, hell: false, orders: ORDERS },
+    { ...base, seq: 4, shiftId: 3, type: 'scenario', kind: 'bloom', message: 'bloom', eventId: 1, radio: 'bloom' },
+    { ...base, seq: 5, shiftId: 3, type: 'scenario', kind: 'controllerFault', message: 'Controller fault on loop vacuum: stuck.', eventId: 1, radio: 'Controller fault on loop vacuum: stuck.' },
   ];
 
   it('takes the current shift target and its controller faults only', () => {

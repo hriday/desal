@@ -41,6 +41,12 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
     acidCleanRemainingTicks: 0,
     restartAuto: null,
     offeredGrade: 'standard',
+    shiftProductM3: 0,
+    shiftOffSpecM3: 0,
+    productFlowM3h: 0,
+    crew: null,
+    orders: null,
+    hell: null,
   };
 }
 

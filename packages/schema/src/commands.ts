@@ -28,6 +28,9 @@ export type FuelKind = z.infer<typeof FuelKindSchema>;
 export const FuelGradeSchema = z.enum(['standard', 'offgrade']);
 export type FuelGrade = z.infer<typeof FuelGradeSchema>;
 
+export const CrewJobSchema = z.enum(['plugTubes', 'repairEjector', 'replaceSensor', 'cleanScreens']);
+export type CrewJob = z.infer<typeof CrewJobSchema>;
+
 export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('startShift'), mode: LoopModeSchema }),
   z.object({ type: z.literal('setSetpoint'), loop: LoopIdSchema, value: num }),
@@ -49,6 +52,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('quitGame') }),
   z.object({ type: z.literal('heartbeat') }),
   z.object({ type: z.literal('overhaulPump'), pumpId: PumpIdSchema }),
+  z.object({ type: z.literal('dispatchCrew'), job: CrewJobSchema }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
 

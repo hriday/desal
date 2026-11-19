@@ -69,6 +69,9 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
         scenarioId: scenario.id,
         mode,
         target: { ...scenario.target },
+        // Plan 4 Task 3 replaces
+        hell: false,
+        orders: { targetM3: scenario.target.productM3, maxSalinityPpm: scenario.target.maxSalinityPpm, budgetUsd: scenario.target.fuelBudgetUsd, lines: [], briefing: [] },
       },
       funded.event,
     ],
@@ -103,6 +106,9 @@ export function endShift(s: PlantState): { state: PlantState; events: SimEvent[]
       pumpWear,
       burnerCondition: s.heater.burnerCondition,
     },
+    // Plan 4 Task 3 replaces
+    hell: false,
+    events: [],
   };
   return {
     state: {

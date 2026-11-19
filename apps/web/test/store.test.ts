@@ -17,7 +17,7 @@ function status(over: Partial<PlantStatus> = {}): PlantStatus {
     },
     doses: { chlorineMgL: 1, antiscalantMgL: 2 }, shiftTarget: null,
     ballCleaning: false, divertToDrain: false, shiftTicksRemaining: 100, deliveries: [],
-    acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard', ...over,
+    acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard', shiftProductM3: 0, shiftOffSpecM3: 0, productFlowM3h: 0, crew: null, orders: null, hell: null, ...over,
   };
 }
 const ev = (e: Record<string, unknown>): PlantEvent =>

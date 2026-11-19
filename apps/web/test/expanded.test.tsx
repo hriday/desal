@@ -129,18 +129,19 @@ describe('expanded views', () => {
 describe('eventText', () => {
   const base = { gameId: DEMO_GAME_ID, epoch: 0, seq: 1, tick: 1, plantTime: 3600, shiftId: 3 };
   const SAMPLES: { [K in PlantEvent['type']]: Extract<PlantEvent, { type: K }> } = {
-    shiftStart: { ...base, type: 'shiftStart', scenarioId: 'x', mode: 'auto', target: demoTarget },
+    shiftStart: { ...base, type: 'shiftStart', scenarioId: 'x', mode: 'auto', target: demoTarget, hell: false, orders: { targetM3: 1, maxSalinityPpm: 25, budgetUsd: 1, lines: [], briefing: [] } },
     shiftEnd: {
       ...base, type: 'shiftEnd',
       summary: {
         productM3: 3800, targetM3: 3900, offSpecMinutes: 0, offSpecM3: 0, fuelCostUsd: 9000, fuelBudgetUsd: 12000, trips: 0,
-        spentUsd: 9500, nextAllocationUsd: 19000, balanceUsd: 12000, damage: { maxHardScaleMm: 0.2, pumpWear: { 'P-101': 0.1, 'P-102': 0.2, 'P-103': 0.1 }, burnerCondition: 0.9 },
+        spentUsd: 9500, nextAllocationUsd: 19000, balanceUsd: 12000, damage: { maxHardScaleMm: 0.2, pumpWear: { 'P-101': 0.1, 'P-102': 0.2, 'P-103': 0.1 }, burnerCondition: 0.9 }, hell: false, events: [],
       },
     },
     trip: { ...base, type: 'trip', cause: 'lossOfVacuum' },
     restartProgress: { ...base, type: 'restartProgress', step: 'ignition', ok: false, reason: 'TBT did not rise' },
     online: { ...base, type: 'online' },
-    scenario: { ...base, type: 'scenario', kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.' },
+    scenario: { ...base, type: 'scenario', eventId: 1, kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.', radio: 'Algal bloom.' },
+    eventCleared: { ...base, type: 'eventCleared', eventId: 1, kind: 'bloom', how: 'player' },
     fuelChangeover: { ...base, type: 'fuelChangeover', from: 'gas', to: 'backup', phase: 'done' },
     deliveryArrived: { ...base, type: 'deliveryArrived', tonnes: 50, grade: 'offgrade' },
     commandRejected: { ...base, type: 'commandRejected', commandId: 'c', reason: 'insufficient funds' },

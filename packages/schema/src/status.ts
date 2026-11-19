@@ -1,7 +1,17 @@
 import { z } from 'zod';
-import { FuelGradeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
+import { CrewJobSchema, FuelGradeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
 
 const num = z.number().finite();
+
+// The shift's orders card: what the foreman asks for. briefing is non-empty only on shift 1.
+export const ShiftOrdersSchema = z.object({
+  targetM3: num,
+  maxSalinityPpm: num,
+  budgetUsd: num,
+  lines: z.array(z.string()),
+  briefing: z.array(z.string()),
+});
+export type ShiftOrders = z.infer<typeof ShiftOrdersSchema>;
 
 export const TripCauseSchema = z.enum([
   'tbtHighHigh',
@@ -66,5 +76,13 @@ export const PlantStatusSchema = z.object({
   acidCleanRemainingTicks: num,
   restartAuto: z.boolean().nullable(),
   offeredGrade: FuelGradeSchema,
+  shiftProductM3: num,
+  shiftOffSpecM3: num,
+  productFlowM3h: num,
+  crew: z.object({ job: CrewJobSchema, remainingTicks: num }).nullable(),
+  /** Pending orders during handover, the active ones while running, null otherwise. */
+  orders: ShiftOrdersSchema.nullable(),
+  /** The active shift's hell flag; null in handover so an unwarned hell can't be peeked at. */
+  hell: z.boolean().nullable(),
 });
 export type PlantStatus = z.infer<typeof PlantStatusSchema>;
