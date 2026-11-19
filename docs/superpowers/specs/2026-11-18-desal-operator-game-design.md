@@ -163,7 +163,7 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
   - *Scaling and trend job:* windowed trend per stage (fouling rate, heat transfer degradation), feeding "HI scaling rate" alarms and the debrief.
   - *KPI and score job:* windowed aggregates (production, GOR, fuel cost per m³, off-spec time) and the running shift score.
   - *Shift report job:* on shift-end events, builds the debrief and the next shift's handover report.
-  - Flink uses **event time = plant time** (each record carries its plant timestamp), with watermarks. This matters because the game can pause and time is compressed.
+  - Flink jobs are **keyed process functions over `gameId`**, driven by each record's `tick` and the per-game `seq`/`epoch`, with **no event-time watermarks on `plantTime`**. Plant time is compressed 40x and stops while a game is paused or in handover, so a watermark on it would stall per game and mean nothing across games; within one game, `tick` already orders everything. Where a job needs wall-clock windows (e.g. activity per minute), it uses the broker's LogAppendTime record timestamp. What consumers may rely on (keys, order, seq/epoch, host events) is in `docs/streaming-notes.md`.
 - **Kafka:** a single broker in KRaft mode. Topics are listed below; keys are chosen so per-unit and per-sensor ordering holds.
 - **Shared types:** one TypeScript package of message schemas (telemetry, command, event, alarm, KPI, report) used by the frontend, gateway, and simulator. The Java Flink side mirrors them. JSON over the wire *(my call; schema registry and Avro are a possible later learning step)*.
 

@@ -36,9 +36,11 @@ interface TopicSpec {
 // faster than real time and can pause, so as a Kafka timestamp it would break
 // time-based retention (records "from the future" never expire) and Kafka 4 even
 // rejects timestamps >1 h ahead. LogAppendTime makes the broker stamp wall-clock
-// append time instead, so retention works normally. Event time belongs in the
-// payload: every record carries a `plantTime` field, and that is what Flink will
-// use as event time (with watermarks), not the Kafka timestamp.
+// append time instead, so retention works normally. Plant time travels in the
+// payload (`tick`, `plantTime`); Flink jobs order a game's records by `tick` and
+// `seq`/`epoch` in keyed process functions, with no watermarks on plant time, and
+// use this LogAppendTime timestamp only for wall-clock windows
+// (docs/streaming-notes.md, "What consumers may rely on").
 const LOG_APPEND_TIME = { name: 'message.timestamp.type', value: 'LogAppendTime' };
 
 const SPECS: TopicSpec[] = [
