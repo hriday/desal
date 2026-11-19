@@ -11,7 +11,11 @@ __HOST__ {
 	# TRUSTED_PROXIES (loopback and private ranges): through Docker's port proxy it
 	# sees Caddy as the bridge gateway (172.x.0.1), not as 127.0.0.1.
 	handle /ws* {
-		reverse_proxy 127.0.0.1:8081
+		# Force X-Forwarded-For to the real client even if trusted_proxies is ever
+		# configured: the gateway's per-client limits key on its first address.
+		reverse_proxy 127.0.0.1:8081 {
+			header_up X-Forwarded-For {remote_host}
+		}
 	}
 	handle /healthz {
 		reverse_proxy 127.0.0.1:8081
