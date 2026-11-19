@@ -70,6 +70,33 @@ describe('equipment drawings', () => {
     expect(fuel).toContain('on —');
   });
 
+  it('prototype keys as enum values render "—", not inherited properties', () => {
+    const proto = {
+      ...demoStatus(),
+      status: 'constructor', controlMode: 'toString',
+      fuel: { active: '__proto__', changeoverTo: null, backupGrade: 'hasOwnProperty', gasCurtailmentNotice: null },
+    } as unknown as PlantStatus;
+    const shift = render(<ShiftAccount status={proto} readings={demoReadings()} target={demoTarget} />).container;
+    expect(shift.innerHTML).not.toMatch(/function|native code|\[object/);
+    expect(shift.textContent).not.toMatch(/ONLINE|TRIPPED|Auto mode|Manual mode/);
+    cleanup();
+    const fuel = render(<Fuel status={proto} readings={demoReadings()} target={null} />).container;
+    expect(fuel.innerHTML).not.toMatch(/function|native code|\[object/);
+    expect(fuel.textContent).toContain('on —');
+  });
+
+  it('an unknown changeoverTo shows "→ —" in warn colour', () => {
+    const st = { ...demoStatus(), fuel: { ...demoStatus().fuel, changeoverTo: 'coal' } } as unknown as PlantStatus;
+    const { container } = render(<Fuel status={st} readings={demoReadings()} target={null} />);
+    const t = [...container.querySelectorAll('text')].find((e) => e.textContent === '→ —');
+    expect(t?.getAttribute('fill')).toBe('var(--warn)');
+  });
+
+  it('ProductWater falls back to the default limit for a NaN target limit', () => {
+    const { container } = render(<ProductWater status={demoStatus()} readings={demoReadings()} target={{ ...demoTarget, maxSalinityPpm: NaN }} />);
+    expect(container.textContent).toContain('limit 25 ppm');
+  });
+
   it.each(EQUIPMENT)('%s shows its key values from a sample frame', (_n, C, expected) => {
     const { container } = render(<C status={demoStatus()} readings={demoReadings()} target={demoTarget} />);
     for (const text of expected) expect(container.textContent).toContain(text);

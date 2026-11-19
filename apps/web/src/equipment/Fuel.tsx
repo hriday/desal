@@ -1,4 +1,4 @@
-import { C, clamp01, fmt, get, usd } from './format';
+import { C, DASH, clamp01, fmt, get, label, usd } from './format';
 import type { EquipmentProps } from './types';
 
 /** Tank level drawn as full (t). Deliveries can exceed it; the fill clamps, the number does not. */
@@ -17,9 +17,10 @@ export function Fuel({ status, readings }: EquipmentProps) {
   const notice = typeof fuel?.gasCurtailmentNotice === 'string' ? fuel.gasCurtailmentNotice : null;
   const tankColor = tonnes === undefined ? C.line : tonnes < 10 ? C.bad : tonnes < 40 ? C.warn : C.line;
   const fillH = tonnes === undefined ? 0 : clamp01(tonnes / BACKUP_FULL_T) * 44;
-  const to = fuel?.changeoverTo ? FUEL_TEXT[fuel.changeoverTo] : undefined;
-  const feeding = to ? `→ ${to}` : `on ${(active && FUEL_TEXT[active]) ?? '—'}`;
-  const grade = (fuel && GRADE_TEXT[fuel.backupGrade]) ?? '—';
+  // A changeover to an unknown fuel still shows as a changeover ("→ —"), never as steady running.
+  const to = fuel?.changeoverTo != null ? label(FUEL_TEXT, fuel.changeoverTo) ?? DASH : undefined;
+  const feeding = to ? `→ ${to}` : `on ${label(FUEL_TEXT, active) ?? DASH}`;
+  const grade = label(GRADE_TEXT, fuel?.backupGrade) ?? DASH;
   const deliveries = Array.isArray(status?.deliveries) ? status.deliveries.length : 0;
   return (
     <svg viewBox="0 0 200 104" role="img" aria-label="Fuel">

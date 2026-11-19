@@ -1,5 +1,5 @@
 import type { PlantEvent, PlantStatus } from '@desal/schema';
-import { alarmContext, alarmsFor, byWorst, requiredIntakeM3h, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
+import { alarmContext, alarmsFor, byWorst, requiredIntakeM3h, salinityLimit, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
 import { DEMO_GAME_ID, demoReadings, demoStatus, demoTarget } from '../src/demo';
 
 // A healthy plant: the demo frame with its two deliberate problems removed.
@@ -70,6 +70,21 @@ describe('alarmsFor', () => {
     expect(level('scale', clean({ 'stages.s02.hardScaleMm': 0.299 }))).toBeUndefined();
     expect(level('scale', clean({ 'stages.s02.hardScaleMm': 0.3 }))).toBe('warn');
     expect(level('scale', clean({ 'stages.s02.hardScaleMm': 0.6 }))).toBe('bad');
+  });
+
+  it('salinityLimit: the target limit when finite and positive, else the default', () => {
+    expect(salinityLimit({ ...demoTarget, maxSalinityPpm: 10 })).toBe(10);
+    for (const bad of [NaN, Infinity, 0, -5, null, undefined]) {
+      expect(salinityLimit({ ...demoTarget, maxSalinityPpm: bad as unknown as number })).toBe(25);
+    }
+    expect(salinityLimit(null)).toBe(25);
+    expect(salinityLimit(undefined)).toBe(25);
+  });
+
+  it('salinity: a NaN or zero target limit falls back to the default', () => {
+    const r = clean({ 'product.salinityPpm': 30 });
+    expect(level('salinity', r, demoStatus(), { target: { ...demoTarget, maxSalinityPpm: NaN } })).toBe('bad');
+    expect(level('salinity', clean({ 'product.salinityPpm': 5 }), demoStatus(), { target: { ...demoTarget, maxSalinityPpm: 0 } })).toBeUndefined();
   });
 
   it('salinity: warn at 80% of the limit, bad above it', () => {

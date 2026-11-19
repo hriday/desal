@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_SALINITY_PPM } from '../plantConstants';
+import { salinityLimit } from '../alarms/rules';
 import { C, clamp01, fmt, get, num } from './format';
 import type { EquipmentProps } from './types';
 
@@ -7,7 +7,7 @@ export function ProductWater({ status, readings, target }: EquipmentProps) {
   const flow = get(readings, 'product.flowM3h');
   const sal = get(readings, 'product.salinityPpm');
   const made = get(readings, 'product.shiftProductM3');
-  const limit = num(target?.maxSalinityPpm) && target.maxSalinityPpm > 0 ? target.maxSalinityPpm : DEFAULT_MAX_SALINITY_PPM;
+  const limit = salinityLimit(target);
   const goal = target?.productM3;
   const frac = made !== undefined && num(goal) && goal > 0 ? clamp01(made / goal) : undefined;
   const salColor = sal === undefined ? C.line : sal > limit ? C.bad : sal >= 0.8 * limit ? C.warn : C.ok;

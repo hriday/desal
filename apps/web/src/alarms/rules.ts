@@ -12,6 +12,12 @@ export interface Alarm { id: string; monitor: MonitorId; level: AlarmLevel; text
 /** What the rules need beyond status and readings: the current shift's target and its controller-fault hints. */
 export interface AlarmContext { target?: ShiftTarget | null; faults?: string[] }
 
+/** The shift's salinity limit when finite and positive, else DEFAULT_MAX_SALINITY_PPM. */
+export function salinityLimit(target: ShiftTarget | null | undefined): number {
+  const v = target?.maxSalinityPpm;
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : DEFAULT_MAX_SALINITY_PPM;
+}
+
 export function requiredIntakeM3h(seawaterC: number | undefined): number {
   const hot = Number.isFinite(seawaterC) ? Math.max(0, seawaterC! - 30) : 0;
   return INTAKE_REQUIRED_BASE_M3H * (1 + INTAKE_REQUIRED_PER_C * hot);
@@ -77,7 +83,7 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
   // Product water
   const sal = r('product.salinityPpm');
   if (sal !== undefined) {
-    const limit = ctx.target?.maxSalinityPpm ?? DEFAULT_MAX_SALINITY_PPM;
+    const limit = salinityLimit(ctx.target);
     const level = sal > limit ? 'bad' : sal >= 0.8 * limit ? 'warn' : null;
     add('salinity', 'product', level, `Salinity ${sal.toFixed(1)} ppm, limit ${limit}`);
   }

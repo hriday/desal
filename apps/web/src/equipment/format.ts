@@ -29,6 +29,11 @@ export function ticksToHm(ticks: number | undefined | null): string {
   return `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, '0')}m`;
 }
 
+/** Prototype-safe label lookup: an unknown value (incl. "constructor", "__proto__") gives undefined. */
+export function label(map: Readonly<Record<string, string>>, key: unknown): string | undefined {
+  return typeof key === 'string' && Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /** Stage index (1-based) to its sensor key, e.g. 2 -> "s02". */
