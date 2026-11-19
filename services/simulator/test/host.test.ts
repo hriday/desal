@@ -175,4 +175,11 @@ describe('GameHost', () => {
     expect(a.games().get(gid(1))!.state.seed).toBe(b.games().get(gid(1))!.state.seed);
     expect(a.games().get(gid(1))!.state.seed).not.toBe(a.games().get(gid(2))!.state.seed);
   });
+
+  it('flags snapshotDue on the step a game is created, so a crash before any shift still finds it', () => {
+    const h = new GameHost();
+    const r = h.step([cmd(gid(1), { type: 'startGame' })], 1000);
+    expect(r.perGame.get(gid(1))!.snapshotDue).toBe(true);
+    expect(h.step([], 2000).perGame.get(gid(1))!.snapshotDue).toBe(false);
+  });
 });

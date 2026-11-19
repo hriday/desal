@@ -30,8 +30,11 @@ class FakeIO implements SimIO {
     return this.sent.filter((r) => r.topic === topicName(base));
   }
   /** Every message sent to a topic, flattened. */
-  messages(base: string) {
-    return this.on(base).flatMap((r) => r.messages);
+  messages(base: string, since = 0) {
+    return this.sent
+      .slice(since)
+      .filter((r) => r.topic === topicName(base))
+      .flatMap((r) => r.messages);
   }
 }
 
@@ -112,14 +115,20 @@ describe('SimRunner on GameHost (fake I/O)', () => {
 
   it('produces each tick in the order events, status, telemetry', async () => {
     const before = c.io.sent.length;
-    await vi.advanceTimersByTimeAsync(1000); // applies the startShifts: shiftStart events
+    await vi.advanceTimersByTimeAsync(1000); // applies the startShifts: shiftStart events, and saves
     const order = c.io.sent.slice(before).map((r) => r.topic);
-    expect(order).toEqual([topicName(TOPICS.events), topicName(TOPICS.status), topicName(TOPICS.telemetry)]);
+    expect(order).toEqual([
+      topicName(TOPICS.events),
+      topicName(TOPICS.status),
+      topicName(TOPICS.telemetry),
+      topicName(TOPICS.state),
+    ]);
   });
 
   it('a game ended by quitGame gets its gameEnd, final status, then a tombstone and never a snapshot', async () => {
     await vi.advanceTimersByTimeAsync(2000);
     c.io.deliver(cmd(A, { type: 'quitGame' }));
+    const mark = c.io.sent.length;
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(c.host.games().has(A)).toBe(false);
@@ -127,8 +136,9 @@ describe('SimRunner on GameHost (fake I/O)', () => {
     expect(ends.map((m) => m.key)).toEqual([A]);
     expect(JSON.parse(String(c.io.messages(TOPICS.status).filter((m) => m.key === A).at(-1)!.value)).phase).toBe('over');
     // tick() reports snapshotDue on the ending tick; the runner must tombstone instead.
-    const saves = c.io.messages(TOPICS.state).filter((m) => m.key === A);
+    const saves = c.io.messages(TOPICS.state, mark).filter((m) => m.key === A);
     expect(saves).toEqual([{ key: A, value: null }]);
+    expect(c.io.messages(TOPICS.state).filter((m) => m.key === A).at(-1)).toEqual({ key: A, value: null });
     expect(c.warns).toEqual([]);
   });
 
@@ -143,10 +153,11 @@ describe('SimRunner on GameHost (fake I/O)', () => {
     vi.spyOn(gameoverModule, 'endGame').mockImplementation(() => {
       throw new Error('cannot render');
     });
+    const mark = c.io.sent.length;
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(c.host.games().has(A)).toBe(false);
-    expect(c.io.messages(TOPICS.state).filter((m) => m.key === A)).toEqual([{ key: A, value: null }]);
+    expect(c.io.messages(TOPICS.state, mark).filter((m) => m.key === A)).toEqual([{ key: A, value: null }]);
     expect(c.warns.some((w) => w.includes(A) && /model blew up/.test(w))).toBe(true);
     expect(c.warns.some((w) => w.includes(A) && /without a gameEnd/.test(w))).toBe(true);
     // B is unaffected.
@@ -162,9 +173,10 @@ describe('SimRunner on GameHost (fake I/O)', () => {
       return realTick(s, cmds);
     });
     const bTick = tickOf(c.host, B);
+    const mark = c.io.sent.length;
     await vi.advanceTimersByTimeAsync(2000);
     expect(c.warns.some((w) => w.includes(A) && /model blew up/.test(w))).toBe(true);
-    expect(c.io.messages(TOPICS.state).filter((m) => m.key === A)).toEqual([{ key: A, value: null }]);
+    expect(c.io.messages(TOPICS.state, mark).filter((m) => m.key === A)).toEqual([{ key: A, value: null }]);
     expect(tickOf(c.host, B)).toBe(bTick + 2);
     expect(c.fatal).toEqual([]);
   });
@@ -206,6 +218,7 @@ describe('SimRunner on GameHost (fake I/O)', () => {
     expect(tickOf(c.host, A)).toBeGreaterThanOrEqual(frozen.a + 3);
     expect(tickOf(c.host, B)).toBeGreaterThanOrEqual(frozen.b + 3);
     expect(c.host.games().get(A)!.state.pretreat.chlorineMgL).toBe(3);
+    expect(c.fatal).toEqual([]);
   });
 
   it('an outage longer than the idle limit does not abandon games: their liveness clock freezes too', async () => {
@@ -291,10 +304,12 @@ describe('SimRunner on GameHost (fake I/O)', () => {
       const state: PlantState = s.run.gameId === A ? { ...r.state, heater: { ...r.state.heater, tbtC: Number.NaN } } : r.state;
       return { ...r, state, snapshotDue: true };
     });
+    const mark = c.io.sent.length;
     await vi.advanceTimersByTimeAsync(1000);
-    const saves = c.io.messages(TOPICS.state);
-    expect(saves.map((m) => m.key)).toEqual([B]);
-    for (const m of saves) expect(restore(String(m.value)).ok).toBe(true);
+    expect(c.io.messages(TOPICS.state, mark).map((m) => m.key)).toEqual([B]);
+    // Every save on the topic is valid; A's newest is still its last good (creation) save.
+    for (const m of c.io.messages(TOPICS.state)) expect(restore(String(m.value)).ok).toBe(true);
+    expect(c.io.messages(TOPICS.state).filter((m) => m.key === A)).toHaveLength(1);
     expect(c.warns.some((w) => w.includes(A) && /invalid snapshot/i.test(w))).toBe(true);
     expect(c.fatal).toEqual([]);
   });
@@ -315,6 +330,37 @@ describe('SimRunner start', () => {
     await runner.start([saved]);
     expect(host.games().get(A)).toEqual({ state: saved, lastSeenMs: 5_000_000 });
     const stopping = runner.stop();
+    await vi.advanceTimersByTimeAsync(1000);
+    await stopping;
+  });
+});
+
+describe('SimRunner saves games outside a running shift', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('startGame → one step → plant.state has a save for that game; so does startShift in handover', async () => {
+    const io = new FakeIO();
+    const host = new GameHost();
+    const runner = new SimRunner(io, host, { log: () => {}, warn: () => {} });
+    await runner.start();
+    io.deliver(cmd(A, { type: 'startGame' }));
+    await vi.advanceTimersByTimeAsync(1000);
+    const saves = () => io.messages(TOPICS.state).filter((m) => m.key === A);
+    expect(saves()).toHaveLength(1);
+    const first = restore(String(saves()[0]!.value));
+    expect(first.ok && first.state.phase).toBe('handover');
+
+    await vi.advanceTimersByTimeAsync(3000); // idle handover: nothing new to save
+    expect(saves()).toHaveLength(1);
+
+    io.deliver(cmd(A, { type: 'startShift', mode: 'auto' }));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(saves()).toHaveLength(2);
+    const second = restore(String(saves()[1]!.value));
+    expect(second.ok && second.state.phase).toBe('running');
+
+    const stopping = runner.stop({ finalSnapshot: false });
     await vi.advanceTimersByTimeAsync(1000);
     await stopping;
   });

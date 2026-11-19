@@ -173,12 +173,15 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
     events.push(...r.events);
   }
   const commandTrips = countTrips(events);
+  // Outside a running shift no periodic snapshot comes (the clock is stopped), so a command that
+  // changed the state there (rejections return it unchanged) must be saved now, or a crash loses it.
+  const changedOutsideRunning = s0.phase !== 'running' && s !== s0;
 
   if (s.phase !== 'running') {
     // A manual trip while paused still counts against the shift.
     s = withAccumulators(s, { ...NO_STEP, trips: commandTrips });
     const out = stamped(events, s);
-    const snapshotDue = commandTrips > 0 || (s.phase === 'over' && s0.phase !== 'over');
+    const snapshotDue = changedOutsideRunning || commandTrips > 0 || (s.phase === 'over' && s0.phase !== 'over');
     return { state: out.state, telemetry: [], status: toStatus(out.state), events: out.events, snapshotDue };
   }
 
@@ -203,7 +206,8 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
     s = over.state;
     events.push(...over.events);
   }
-  const snapshotDue = s.tick % SNAPSHOT_EVERY_TICKS === 0 || ended || trips > 0 || reason !== null;
+  const snapshotDue =
+    changedOutsideRunning || s.tick % SNAPSHOT_EVERY_TICKS === 0 || ended || trips > 0 || reason !== null;
   // Commands and the plant step used the pre-advance clock; stamping here (after the shift-end
   // events) gives every record of the tick the post-tick clock and a gap-free seq.
   const out = stamped(events, s);

@@ -196,6 +196,18 @@ describe('emission', () => {
     expect(due).toEqual([30, 60]);
   });
 
+  it('flags snapshotDue outside a running shift when a command was accepted, not when it was rejected', () => {
+    const handover = createInitialState(1, T0, GAME_ID);
+    expect(tick(handover, []).snapshotDue).toBe(false);
+    expect(tick(handover, [env(handover, { type: 'setDose', chemical: 'chlorine', mgL: 3 })]).snapshotDue).toBe(false);
+    expect(tick(handover, [env(handover, { type: 'startShift', mode: 'auto' })]).snapshotDue).toBe(true);
+
+    const paused = tick(running(), [env(running(), { type: 'pause' })]).state;
+    expect(paused.phase).toBe('paused');
+    expect(tick(paused, []).snapshotDue).toBe(false);
+    expect(tick(paused, [env(paused, { type: 'setDose', chemical: 'chlorine', mgL: 3 })]).snapshotDue).toBe(true);
+  });
+
   it('emits every SENSOR_IDS entry exactly once per tick, as valid readings', () => {
     let s = running();
     expect(new Set(SENSOR_IDS).size).toBe(SENSOR_IDS.length);

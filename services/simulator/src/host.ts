@@ -148,7 +148,10 @@ export class GameHost {
         } else {
           const r = tick(entry.state, pending.get(gameId) ?? []);
           entry.state = r.state;
-          out = { telemetry: r.telemetry, status: r.status, events: [...first, ...r.events], snapshotDue: r.snapshotDue };
+          // A game created this step is saved at once: until its first shift runs, no periodic
+          // snapshot would come, and a crash would lose it.
+          const created = lead.has(gameId);
+          out = { telemetry: r.telemetry, status: r.status, events: [...first, ...r.events], snapshotDue: created || r.snapshotDue };
         }
       } catch (e) {
         // Failure isolation: end this game from its last good state; the others carry on.
