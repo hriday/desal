@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "services/*"
+  - "apps/*"
 # Native librdkafka binding: allow its install script (downloads a prebuilt binary).
 allowBuilds:
   "@confluentinc/kafka-javascript": true
