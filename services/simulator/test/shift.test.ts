@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { SHIFT_TICKS } from '../src/constants.js';
 import { loadScenario } from '../src/scenario/engine.js';
 import { scenarioForShift } from '../src/scenario/library.js';
+import { applyTrip } from '../src/safety/interlocks.js';
+import { restartStep } from '../src/safety/restart.js';
 import { startShift } from '../src/shift.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
+import { env } from './envelope.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 
@@ -71,5 +74,39 @@ describe('startShift resets per-shift supply conditions and controller faults', 
     const scenario = { ...base, initial: { ...base.initial, gasCapMW: 30, gasPriceUsdPerGJ: 11 } };
     const s = loadScenario(createInitialState(1, T0), scenario);
     expect(s.fuel.gas).toEqual({ capMW: 30, priceUsdPerGJ: 11, curtailmentNotice: null });
+  });
+});
+
+describe('startShift with a restart in progress', () => {
+  it('drops a Manual restart carried over handover back to tripped, so an Auto shift can restart', () => {
+    const s0 = { ...createInitialState(1, T0), controlMode: 'manual' as const };
+    const tripped = applyTrip(s0, 'manual').state;
+    const r = restartStep(tripped, 'vacuum');
+    if ('rejected' in r) throw new Error(r.rejected);
+    const handover: PlantState = { ...r.state, phase: 'handover' };
+    expect(handover.status).toBe('restarting');
+
+    const started = startShift(handover, 'auto').state;
+    expect(started.status).toBe('tripped');
+    expect(started.restart).toBeNull();
+    expect(started.loops.tbt.output).toBe(0);
+    // No damage, and the original trip record is kept.
+    expect(started.stages).toEqual(handover.stages);
+    expect(started.heater).toEqual(handover.heater);
+    expect(started.trip).toEqual(handover.trip);
+
+    // The Auto one-button restart is accepted now.
+    const t = tick(started, [env(started, { type: 'restart' })]);
+    expect(t.events.filter((e) => e.type === 'commandRejected')).toEqual([]);
+    expect(t.state.status).toBe('restarting');
+  });
+
+  it('leaves an online or tripped plant as it is', () => {
+    const online = createInitialState(1, T0);
+    expect(startShift(online, 'auto').state.status).toBe('online');
+    const tripped = applyTrip(online, 'manual').state;
+    const started = startShift(tripped, 'auto').state;
+    expect(started.status).toBe('tripped');
+    expect(started.trip).toEqual(tripped.trip);
   });
 });

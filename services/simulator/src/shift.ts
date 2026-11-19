@@ -17,12 +17,25 @@ function withModes(loops: PlantState['loops'], mode: 'auto' | 'manual'): PlantSt
   };
 }
 
-/** Begin a shift: draw its scenario, reset shift accumulators, and set the loop modes for the chosen control mode. */
+/**
+ * A restart carried over handover belongs to the previous shift's control mode (a Manual sequence
+ * cannot be continued, nor an Auto one restarted, in the other mode). Abandon it: back to tripped
+ * with the burner off, no damage, the original trip record kept.
+ */
+function abandonCarriedRestart(s: PlantState): PlantState {
+  if (s.status !== 'restarting') return s;
+  return { ...s, status: 'tripped', restart: null, loops: { ...s.loops, tbt: { ...s.loops.tbt, output: 0 } } };
+}
+
+/**
+ * Begin a shift: draw its scenario, reset shift accumulators, abandon any restart left in progress,
+ * and set the loop modes for the chosen control mode.
+ */
 export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: PlantState; events: PlantEvent[] } {
   const careerShiftCount = s.careerShiftCount + 1;
   const [value, seed] = nextRandom(s.seed);
   const scenario = scenarioForShift(careerShiftCount, Math.floor(value * 4294967296));
-  const loaded = loadScenario({ ...s, seed }, scenario);
+  const loaded = loadScenario(abandonCarriedRestart({ ...s, seed }), scenario);
   const state: PlantState = {
     ...loaded,
     careerShiftCount,

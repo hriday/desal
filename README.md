@@ -59,6 +59,8 @@ If Kafka goes down mid-run, the plant freezes and retries the failed tick until 
 
 An Auto (one-button) restart gives up on a step that makes no progress for 90 ticks (1 plant hour; in the ramp, progress means TBT still climbing): it emits `restartProgress` with `ok: false` and a reason, and the plant goes back to `tripped` without trip damage, so you can fix the cause and restart again. Putting the firing (`tbt`) loop in manual during an Auto ramp hands the firing to you, policed by the same ramp-rate limits as a Manual restart.
 
+Each shift starts with fresh supply conditions and healthy controllers: gas back at 60 MW and the base price with no pending curtailment, and no loop faults. Physical damage (scale, pump and burner wear, bearing wear, the backup tank level) carries over. A restart still in progress at handover is abandoned when the next shift starts: the plant is back to `tripped` (no damage) and can be restarted in the new shift's mode.
+
 Set `KAFKA_BROKERS` (comma-separated) to use a broker other than `localhost:9092`.
 
 ## CLI
