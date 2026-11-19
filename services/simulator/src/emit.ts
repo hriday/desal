@@ -94,7 +94,9 @@ export function toStatus(s: PlantState): PlantStatus {
     loops[`level${i + 1}`] = loopView(l);
   });
   const notice = s.fuel.gas.curtailmentNotice;
-  const inShift = s.shift !== null && s.phase !== 'handover';
+  // endShift keeps s.shift (the finished shift's record) until the next startShift, so the phase
+  // decides: in handover or over there is no live shift, hence no target and no ticks remaining.
+  const inShift = s.shift !== null && (s.phase === 'running' || s.phase === 'paused');
   return {
     gameId: s.run.gameId,
     shiftNumber: s.run.shiftNumber,
@@ -120,7 +122,7 @@ export function toStatus(s: PlantState): PlantStatus {
       backupPriceUsdPerGJ: s.fuel.backup.priceUsdPerGJ,
     },
     doses: { chlorineMgL: s.pretreat.chlorineMgL, antiscalantMgL: s.pretreat.antiscalantMgL },
-    shiftTarget: s.shift ? { ...s.shift.target } : null,
+    shiftTarget: inShift ? { ...s.shift!.target } : null,
     ballCleaning: s.ballCleaning,
     divertToDrain: s.product.divertToDrain,
     shiftTicksRemaining: inShift ? Math.max(0, SHIFT_TICKS - (s.tick - s.shift!.startTick)) : 0,

@@ -110,3 +110,21 @@ describe('startShift with a restart in progress', () => {
     expect(started.trip).toEqual(tripped.trip);
   });
 });
+
+describe('status shiftTarget outside a shift', () => {
+  it('is null in handover after shift 2 (endShift keeps s.shift), and the live target while running', () => {
+    let s = createInitialState(1, T0, GAME_ID);
+    for (let n = 1; n <= 2; n++) {
+      const started = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]);
+      expect(started.state.phase).toBe('running');
+      expect(started.status.shiftTarget).toEqual(started.state.shift!.target);
+      s = runShift(started.state);
+    }
+    expect(s.phase).toBe('handover');
+    expect(s.shift?.id).toBe(2); // the finished shift's record is kept until the next startShift
+    expect(tick(s, []).status.shiftTarget).toBeNull();
+    const over = tick(s, [env(s, { type: 'quitGame' })]);
+    expect(over.state.phase).toBe('over');
+    expect(over.status.shiftTarget).toBeNull();
+  });
+});
