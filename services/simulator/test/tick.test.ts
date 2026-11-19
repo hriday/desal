@@ -209,6 +209,15 @@ describe('emission', () => {
     expect(tick(paused, [env(paused, { type: 'setDose', chemical: 'chlorine', mgL: 3 })]).snapshotDue).toBe(true);
   });
 
+  it('flags snapshotDue when a running game is paused', () => {
+    const s = runTicks(running(), 3).state;
+    const paused = tick(s, [env(s, { type: 'pause' })]);
+    expect(paused.state.phase).toBe('paused');
+    expect(paused.events).toEqual([]);
+    expect(paused.snapshotDue).toBe(true);
+    expect(tick(paused.state, []).snapshotDue).toBe(false);
+  });
+
   it('flags snapshotDue on any running tick that emits an event (seq must not rewind after a crash)', () => {
     const s = runTicks(running(), 3).state; // tick 3: no periodic snapshot due
     const quiet = tick(s, []);

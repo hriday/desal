@@ -297,7 +297,7 @@ describe('SimRunner on GameHost (fake I/O)', () => {
     expect(c.io.on(TOPICS.state).at(-1)!.messages.map((m) => m.key).sort()).toEqual([A, B]);
   });
 
-  it("refuses to write a game's invalid snapshot (NaN), keeping its last good save; other games still save", async () => {
+  it("refuses a game's invalid snapshot (NaN) and ends that game as error, with a tombstone; other games still save", async () => {
     const realTick = tickModule.tick;
     vi.spyOn(tickModule, 'tick').mockImplementation((s, cmds) => {
       const r = realTick(s, cmds);
@@ -306,10 +306,17 @@ describe('SimRunner on GameHost (fake I/O)', () => {
     });
     const mark = c.io.sent.length;
     await vi.advanceTimersByTimeAsync(1000);
-    expect(c.io.messages(TOPICS.state, mark).map((m) => m.key)).toEqual([B]);
-    // Every save on the topic is valid; A's newest is still its last good (creation) save.
-    for (const m of c.io.messages(TOPICS.state)) expect(restore(String(m.value)).ok).toBe(true);
-    expect(c.io.messages(TOPICS.state).filter((m) => m.key === A)).toHaveLength(1);
+    const states = c.io.messages(TOPICS.state, mark);
+    expect(states.map((m) => [m.key, m.value === null ? 'tombstone' : 'save'])).toEqual([
+      [B, 'save'],
+      [A, 'tombstone'],
+    ]);
+    // Every save on the topic is valid: the broken state was never written.
+    for (const m of c.io.messages(TOPICS.state)) if (m.value !== null) expect(restore(String(m.value)).ok).toBe(true);
+    const ends = c.io.messages(TOPICS.events, mark).map((m) => JSON.parse(String(m.value))).filter((e) => e.type === 'gameEnd');
+    expect(ends).toEqual([expect.objectContaining({ gameId: A, reason: 'error' })]);
+    expect(c.host.games().has(A)).toBe(false);
+    expect(c.host.games().has(B)).toBe(true);
     expect(c.warns.some((w) => w.includes(A) && /invalid snapshot/i.test(w))).toBe(true);
     expect(c.fatal).toEqual([]);
   });

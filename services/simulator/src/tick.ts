@@ -177,13 +177,19 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   // Outside a running shift no periodic snapshot comes (the clock is stopped), so a command that
   // changed the state there (rejections return it unchanged) must be saved now, or a crash loses it.
   const changedOutsideRunning = s0.phase !== 'running' && s !== s0;
+  // Pausing stops the clock, so no periodic snapshot comes until resume: save the pause point now.
+  const pausedNow = s0.phase === 'running' && s.phase === 'paused';
 
   if (s.phase !== 'running') {
     // A manual trip while paused still counts against the shift.
     s = withAccumulators(s, { ...NO_STEP, trips: commandTrips });
     const out = stamped(events, s);
     const snapshotDue =
-      changedOutsideRunning || events.length > 0 || commandTrips > 0 || (s.phase === 'over' && s0.phase !== 'over');
+      changedOutsideRunning ||
+      pausedNow ||
+      events.length > 0 ||
+      commandTrips > 0 ||
+      (s.phase === 'over' && s0.phase !== 'over');
     return { state: out.state, telemetry: [], status: toStatus(out.state), events: out.events, snapshotDue };
   }
 

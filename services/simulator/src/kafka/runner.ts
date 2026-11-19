@@ -352,7 +352,7 @@ export class SimRunner {
   /**
    * A game's save, validated first: JSON turns a NaN or Infinity into null, which restore()
    * rejects, so an unvalidated write could overwrite the last good save with garbage. An invalid
-   * state is refused (with a warning) and that game keeps its previous save.
+   * state is refused (with a warning) and nothing is written.
    */
   private snapshot(s: PlantState): Message[] {
     const issue = snapshotIssue(s);
@@ -380,13 +380,25 @@ export class SimRunner {
     // Every record is keyed by gameId: Kafka sends equal keys to one partition, so
     // one game's records stay in order, and Flink can keyBy(gameId).
     for (const e of r.hostEvents) events.push({ key: e.gameId, value: JSON.stringify(e) });
+    const failed: string[] = [];
     for (const [gameId, out] of r.perGame) {
       for (const e of out.events) events.push({ key: gameId, value: JSON.stringify(e) });
       if (out.status) status.push({ key: gameId, value: JSON.stringify(out.status) });
       for (const t of out.telemetry) telemetry.push({ key: gameId, value: JSON.stringify(t) });
-      if (ended.has(gameId)) continue;
-      if (out.snapshotDue) state.push(...this.snapshot(this.host.games().get(gameId)!.state));
+      if (ended.has(gameId) || !out.snapshotDue) continue;
+      const save = this.snapshot(this.host.games().get(gameId)!.state);
+      if (save.length > 0) {
+        state.push(...save);
+        continue;
+      }
+      // The state cannot be saved: end the game through the host's error path (gameEnd 'error',
+      // then a tombstone below) rather than let it run on with nothing to resume from.
+      const end = this.host.fail(gameId);
+      for (const e of end?.events ?? []) events.push({ key: gameId, value: JSON.stringify(e) });
+      if (end?.status) status.push({ key: gameId, value: JSON.stringify(end.status) });
+      failed.push(gameId);
     }
+    for (const gameId of failed) state.push({ key: gameId, value: null });
     for (const gameId of r.ended) {
       if (!r.perGame.get(gameId)?.events.some((e) => e.type === 'gameEnd')) {
         this.warn(`game ${gameId} was dropped without a gameEnd (its state could not be rendered)`);

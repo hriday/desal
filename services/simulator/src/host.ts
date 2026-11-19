@@ -201,6 +201,19 @@ export class GameHost {
   }
 
   /**
+   * End a live game as 'error' from outside step(): the runner calls this when the game's state
+   * cannot be saved (an invalid snapshot), so the game ends cleanly instead of running on unsaved.
+   * Returns its final records (gameEnd, best-effort status), or null if no such game is live.
+   */
+  fail(gameId: string): GameTickOut | null {
+    const entry = this.entries.get(gameId);
+    if (!entry) return null;
+    const out = this.finish(entry, 'error', []);
+    this.entries.delete(gameId);
+    return out;
+  }
+
+  /**
    * End a game outside tick() (abandoned or error) through the same endGame path as quitGame. This
    * runs on a state that may be the very thing that broke, so it must never throw: the status is
    * best-effort (null if it cannot be rendered), and if even the gameEnd cannot be built the game
