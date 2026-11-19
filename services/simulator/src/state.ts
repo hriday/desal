@@ -20,6 +20,7 @@ import {
   VACUUM_QUALITY_MIN,
   VACUUM_QUALITY_NOMINAL,
 } from './constants.js';
+import type { Scenario } from './scenario/types.js';
 
 export type LoopFault = { kind: 'stuck' | 'drift' | 'oscillate'; bias: number };
 export interface Loop {
@@ -97,7 +98,7 @@ export interface PlantState {
   };
   ballCleaning: boolean;
   shift: ShiftState | null;
-  scenario: { id: string; nextEventIndex: number; effects: ScenarioEffects };
+  scenario: { id: string; definition: Scenario | null; nextEventIndex: number; effects: ScenarioEffects };
   careerShiftCount: number;
 }
 
@@ -187,6 +188,7 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
     shift: null,
     scenario: {
       id: 'none',
+      definition: null,
       nextEventIndex: 0,
       effects: { offgradeOnly: false, deliveryDelayTicks: 0, chlorophyllTarget: 1, chlorophyllRampPerTick: 0 },
     },
