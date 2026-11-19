@@ -2,37 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { drawEvent, scenarioForShift } from '../../src/scenario/library.js';
 import { allFinite } from '../helpers.js';
 
-const SEEDS = Array.from({ length: 40 }, (_, i) => i * 7919 + 3);
 const target = (n: number) => Math.round(3900 * (1 + 0.04 * (n - 1)));
 
 describe('escalating difficulty', () => {
-  it('shift 10 targets 3900 x 1.36 and draws 5 events', () => {
-    const sc = scenarioForShift(10, 1);
-    expect(sc.target.productM3).toBe(Math.round(3900 * 1.36));
-    expect(sc.events).toHaveLength(5);
-  });
-
   it('the target grows 4% per shift with no cap, hand-written shifts included', () => {
     for (const n of [1, 2, 3, 4, 7, 20, 30, 60]) expect(scenarioForShift(n, 5).target.productM3).toBe(target(n));
     expect(scenarioForShift(30, 1).target.productM3).toBe(Math.round(3900 * 2.16));
   });
 
-  it('shifts 1-3 keep their hand-written scenarios', () => {
-    expect(scenarioForShift(1, 9).id).toBe('calm-seas');
-    expect(scenarioForShift(2, 9).id).toBe('green-water');
-    expect(scenarioForShift(3, 9).id).toBe('pipeline-notice');
-    expect(scenarioForShift(3, 9).events.map((e) => e.kind)).toEqual(['offgradeOnly', 'gasCurtailNotice', 'gasPriceSpike']);
-  });
-
-  it('shift n >= 4 draws min(2 + floor((n - 4) / 2), 8) distinct events', () => {
-    for (let n = 4; n <= 30; n++) {
-      for (const seed of SEEDS.slice(0, 5)) {
-        const sc = scenarioForShift(n, seed);
-        expect(sc.events).toHaveLength(Math.min(2 + Math.floor((n - 4) / 2), 8));
-        expect(new Set(sc.events.map((e) => e.kind)).size).toBe(sc.events.length);
-        expect(allFinite(sc)).toBe(true);
-      }
+  it('scenarioForShift supplies only conditions and the base target', () => {
+    for (const n of [1, 2, 3, 10]) {
+      const sc = scenarioForShift(n, 9);
+      expect(sc.events).toEqual([]);
+      expect(sc.randomPerHour).toEqual([]);
+      expect(sc.target.fuelBudgetUsd).toBe(Math.round(12000 * (1 + 0.04 * (n - 1))));
+      expect(allFinite(sc)).toBe(true);
     }
+    expect(scenarioForShift(1, 9).initial).toEqual({ seawaterTempC: 30, chlorophyllUgL: 1 });
+    expect(scenarioForShift(7, 5)).toEqual(scenarioForShift(7, 5));
   });
 
   it('severity scales with the shift number', () => {
@@ -55,13 +42,17 @@ describe('escalating difficulty', () => {
     expect(drawEvent('demandChange', 0, 1, 40)[0].params.deltaM3).toBe(600);
   });
 
-  it('controller faults appear only from shift 5', () => {
-    for (const seed of SEEDS) {
-      const s4 = scenarioForShift(4, seed);
-      expect(s4.events.some((e) => e.kind === 'controllerFault')).toBe(false);
-      expect(s4.randomPerHour.some((r) => r.kind === 'controllerFault')).toBe(false);
-    }
-    expect(scenarioForShift(5, 1).randomPerHour.some((r) => r.kind === 'controllerFault')).toBe(true);
-    expect(SEEDS.some((seed) => scenarioForShift(12, seed).events.some((e) => e.kind === 'controllerFault'))).toBe(true);
+  it('new sharp kinds draw their params, scaled by difficulty', () => {
+    expect(drawEvent('pumpTrip', 0, 1, 3, ['P-102'])[0].params).toEqual({ pumpId: 'P-102' });
+    const leak = (n: number) => drawEvent('tubeLeak', 0, 1, n)[0].params;
+    expect(leak(1).stage).toBeGreaterThanOrEqual(0);
+    expect(leak(1).stage).toBeLessThan(20);
+    expect(leak(30).ppm).toBeGreaterThan(leak(1).ppm as number);
+    expect(drawEvent('vacuumLoss', 0, 1, 10)[0].params.ratePerMin).toBeGreaterThan(drawEvent('vacuumLoss', 0, 1, 1)[0].params.ratePerMin as number);
+    expect(Object.keys(drawEvent('powerDip', 0, 1, 5)[0].params).sort()).toEqual(['minutes', 'pumpId', 'recircFactor']);
+    expect(Object.keys(drawEvent('storm', 0, 1, 5)[0].params).sort()).toEqual(['deltaC', 'fouling', 'minutes']);
+    const sf = drawEvent('sensorFailure', 0, 1, 5)[0].params;
+    expect(['freeze', 'noise']).toContain(sf.mode);
+    expect(['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum']).toContain(sf.loop);
   });
 });

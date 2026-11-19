@@ -27,10 +27,20 @@ const allLoops = (s: PlantState) => [
 
 describe('startShift resets per-shift supply conditions and controller faults', () => {
   it('shift 3 curtailment and price spike do not carry into shift 4; damage does', () => {
-    // A career that has played shifts 1 and 2: shift 3 (pipeline-notice) is next.
+    // A career that has played shifts 1 and 2; shift 3 is given a curtailment and a price spike by hand.
     const career = { ...createInitialState(1, T0, GAME_ID), run: { ...createInitialState(1, T0, GAME_ID).run, shiftNumber: 2 } };
-    const shift3 = startShift(career, 'auto').state;
-    expect(shift3.scenario.id).toBe('pipeline-notice');
+    const started = startShift(career, 'auto').state;
+    const ev = (atMinute: number, kind: 'offgradeOnly' | 'gasCurtailNotice' | 'gasPriceSpike', params: Record<string, number>) => ({ atMinute, kind, params, message: kind });
+    const shift3: PlantState = {
+      ...started,
+      scenario: {
+        ...started.scenario,
+        definition: {
+          ...started.scenario.definition!,
+          events: [ev(0, 'offgradeOnly', {}), ev(60, 'gasCurtailNotice', { capMW: 25, effectiveMinute: 180 }), ev(240, 'gasPriceSpike', { mult: 1.8 })],
+        },
+      },
+    };
     const ended = runShift(shift3);
     expect(ended.phase).toBe('handover');
     // Shift 3 really did curtail and spike the gas.
