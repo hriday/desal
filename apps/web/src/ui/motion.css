@@ -57,9 +57,13 @@
 /* A tripped or offline unit stands still (wall.css dims it). */
 .monitor[data-down="true"] .monitor__screen * { animation-play-state: paused; }
 
+/* Start screen: water dashes run along the links between the plant strip's units. */
+.start__link::before { animation: link-flow 0.9s linear infinite; }
+@keyframes link-flow { to { transform: translateX(10px); } }
+
 @media (prefers-reduced-motion: reduce) {
   .pipe__flow, .pump__rotor, .flame__flicker, .sea__surface, .brine,
-  .monitor__light, .monitor::before, .alarm::before { animation: none !important; }
+  .monitor__light, .monitor::before, .alarm::before, .start__link::before { animation: none !important; }
   /* Without the pulse, an unseen high alarm keeps a steady glow instead. */
   .monitor[data-alert="high"]::before { opacity: 0.8; }
 }

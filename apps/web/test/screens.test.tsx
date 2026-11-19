@@ -22,10 +22,12 @@ const shiftEnd = {
 } as unknown as PlantEvent;
 
 describe('Start', () => {
-  it('shows the copy and starts a run', () => {
+  it('shows the title, the pitch and starts a run', () => {
     const onStart = vi.fn();
     const { getByText, getByRole } = render(<Start onStart={onStart} />);
-    expect(getByText(/You run a seawater desalination plant/)).toBeTruthy();
+    expect(getByRole('heading', { level: 1, name: 'Desal Operator' })).toBeTruthy();
+    expect(getByText('You run a thermal desalination plant.')).toBeTruthy();
+    expect(getByText(/Deliver the water, shift after shift — until the money, the fuel or the plant gives out\./)).toBeTruthy();
     fireEvent.click(getByRole('button', { name: 'Start a run' }));
     expect(onStart).toHaveBeenCalled();
   });
@@ -98,6 +100,11 @@ describe('Handover', () => {
   it('before the first shift (shiftNumber 0) offers shift 1 at about 3,900 m³; after shift 2 offers shift 3', () => {
     const first = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 0, shiftTarget: null })} events={[]} />);
     expect(first.getByRole('button', { name: 'Start shift 1' })).toBeTruthy();
+    // The whole handover is one shift-log sheet: orders, condition, mode and the Start button.
+    const sheet = first.getByRole('article', { name: 'Shift 1 handover' });
+    for (const name of ['Plant condition', 'Next shift']) expect(sheet.contains(first.getByRole('region', { name }))).toBe(true);
+    expect(sheet.contains(first.getByRole('group', { name: 'Control mode' }))).toBe(true);
+    expect(sheet.contains(first.getByRole('button', { name: 'Start shift 1' }))).toBe(true);
     expect(first.container.textContent).toContain('≈ 3,900 m³');
     cleanup();
     const third = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 2, shiftTarget: null })} events={[]} />);
@@ -127,6 +134,7 @@ describe('GameOver', () => {
     const { container, getByRole } = render(
       <GameOver reason="bankrupt" score={{ totalProductM3: 18250, shiftsCompleted: 5, balanceUsd: 400 }} onPlayAgain={onPlayAgain} />,
     );
+    expect(getByRole('article', { name: 'Final report' }).contains(getByRole('heading', { level: 1, name: 'Final report' }))).toBe(true);
     const t = container.textContent!;
     expect(t).toContain('The budget ran out');
     expect(t.indexOf('18,250')).toBeLessThan(t.indexOf('Shifts completed'));

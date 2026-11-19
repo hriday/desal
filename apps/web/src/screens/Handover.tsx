@@ -1,9 +1,10 @@
 import type { LoopMode, PlantEvent, PlantStatus, ShiftSummary } from '@desal/schema';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { fmt, get, label, num, stageKey, usd } from '../equipment/format';
 import { HOW_TEXT, KIND_TEXT } from '../expanded/labels';
 import { nextTargetEstimateM3 } from '../limits';
 import { STAGE_COUNT } from '../plantConstants';
+import { SheetHead } from './Sheet';
 import './screens.css';
 
 export interface HandoverProps {
@@ -85,6 +86,7 @@ function Condition({ readings, summary }: { readings: Record<string, number>; su
 
 export function Handover({ status, readings, events, onStartShift, onQuit, busy = false }: HandoverProps) {
   const [mode, setMode] = useState<LoopMode>('auto');
+  const titleId = useId();
   const summary = lastSummary(events);
   // status.shiftNumber is the last STARTED shift (0 before the first), so the shift about to start is one more.
   const n = (status?.shiftNumber ?? 0) + 1;
@@ -94,30 +96,32 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
     ? fmt(orders.targetM3, 0, 'm³')
     : status?.shiftTarget ? fmt(status.shiftTarget.productM3, 0, 'm³') : `≈ ${fmt(nextTargetEstimateM3(n))} m³`;
   return (
-    <main className="screen" data-screen="handover">
-      <h1>Shift {n} handover</h1>
-      {summary && <Summary s={summary} />}
-      <Condition readings={readings} summary={summary} />
-      <section aria-label="Next shift">
-        <h2>Next shift</h2>
-        <dl>
-          <dt>Water target</dt><dd>{target}</dd>
-          {orders && <><dt>Salinity limit</dt><dd>{fmt(orders.maxSalinityPpm, 0, 'ppm')}</dd></>}
-          {orders && <><dt>Budget</dt><dd>{usd(orders.budgetUsd)}</dd></>}
-          <dt>Balance</dt><dd>{usd(status?.balanceUsd)}</dd>
-        </dl>
-        {orders && orders.briefing.length > 0 && (
-          <>
-            <h3>Briefing</h3>
-            <ul aria-label="Briefing">{orders.briefing.map((l, i) => <li key={i}>{l}</li>)}</ul>
-          </>
-        )}
-        {orders && orders.lines.length > 0 && (
-          <>
-            <h3>Supervisor's notes</h3>
-            <ul aria-label="Supervisor's notes">{orders.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
-          </>
-        )}
+    <main className="screen screen--board" data-screen="handover">
+      <article className="sheet" aria-labelledby={titleId}>
+        <SheetHead kicker="Shift log" title={`Shift ${n} handover`} id={titleId} />
+        <section aria-label="Next shift">
+          <h2>Orders for shift {n}</h2>
+          <dl>
+            <dt>Water target</dt><dd>{target}</dd>
+            {orders && <><dt>Salinity limit</dt><dd>{fmt(orders.maxSalinityPpm, 0, 'ppm')}</dd></>}
+            {orders && <><dt>Budget</dt><dd>{usd(orders.budgetUsd)}</dd></>}
+            <dt>Balance</dt><dd>{usd(status?.balanceUsd)}</dd>
+          </dl>
+          {orders && orders.briefing.length > 0 && (
+            <>
+              <h3>Briefing</h3>
+              <ul aria-label="Briefing">{orders.briefing.map((l, i) => <li key={i}>{l}</li>)}</ul>
+            </>
+          )}
+          {orders && orders.lines.length > 0 && (
+            <>
+              <h3>Supervisor's notes</h3>
+              <ul aria-label="Supervisor's notes">{orders.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+            </>
+          )}
+        </section>
+        {summary && <Summary s={summary} />}
+        <Condition readings={readings} summary={summary} />
         <fieldset>
           <legend>Control mode</legend>
           <label>
@@ -129,11 +133,11 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
             {' '}Manual: you set every output yourself.
           </label>
         </fieldset>
-      </section>
-      <div className="screen__actions">
-        <button type="button" className="primary" disabled={busy} onClick={() => onStartShift(mode)}>Start shift {n}</button>
-        <button type="button" disabled={busy} onClick={onQuit}>Quit run</button>
-      </div>
+        <div className="screen__actions sheet__actions">
+          <button type="button" className="primary sheet__go" disabled={busy} onClick={() => onStartShift(mode)}>Start shift {n}</button>
+          <button type="button" className="sheet__quit" disabled={busy} onClick={onQuit}>Quit run</button>
+        </div>
+      </article>
     </main>
   );
 }

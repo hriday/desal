@@ -19,8 +19,8 @@
   border-bottom: 1px solid var(--line);
   font: 13px/1.3 var(--mono);
 }
-.topbar__shift { font-weight: 700; font-size: 15px; }
-.topbar__k { color: var(--muted); margin-right: 4px; }
+.topbar__shift { font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: 0.04em; }
+.topbar__k { color: var(--muted); margin-right: 4px; font-family: var(--font-display); font-weight: 600; letter-spacing: 0.04em; }
 .topbar__conn { color: var(--muted); }
 .topbar__quit { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
