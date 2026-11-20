@@ -49,7 +49,6 @@ export function eventMessage(kind: ScenarioKind, p: Record<string, number | stri
     case 'sensorFailure':
       return radioLine(kind, p);
     case 'fuelContamination':
-      return `Fuel lab: the ${p.fuel === 'gas' ? 'gas supply' : 'backup tank'} is contaminated. Switch fuel and flush it.`;
     case 'earthquake':
     case 'tsunami':
       return radioLine(kind, p);

@@ -5,6 +5,7 @@ import type { LoopSensorId, PlantState, SimEvent } from '../state.js';
 import type { ActiveChaos, FiredEvent, QueuedEvent } from './chaosTypes.js';
 import { earthquakeFollowUps } from './disaster/earthquake.js';
 import { applyEffect } from './effects.js';
+import { fuelContaminationViable } from './disaster/fuelContamination.js';
 import { drawEvent, eventMessage } from './library.js';
 import { radioLine } from './orders.js';
 import { pumpAvailability } from './sharp.js';
@@ -124,11 +125,15 @@ export function isSettled(s: PlantState): boolean {
  * The kind and params `e` actually fires with. A trip or dip is re-checked against the pumps now (the
  * plan was drawn at the previous handover): it re-aims at a running pump if its target has stopped,
  * and when no running pump has a spare to replace it, the next sharp kind in SHARP_KINDS order that
- * is valid fires instead, with freshly drawn params.
+ * is valid fires instead, with freshly drawn params. Contaminated fuel hits the fuel the burner is on
+ * now, and is dropped (null) when that is no longer viable; an earthquake's aftershock dip that no
+ * running pump with a spare can take is dropped too (spec 4.4), never substituted.
  */
-function resolve(s: PlantState, e: QueuedEvent, minute: number, seed: number, n: number): [ScenarioKind, Params, number] {
+function resolve(s: PlantState, e: QueuedEvent, minute: number, seed: number, n: number): [ScenarioKind, Params, number] | null {
+  if (e.kind === 'fuelContamination') return fuelContaminationViable(s) ? [e.kind, { fuel: s.fuel.active }, seed] : null;
   if (e.kind !== 'pumpTrip' && e.kind !== 'powerDip') return [e.kind, e.params, seed];
   const { running, spares } = pumpAvailability(s);
+  if (e.disaster && !(running.length > 0 && spares.length > 0)) return null;
   if (running.length > 0 && spares.length > 0) {
     if (running.includes(String(e.params.pumpId))) return [e.kind, e.params, seed];
     const [drawn, next] = drawEvent(e.kind, minute, seed, n, running);
@@ -215,8 +220,19 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
   const head = queue[at]!;
 
   // 4. Fire.
+  const resolved = resolve(s, head, minute, seed, plan.shiftNumber);
+  if (!resolved) {
+    // Unviable now: dropped, nothing fires and no timing changes.
+    const kept = [...queue.slice(0, at), ...queue.slice(at + 1)];
+    const dropped: PlantState = { ...s, chaos: { ...s.chaos, active: { ...active, plan: { ...plan, queue: kept } } } };
+    if (dueDisaster(kept, minute) !== -1) {
+      const more = stepDirector(dropped);
+      return { state: more.state, events: [...events, ...more.events] };
+    }
+    return { state: dropped, events };
+  }
   let kind: ScenarioKind, params: Params;
-  [kind, params, seed] = resolve(s, head, minute, seed, plan.shiftNumber);
+  [kind, params, seed] = resolved;
   const { spares } = pumpAvailability(s);
   s = applyEffect(s, kind, params);
   events.push({

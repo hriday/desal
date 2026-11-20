@@ -92,6 +92,23 @@ describe('each disaster forced into shift 2', () => {
     }, 60_000);
   }
 
+  it('fuelContamination drawn for the other fuel: it still hits the fuel active at fire time and the bot survives', () => {
+    const stale = (s: PlantState): PlantState => {
+      const next = forceIntoShift2('fuelContamination')(s);
+      const plan = next.chaos.pending;
+      if (!plan) return next;
+      const other = s.fuel.active === 'gas' ? 'backup' : 'gas';
+      const queue = plan.queue.map((q) => (q.kind === 'fuelContamination' ? { ...q, params: { fuel: other } } : q));
+      return { ...next, chaos: { ...next.chaos, pending: { ...plan, queue } } };
+    };
+    for (const seed of SEEDS) {
+      const r = playFrom(createInitialState(seed, 0, GAME_ID), 2, {}, stale);
+      expect(fired(r, 'fuelContamination'), `seed ${seed} fired`).toBe(true);
+      expect(r.reason, `seed ${seed}`).toBeNull();
+      expect(r.shiftEnds, `seed ${seed}`).toHaveLength(2);
+    }
+  }, 60_000);
+
   it('fuelContamination ignored: the run ends with the burner failed', () => {
     for (const seed of SEEDS) {
       const r = forced(seed, 'fuelContamination', true);
