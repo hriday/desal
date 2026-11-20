@@ -32,16 +32,14 @@ describe('Start', () => {
     fireEvent.click(getByRole('button', { name: 'Start a run' }));
     expect(onStart).toHaveBeenCalledWith('normal');
   });
-  it('offers a Hard run with its line, and the how-to-play disaster lines', () => {
+  it('offers a Hard run with its line, and no disaster cheat sheet', () => {
     const onStart = vi.fn();
-    const { getByText, getByRole } = render(<Start onStart={onStart} />);
+    const { getByRole, queryByText } = render(<Start onStart={onStart} />);
     const hard = getByRole('button', { name: 'Start a Hard run' });
     expect(hard.parentElement!.nextElementSibling!.textContent).toBe('Every shift is a bad one, and disasters strike.');
     fireEvent.click(hard);
     expect(onStart).toHaveBeenCalledWith('hard');
-    getByText('Contaminated fuel: switch to the other fuel, then send the crew to flush it.');
-    getByText('Earthquake: everything breaks at once; fix what hurts most first.');
-    getByText('Tsunami: when the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens.');
+    expect(queryByText('When disaster strikes')).toBeNull();
   });
   it('capacity shows the message and a retry button', () => {
     const onStart = vi.fn();

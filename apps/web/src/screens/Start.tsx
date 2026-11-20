@@ -59,14 +59,6 @@ export function Start({ onStart, starting = false, capacityMessage = null }: Sta
         </button>
       </div>
       <p className="start__hardnote">Every shift is a bad one, and disasters strike.</p>
-      <section className="start__help" aria-label="Disasters">
-        <h2>When disaster strikes</h2>
-        <ul>
-          <li>Contaminated fuel: switch to the other fuel, then send the crew to flush it.</li>
-          <li>Earthquake: everything breaks at once; fix what hurts most first.</li>
-          <li>Tsunami: when the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens.</li>
-        </ul>
-      </section>
     </main>
   );
 }
