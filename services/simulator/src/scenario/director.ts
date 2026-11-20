@@ -13,6 +13,8 @@ import { pumpAvailability } from './sharp.js';
 const NORMAL_FIRST_MIN = [30, 150] as const;
 /** Normal shift: a later event waits at least this long after the previous one... */
 const NORMAL_GAP_MIN = 60;
+/** Normal shift 1: its two gentle events fire at least this far apart. */
+const SHIFT_ONE_GAP_MIN = 90;
 /** ...and for the plant to settle, unless this long has passed since the previous one. */
 const NORMAL_OVERRIDE_MIN = 180;
 /** Hell shift: the first event fires in this window, and each next one this long after the previous. */
@@ -142,9 +144,6 @@ function resolve(s: PlantState, e: QueuedEvent, minute: number, seed: number, n:
   return [e.kind, e.params, seed]; // unreachable: SHARP_KINDS holds non-pump kinds
 }
 
-/** A follow-up a disaster queued (as opposed to the disaster itself). */
-const isDisasterChild = (e: QueuedEvent): boolean => e.cascade && e.disaster;
-
 /** Events that count toward the shift's cap: disasters and their children do not. */
 const countsTowardCap = (events: readonly { disaster: boolean }[]): number => events.filter((e) => !e.disaster).length;
 
@@ -157,9 +156,11 @@ const CASCADES: Partial<Record<ScenarioKind, { kind: ScenarioKind; p: number; de
 
 /**
  * Run the chaos director for one tick of a running shift: mark fired events that have cleared,
- * then fire the head of the queue when its time has come (normal: once the plant has settled, or
- * the 180-minute override; hell: in a burst, rolling cascades). Emits `eventCleared` and `scenario`
- * events. All randomness comes from `state.seed`.
+ * then fire what is due. A disaster or one of its follow-ups (`disaster: true`) fires as soon as its
+ * minute comes, wherever it sits in the queue and whatever the gap or settling rules, and leaves the
+ * other events' timing alone. Otherwise the first other event fires when its time has come (normal:
+ * once the plant has settled, or the 180-minute override; hell: in a burst, rolling cascades).
+ * Emits `eventCleared` and `scenario` events. All randomness comes from `state.seed`.
  */
 export function stepDirector(s0: PlantState): { state: PlantState; events: SimEvent[] } {
   const a0 = s0.chaos.active;
@@ -179,13 +180,15 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     return { ...e, cleared: true, how };
   });
   let queue = plan.queue;
-  // The head is unscheduled (earliestMinute 0) until the shift's first tick draws its fire minute.
-  const head0 = queue[0];
+  // The first non-disaster event is unscheduled (earliestMinute 0) until the shift's first tick
+  // draws its fire minute.
+  const first = queue.findIndex((e) => !e.disaster);
+  const head0 = queue[first];
   if (a0.lastFiredMinute === null && head0 && head0.earliestMinute === 0) {
     const [lo, hi] = plan.hell ? HELL_FIRST_MIN : NORMAL_FIRST_MIN;
     let at: number;
     [at, seed] = randInt(seed, lo, hi);
-    queue = [{ ...head0, earliestMinute: at }, ...queue.slice(1)];
+    queue = queue.map((e, i) => (i === first ? { ...head0, earliestMinute: at } : e));
   }
   let active: ActiveChaos = { ...a0, fired, plan: { ...plan, queue } };
   let s: PlantState = { ...s0, seed, chaos: { ...s0.chaos, active } };
@@ -196,16 +199,20 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     return { state: { ...s, chaos: { ...s.chaos, active } }, events };
   }
 
-  // 3. Fire the head when its time has come.
-  const head = queue[0];
-  if (!head || minute < head.earliestMinute) return { state: s, events };
-  const last = a0.lastFiredMinute;
-  // A disaster's children fire as soon as they are due, whatever the gap or settling rules.
-  if (!plan.hell && last !== null && !isDisasterChild(head)) {
-    const since = minute - last;
-    if (since < NORMAL_GAP_MIN) return { state: s, events };
-    if (!isSettled(s) && since < NORMAL_OVERRIDE_MIN) return { state: s, events };
+  // 3. Pick what fires: a due disaster (or follow-up) first, else the first other event when its time has come.
+  let at = dueDisaster(queue, minute);
+  if (at === -1) {
+    at = queue.findIndex((e) => !e.disaster);
+    const next = queue[at];
+    if (!next || minute < next.earliestMinute) return { state: s, events };
+    const last = a0.lastFiredMinute;
+    if (!plan.hell && last !== null) {
+      const since = minute - last;
+      if (since < NORMAL_GAP_MIN) return { state: s, events };
+      if (!isSettled(s) && since < NORMAL_OVERRIDE_MIN) return { state: s, events };
+    }
   }
+  const head = queue[at]!;
 
   // 4. Fire.
   let kind: ScenarioKind, params: Params;
@@ -232,13 +239,14 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     disaster: head.disaster,
   };
 
-  // Schedule the next head: never earlier than its own minimum.
-  let rest = queue.slice(1);
-  const next = rest[0];
-  if (next && !isDisasterChild(next)) {
-    let gap = NORMAL_GAP_MIN;
+  // Schedule the next other event: never earlier than its own minimum. A disaster changes nobody's timing.
+  let rest = [...queue.slice(0, at), ...queue.slice(at + 1)];
+  const after = rest.findIndex((e) => !e.disaster);
+  const next = rest[after];
+  if (next && !head.disaster) {
+    let gap = plan.shiftNumber === 1 && !plan.hell ? Math.max(NORMAL_GAP_MIN, SHIFT_ONE_GAP_MIN) : NORMAL_GAP_MIN;
     if (plan.hell) [gap, seed] = randInt(seed, HELL_GAP_MIN[0], HELL_GAP_MIN[1]);
-    rest = [{ ...next, earliestMinute: Math.max(next.earliestMinute, minute + gap) }, ...rest.slice(1)];
+    rest = rest.map((e, i) => (i === after ? { ...next, earliestMinute: Math.max(next.earliestMinute, minute + gap) } : e));
   }
 
   // Hell cascades: an immediate follow-up jumps the queue; a delayed one joins its end.
@@ -258,30 +266,32 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     }
   }
 
-  // A disaster's follow-ups: due ones go ahead of the queue (and fire this same tick), later ones keep time order.
-
+  // A disaster's follow-ups join the queue in time order; due ones fire this same tick.
   if (kind === 'earthquake') {
     let children: Omit<QueuedEvent, 'eventId'>[];
     [children, seed] = earthquakeFollowUps(s, minute, seed);
     for (const c of children) {
       const entry: QueuedEvent = { ...c, eventId: nextEventId++ };
-      const at = rest.findIndex((q) => q.earliestMinute > entry.earliestMinute);
-      rest = at === -1 ? [...rest, entry] : [...rest.slice(0, at), entry, ...rest.slice(at)];
+      const i = rest.findIndex((q) => q.earliestMinute > entry.earliestMinute);
+      rest = i === -1 ? [...rest, entry] : [...rest.slice(0, i), entry, ...rest.slice(i)];
     }
   }
 
   active = {
     plan: { ...plan, queue: rest },
     fired: [...fired, record],
-    lastFiredMinute: minute,
+    // The gap clock runs from the last other event: a disaster pushes back nothing.
+    lastFiredMinute: head.disaster ? a0.lastFiredMinute : minute,
     nextEventId,
   };
-  const after: PlantState = { ...s, seed, chaos: { ...s.chaos, active } };
-  // Disaster children that are due fire in this same tick.
-  const due = rest[0];
-  if (due && isDisasterChild(due) && due.earliestMinute <= minute) {
-    const more = stepDirector(after);
+  const state: PlantState = { ...s, seed, chaos: { ...s.chaos, active } };
+  if (dueDisaster(rest, minute) !== -1) {
+    const more = stepDirector(state);
     return { state: more.state, events: [...events, ...more.events] };
   }
-  return { state: after, events };
+  return { state, events };
 }
+
+/** The index of the first disaster or disaster follow-up in `queue` whose minute has come, or -1. */
+const dueDisaster = (queue: readonly QueuedEvent[], minute: number): number =>
+  queue.findIndex((e) => e.disaster && e.earliestMinute <= minute);

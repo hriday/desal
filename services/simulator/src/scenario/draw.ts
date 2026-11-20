@@ -1,7 +1,8 @@
-import { SHARP_KINDS, type ScenarioKind } from '@desal/schema';
+import { SHARP_KINDS, type GameMode, type ScenarioKind } from '@desal/schema';
 import { nextRandom } from '../rng.js';
 import type { PlantState } from '../state.js';
 import type { ChaosPlan, QueuedEvent } from './chaosTypes.js';
+import { PROFILES } from './difficulty.js';
 import { drawEvent, shiftFuelBudgetUsd, shiftTargetM3 } from './library.js';
 import { buildOrders } from './orders.js';
 import type { Scenario } from './types.js';
@@ -9,6 +10,8 @@ import type { Scenario } from './types.js';
 const HELL_WATER_FACTOR = 0.85;
 const HELL_WARNED_P = 0.7;
 const SHIFT_ONE_KINDS: readonly ScenarioKind[] = ['pumpTrip', 'sensorFailure', 'storm'];
+/** Plant minutes before Normal shift 1's second event may fire. */
+const SHIFT_ONE_SECOND_MINUTE = 90;
 /** Controller faults join the mix from this shift on. */
 const CONTROLLER_FAULTS_FROM_SHIFT = 5;
 const FILLER_KINDS: readonly ScenarioKind[] = [
@@ -23,7 +26,7 @@ const FILLER_KINDS: readonly ScenarioKind[] = [
   'controllerFault',
 ];
 
-/** Chance that shift `n` is a hell shift (when the previous one wasn't). Shift 1 is never hell. */
+/** Chance that shift `n` is a hell shift on Normal (when the previous one wasn't). Shift 1 is never hell. */
 export const hellChance = (n: number): number => Math.min(0.45, 0.1 + 0.04 * (n - 2));
 
 /** Remove and return a uniformly chosen element of `pool`; null when the pool is empty. */
@@ -34,8 +37,11 @@ function take<T>(pool: T[], seed: number): [T | null, number] {
 }
 
 /**
- * Draw shift `shiftNumber`'s chaos plan. Pure: all randomness comes from `seed`, and the next seed is
- * returned. `state` is read only for pump availability and, in the orders, equipment; the orders quote
+ * Draw shift `shiftNumber`'s chaos plan for `mode` (default Normal). Pure: all randomness comes from
+ * `seed`, and the next seed is returned. Hard makes every shift a hell shift, shift 1 included and
+ * back to back. Normal shift 1 holds two different gentle events, the second held back 90 minutes;
+ * Normal shifts 2+ draw exactly as before Hard mode existed. Disasters are drawn separately
+ * (drawDisaster). `state` is read only for pump availability and, in the orders, equipment; the orders quote
  * `initial` (the conditions the shift will start in, default: the state's current seawater).
  */
 export function drawChaosPlan(input: {
@@ -44,9 +50,11 @@ export function drawChaosPlan(input: {
   lastWasHell: boolean;
   state: PlantState;
   initial?: Scenario['initial'];
+  mode?: GameMode;
 }): [ChaosPlan, number] {
   const n = Math.max(1, input.shiftNumber);
   const { state } = input;
+  const alwaysHell = PROFILES[input.mode ?? 'normal'].hellEveryShift;
   const initial = input.initial ?? {
     seawaterTempC: state.seawater.tempC,
     chlorophyllUgL: state.seawater.chlorophyllUgL,
@@ -62,22 +70,26 @@ export function drawChaosPlan(input: {
   let hell = false;
   let warned = false;
   let v: number;
-  if (n >= 2) {
+  if (n >= 2 || alwaysHell) {
     [v, s] = nextRandom(s);
-    hell = !input.lastWasHell && v < hellChance(n);
+    hell = alwaysHell || (!input.lastWasHell && v < hellChance(n));
     [v, s] = nextRandom(s);
     warned = hell && v < HELL_WARNED_P;
   }
+  const gentle = n === 1 && !hell;
 
   // Unviable pump events are simply left out of the pool, which substitutes another sharp kind.
-  const sharp = (n === 1 ? SHIFT_ONE_KINDS : SHARP_KINDS).filter(viable);
+  const sharp = (gentle ? SHIFT_ONE_KINDS : SHARP_KINDS).filter(viable);
   const filler = FILLER_KINDS.filter((k) => n >= CONTROLLER_FAULTS_FROM_SHIFT || k !== 'controllerFault');
   const kinds: ScenarioKind[] = [];
   let kind: ScenarioKind | null;
 
-  if (n === 1) {
-    [kind, s] = take(sharp, s);
-    kinds.push(kind as ScenarioKind);
+  if (gentle) {
+    // Two different kinds; with pump events unviable the pool still holds two.
+    for (let i = 0; i < 2; i++) {
+      [kind, s] = take(sharp, s);
+      if (kind) kinds.push(kind);
+    }
   } else if (hell) {
     [v, s] = nextRandom(s);
     const count = 4 + Math.floor(v * 3);
@@ -99,9 +111,11 @@ export function drawChaosPlan(input: {
 
   const queue: QueuedEvent[] = [];
   for (const k of kinds) {
+    // Normal shift 1's second event waits 90 minutes; every other event is scheduled by the director.
+    const earliestMinute = gentle && queue.length === 1 ? SHIFT_ONE_SECOND_MINUTE : 0;
     let e;
-    [e, s] = drawEvent(k, 0, s, n, running);
-    queue.push({ eventId: queue.length + 1, kind: k, params: e.params, earliestMinute: 0, cascade: false, disaster: false });
+    [e, s] = drawEvent(k, earliestMinute, s, n, running);
+    queue.push({ eventId: queue.length + 1, kind: k, params: e.params, earliestMinute, cascade: false, disaster: false });
   }
 
   const base = shiftTargetM3(n);

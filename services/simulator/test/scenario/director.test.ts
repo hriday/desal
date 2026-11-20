@@ -143,6 +143,34 @@ describe('director: normal shift', () => {
   });
 });
 
+describe('director: disasters', () => {
+  const plan: Q[] = [
+    { kind: 'tubeLeak', params: LEAK },
+    { kind: 'vacuumLoss', params: { ratePerMin: 0.004 } },
+  ];
+  /** `s` with a tsunami disaster due at `minute` added at the end of the queue. */
+  const withDisaster = (s: PlantState, minute: number): PlantState => {
+    const a = s.chaos.active!;
+    const d: QueuedEvent = { eventId: 3, kind: 'tsunami', params: { warnMinutes: 20, coolC: 1 }, earliestMinute: minute, cascade: false, disaster: true };
+    return { ...s, chaos: { ...s.chaos, active: { ...a, plan: { ...a.plan, queue: [...a.plan.queue, d] }, nextEventId: 4 } } };
+  };
+
+  it('fires a due disaster from anywhere in the queue, past the gap and settling rules, without delaying the others', () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const run = (s: PlantState) => until(s, (x) => fired(x).filter((e) => !e.disaster).length > 1 || elapsedMinutes(x) > 420, holdLeak);
+      const plain = run(running(plan, false, seed));
+      const struck = run(withDisaster(running(plan, false, seed), 100));
+      const d = fired(struck).find((e) => e.disaster)!;
+      expect(d.kind).toBe('tsunami');
+      expect(d.atMinute).toBeGreaterThanOrEqual(100);
+      expect(d.atMinute).toBeLessThan(101);
+      // The other two fire exactly when they would have without it.
+      const others = (s: PlantState) => fired(s).filter((e) => !e.disaster).map((e) => [e.kind, e.atMinute]);
+      expect(others(struck)).toEqual(others(plain));
+    }
+  });
+});
+
 describe('director: hell shift', () => {
   it('fires 5 events in a burst, 10–40 minutes apart, regardless of clearing', () => {
     const plan: Q[] = [

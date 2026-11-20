@@ -1,5 +1,6 @@
-import type { CrewJob } from '@desal/schema';
+import type { CrewJob, GameMode, ShiftSummary } from '@desal/schema';
 import { LOOP_RANGES, SHIFT_TICKS } from '../src/constants.js';
+import { contaminationActive } from '../src/scenario/disaster/fuelContamination.js';
 import { createInitialState, NOMINAL, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
 import { env, GAME_ID } from './envelope.js';
@@ -13,17 +14,27 @@ const EJECTOR_CUT_TBT_C = LOOP_RANGES.tbt.spMin;
 const RESTART_RETRY_TICKS = 10;
 
 /** The crew job that answers the worst fault on the plant now (most urgent first), or null. */
-function crewJobFor(f: PlantState['faults']): CrewJob | null {
+function crewJobFor(s: PlantState): CrewJob | null {
+  const f = s.faults;
   if (f.ejectorFailed) return 'repairEjector';
   if (f.tubeLeak) return 'plugTubes';
+  if (f.fuelContamination && !contaminationActive(s)) return 'flushFuel';
   if (Object.keys(f.sensors).length > 0) return 'replaceSensor';
   if (f.stormRemainingTicks > 0 && !f.stormCleanedByCrew) return 'cleanScreens';
+  if (f.tsunami?.surgeDone && !f.tsunami.cleanedAfterSurge) return 'cleanScreens';
   return null;
 }
+
+/** A tsunami is on and its screens are not yet cleaned after the surge: run one pump only. */
+const tsunamiOn = (s: PlantState): boolean => s.faults.tsunami !== null && !s.faults.tsunami.cleanedAfterSurge;
 
 export interface BotOptions {
   /** false: never dispatch the crew and live with the faults (default true). */
   crew?: boolean;
+  /** The run's game mode (default Normal). */
+  mode?: GameMode;
+  /** true: only start each shift (in Auto) and send nothing else, the spec's "passive" player. */
+  passive?: boolean;
 }
 
 /**
@@ -34,11 +45,16 @@ export interface BotOptions {
  * - a failed ejector: cut the TBT setpoint to slow the vacuum loss until the crew has repaired it;
  * - a controller fault: put that loop in Manual;
  * - a bloom: raise the chlorine dose (back to normal at the next shift);
- * - a tube leak, failed ejector, failed sensor or storm: dispatch the matching crew job.
+ * - a tube leak, failed ejector, failed sensor or storm: dispatch the matching crew job;
+ * - contaminated fuel: switch to the other fuel, have the crew flush the contaminated one, then
+ *   switch back;
+ * - a tsunami warning: stop pumps until one runs, and keep it at one through the surge; after the
+ *   surge, have the crew clean the screens, then start the spare (the two-pumps rule).
+ * With `passive`, it only starts each shift in Auto.
  */
 export function engagedCommands(s: PlantState, ticks: number, opts: BotOptions = {}): Record<string, unknown>[] {
   if (s.phase === 'handover') return [env(s, { type: 'startShift', mode: 'auto' }, s.shift?.id ?? null)];
-  if (s.phase !== 'running') return [];
+  if (s.phase !== 'running' || opts.passive) return [];
   const out: Record<string, unknown>[] = [];
   const cmd = (command: Record<string, unknown>) => out.push(env(s, command));
   const fired = s.chaos.active?.fired ?? [];
@@ -49,9 +65,25 @@ export function engagedCommands(s: PlantState, ticks: number, opts: BotOptions =
   }
 
   const pumps = Object.entries(s.intake.pumps);
-  if (pumps.filter(([, p]) => p.running).length < 2) {
+  const running = pumps.filter(([, p]) => p.running);
+  if (tsunamiOn(s)) {
+    // Keep the least-worn running pump; stop the rest.
+    const keep = [...running].sort(([, a], [, b]) => a.wear - b.wear)[0];
+    for (const [id] of running) if (id !== keep?.[0]) cmd({ type: 'pump', pumpId: id, action: 'stop' });
+  } else if (running.length < 2) {
     const spare = pumps.find(([, p]) => !p.running && p.overhaulRemainingTicks === 0 && p.wear < 1);
     if (spare) cmd({ type: 'pump', pumpId: spare[0], action: 'start' });
+  }
+
+  const contaminated = s.faults.fuelContamination?.fuel;
+  const other = s.fuel.active === 'gas' ? 'backup' : 'gas';
+  if (!s.fuel.changeover) {
+    if (contaminationActive(s)) cmd({ type: 'selectFuel', fuel: other });
+    else if (!contaminated) {
+      // Back to the fuel the shift was on once the crew has flushed it.
+      const flushed = fired.find((e) => e.kind === 'fuelContamination' && e.cleared);
+      if (flushed && s.fuel.active !== flushed.params.fuel) cmd({ type: 'selectFuel', fuel: String(flushed.params.fuel) });
+    }
   }
 
   if (s.status === 'tripped' && !s.restart && ticks % RESTART_RETRY_TICKS === 0) cmd({ type: 'restart' });
@@ -68,7 +100,7 @@ export function engagedCommands(s: PlantState, ticks: number, opts: BotOptions =
   }
 
   if (opts.crew !== false && !s.crew) {
-    const job = crewJobFor(s.faults);
+    const job = crewJobFor(s);
     if (job) cmd({ type: 'dispatchCrew', job });
   }
   return out;
@@ -80,21 +112,42 @@ export interface RunResult {
   shifts: number;
   reason: string | null;
   crewSpentUsd: number;
+  /** The summary of every shift that ended, in order. */
+  shiftEnds: ShiftSummary[];
 }
 
-/** Play seed `seed` for up to `maxShifts` with the engaged bot. */
-export function engagedRun(seed: number, maxShifts: number, opts: BotOptions = {}): RunResult {
-  let s = createInitialState(seed, 0, GAME_ID);
+/**
+ * Play from `s` with the bot until the run ends or shift `maxShifts` has ended. `atHandover` may
+ * change the state at each handover before the next shift starts (e.g. to force an event into the
+ * pending plan).
+ */
+export function playFrom(
+  start: PlantState,
+  maxShifts: number,
+  opts: BotOptions = {},
+  atHandover: (s: PlantState) => PlantState = (s) => s,
+): RunResult {
+  let s = start;
   let crewSpentUsd = 0;
   let ticks = 0;
+  const shiftEnds: ShiftSummary[] = [];
   while (s.phase !== 'over' && ticks < maxShifts * (SHIFT_TICKS + 1)) {
+    if (s.phase === 'handover') s = atHandover(s);
     const r = tick(s, engagedCommands(s, ticks, opts));
     s = r.state;
     ticks++;
-    for (const e of r.events) if (e.type === 'accountChange' && e.cause === 'crew') crewSpentUsd -= e.deltaUsd;
+    for (const e of r.events) {
+      if (e.type === 'accountChange' && e.cause === 'crew') crewSpentUsd -= e.deltaUsd;
+      if (e.type === 'shiftEnd') shiftEnds.push(e.summary);
+    }
     if (s.phase === 'handover' && s.run.shiftNumber >= maxShifts) break;
   }
-  return { state: s, shifts: s.run.shiftNumber, reason: s.run.over?.reason ?? null, crewSpentUsd };
+  return { state: s, shifts: s.run.shiftNumber, reason: s.run.over?.reason ?? null, crewSpentUsd, shiftEnds };
+}
+
+/** Play seed `seed` for up to `maxShifts` with the engaged bot (or the passive one). */
+export function engagedRun(seed: number, maxShifts: number, opts: BotOptions = {}): RunResult {
+  return playFrom(createInitialState(seed, 0, GAME_ID, opts.mode ?? 'normal'), maxShifts, opts);
 }
 
 export const median = (xs: number[]): number => {

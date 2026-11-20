@@ -7,9 +7,15 @@ import { createInitialState, NOMINAL } from '../src/state.js';
 import { tick } from '../src/tick.js';
 import { env, GAME_ID } from './envelope.js';
 
+/**
+ * A seed whose shift 1 draws no pump trip (a sensor failure, then a storm). Untouched, Auto never
+ * starts the spare, so a tripped pump would cost the shift its target whatever the calibration.
+ */
+const NO_PUMP_TRIP_SEED = 14;
+
 /** An untouched shift 1 in Auto: no commands for the whole shift (bar an optional TBT setpoint at the start). */
 function untouchedShift(tbtSetpointC = NOMINAL.tbtC) {
-  let s = startShift(createInitialState(1, 0, GAME_ID), 'auto').state;
+  let s = startShift(createInitialState(NO_PUMP_TRIP_SEED, 0, GAME_ID), 'auto').state;
   if (tbtSetpointC !== s.loops.tbt.setpoint) {
     const r = applyCommand(s, env(s, { type: 'setSetpoint', loop: 'tbt', value: tbtSetpointC }));
     if (r.events.some((e) => e.type === 'commandRejected')) throw new Error('setpoint rejected');

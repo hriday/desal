@@ -6,7 +6,8 @@ import { scenarioForShift } from '../src/scenario/library.js';
 import { applyTrip } from '../src/safety/interlocks.js';
 import { restartStep } from '../src/safety/restart.js';
 import { toStatus } from '../src/emit.js';
-import { drawPendingPlan, startShift } from '../src/shift.js';
+import { drawDisaster } from '../src/scenario/disaster/draw.js';
+import { drawPendingPlan, endShift, startShift } from '../src/shift.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
 import { env, GAME_ID } from './envelope.js';
@@ -294,5 +295,36 @@ describe('status orders and hell', () => {
     const s = { ...fresh(), crew: { job: 'plugTubes' as const, remainingTicks: 7 } };
     expect(toStatus(s).crew).toEqual({ job: 'plugTubes', remainingTicks: 7 });
     expect(toStatus(fresh()).crew).toBeNull();
+  });
+});
+
+describe('disasters in the plan', () => {
+  /** A Hard game at the handover after shift 1, whose shift 2 rolls a disaster. */
+  const hardAfterShift1 = (): PlantState => {
+    for (let seed = 1; seed < 1000; seed++) {
+      const s0 = createInitialState(seed, T0, GAME_ID, 'hard');
+      const s = { ...s0, run: { ...s0.run, shiftNumber: 1 } };
+      if (drawDisaster(s, 2)) return s;
+    }
+    throw new Error('no seed rolls a disaster');
+  };
+
+  it('adds the rolled disaster to the plan in time order, with the next eventId', () => {
+    const s = hardAfterShift1();
+    const plan = drawPendingPlan(s).chaos.pending!;
+    const disasters = plan.queue.filter((e) => e.disaster);
+    expect(disasters).toEqual([{ ...drawDisaster(s, 2)!, eventId: plan.queue.length }]);
+    const others = plan.queue.filter((e) => !e.disaster);
+    expect(others.map((e) => e.eventId)).toEqual(others.map((_, i) => i + 1));
+    const minutes = plan.queue.map((e) => e.earliestMinute);
+    expect(minutes).toEqual([...minutes].sort((x, y) => x - y));
+  });
+
+  it('records the disaster shift at shift start, so the next shift cannot have one', () => {
+    const started = startShift(drawPendingPlan(hardAfterShift1()), 'auto').state;
+    expect(started.chaos.lastHadDisaster).toBe(true);
+    const next = endShift(started).state;
+    expect(next.chaos.pending!.queue.some((e) => e.disaster)).toBe(false);
+    expect(startShift(next, 'auto').state.chaos.lastHadDisaster).toBe(false);
   });
 });

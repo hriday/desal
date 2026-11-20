@@ -70,7 +70,8 @@ describe('allocation', () => {
 
 describe('water first: in-spec water is what counts', () => {
   it('an untouched shift 1 in Auto meets its target in spec with no surprise charges', () => {
-    let s = running();
+    // Seed 14's shift 1 draws no pump trip: untouched, Auto never starts the spare.
+    let s = startShift(createInitialState(14, T0, GAME_ID), 'auto').state;
     const startBalance = s.run.balanceUsd;
     const events: PlantEvent[] = [];
     for (let i = 0; i < SHIFT_TICKS; i++) {

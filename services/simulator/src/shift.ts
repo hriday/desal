@@ -2,6 +2,8 @@ import type { PumpId, ShiftSummary } from '@desal/schema';
 import { TICK_PLANT_S } from './constants.js';
 import { allocationUsd, credit } from './economy.js';
 import { nextRandom } from './rng.js';
+import { drawDisaster } from './scenario/disaster/draw.js';
+import type { ChaosPlan, QueuedEvent } from './scenario/chaosTypes.js';
 import { drawChaosPlan } from './scenario/draw.js';
 import { loadScenario } from './scenario/engine.js';
 import { scenarioForShift } from './scenario/library.js';
@@ -37,15 +39,35 @@ const previousResult = (s: PlantState): { productM3: number; targetM3: number } 
 /**
  * Draw the next shift's chaos plan (shift `run.shiftNumber + 1`) and store it as `chaos.pending`.
  * The shift's starting conditions are drawn first, from the same seed sequence, and stored on the
- * plan so the orders quote exactly what the player will get. Advances `seed`; called at game
- * creation and at every shift end.
+ * plan so the orders quote exactly what the player will get. A disaster, if one is rolled (on its
+ * own substream), joins the queue in time order. Advances `seed`; called at game creation and at every
+ * shift end.
  */
 export function drawPendingPlan(s: PlantState): PlantState {
   const shiftNumber = s.run.shiftNumber + 1;
   const [value, afterScenario] = nextRandom(s.seed);
   const { initial } = scenarioForShift(shiftNumber, Math.floor(value * 4294967296));
-  const [plan, seed] = drawChaosPlan({ shiftNumber, seed: afterScenario, lastWasHell: s.chaos.lastWasHell, state: s, initial });
-  return { ...s, seed, chaos: { ...s.chaos, pending: plan } };
+  const [drawn, seed] = drawChaosPlan({
+    shiftNumber,
+    seed: afterScenario,
+    lastWasHell: s.chaos.lastWasHell,
+    state: s,
+    initial,
+    mode: s.run.mode,
+  });
+  const disaster = drawDisaster(s, shiftNumber);
+  return { ...s, seed, chaos: { ...s.chaos, pending: disaster ? withDisaster(drawn, disaster) : drawn } };
+}
+
+/**
+ * Add `disaster` to `plan`'s queue in earliestMinute order (the other events keep their order and
+ * ids), with the next eventId. The director fires it when its minute comes, wherever it sits.
+ */
+function withDisaster(plan: ChaosPlan, disaster: QueuedEvent): ChaosPlan {
+  const entry = { ...disaster, eventId: plan.queue.length + 1 };
+  const at = plan.queue.findIndex((e) => e.earliestMinute > entry.earliestMinute);
+  const queue = at === -1 ? [...plan.queue, entry] : [...plan.queue.slice(0, at), entry, ...plan.queue.slice(at)];
+  return { ...plan, queue };
 }
 
 const PUMP_START_ORDER = ['P-101', 'P-102', 'P-103'] as const;
@@ -94,7 +116,7 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
       pending: null,
       active: { plan, fired: [], lastFiredMinute: null, nextEventId: plan.queue.length + 1 },
       lastWasHell: plan.hell,
-      lastHadDisaster: s.chaos.lastHadDisaster,
+      lastHadDisaster: plan.queue.some((e) => e.disaster),
     },
     intake: lineUpPumps(loaded.intake),
     crew: null,
