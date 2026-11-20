@@ -91,7 +91,7 @@ The numbers are starting values, named constants in one place, to tune in the ba
 
 **What happens.** There is no warning. The earthquake itself is noted (`how: 'noted'`), like an informational kind, and at once queues its consequences as ordinary child events (`cascade: true`), through the same mechanism as hell-shift cascades but with p = 1 and delay 0:
 - a `powerDip`;
-- one `tubeLeak`, or two on different stages (p 0.4 for two);
+- one `tubeLeak`, "severe" (double ppm) with p 0.4. The plant models one leak at a time, so this replaces two leaks;
 - two `sensorFailure`s on different instruments.
 
 Then, with p 0.5, an **aftershock**: one more `powerDip` 20–60 plant minutes later.
