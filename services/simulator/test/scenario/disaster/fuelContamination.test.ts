@@ -34,7 +34,7 @@ const rejection = (r: ReturnType<typeof tick>) =>
 const fired = { eventId: 1, kind: 'fuelContamination', params: { fuel: 'gas' }, cleared: false, how: null } as unknown as FiredEvent;
 
 describe('contaminated fuel effect', () => {
-  it('cuts delivered heat to at most 0.7x and wears the burner about 40x faster than gas', () => {
+  it('cuts delivered heat to at most 0.7x and wears the burner CONTAMINATION_WEAR_MULT times faster than gas', () => {
     const clean = settle();
     const bad = contaminate(clean);
     expect(contaminationActive(bad)).toBe(true);
@@ -47,12 +47,18 @@ describe('contaminated fuel effect', () => {
     expect(bWear / cWear).toBeCloseTo(CONTAMINATION_WEAR_MULT);
   });
 
-  it('ends the game through burnerFailed when ignored on a worn burner', () => {
-    // The brief asks for a healthy burner within 270 ticks; at 40x gas wear that takes ~1790 ticks (see report).
-    const s0 = contaminate(settle());
-    let s: PlantState = { ...s0, heater: { ...s0.heater, burnerCondition: 0.12 } };
+  it('ends the game through burnerFailed within 270 ticks when ignored on a healthy burner', () => {
+    let s = contaminate(settle());
+    expect(s.heater.burnerCondition).toBeGreaterThan(0.99);
     for (let i = 0; i < 270 && s.phase === 'running'; i++) s = tick(s, []).state;
     expect(s.run.over?.reason).toBe('burnerFailed');
+  });
+
+  it('leaves the burner well above 0.7 when the player switches fuel within 30 ticks', () => {
+    let s = run(contaminate(settle()), 29);
+    s = run(cmd(s, { type: 'selectFuel', fuel: 'backup' }).state, CHANGEOVER_TICKS + 60);
+    expect(s.phase).toBe('running');
+    expect(s.heater.burnerCondition).toBeGreaterThan(0.7);
   });
 
   it('stops the extra wear once the changeover away completes', () => {

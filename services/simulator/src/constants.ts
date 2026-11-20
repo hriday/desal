@@ -120,8 +120,13 @@ export const BURNER_WEAR_STANDARD_MULT = 3;
 export const BURNER_WEAR_OFFGRADE_MULT = 6;
 /** Contaminated fuel: share of the demanded heat that still reaches the brine. */
 export const CONTAMINATION_HEAT_FACTOR = 0.7;
-/** Contaminated fuel: burner wear per tick, as a multiple of BURNER_WEAR_GAS (replaces the fuel's usual multiplier). */
-export const CONTAMINATION_WEAR_MULT = 40;
+/** Contaminated fuel: ticks an ignored contamination takes to wear a healthy burner out (2.5 plant hours at 90 ticks/h). */
+export const CONTAMINATION_FAIL_TICKS = 225;
+/**
+ * Contaminated fuel: burner wear per tick, as a multiple of BURNER_WEAR_GAS (replaces the fuel's usual
+ * multiplier). Derived from the failure time: 1 / (225 x 1.4e-5), about 317x.
+ */
+export const CONTAMINATION_WEAR_MULT = 1 / (CONTAMINATION_FAIL_TICKS * BURNER_WEAR_GAS);
 /** Contaminated fuel: chance per tick of a flame-out trip while the burner fires it. */
 export const CONTAMINATION_FLAMEOUT_P = 0.01;
 /** Contaminated fuel is drawn only if the other fuel could carry this many plant hours of nominal burn (backup tank)... */
