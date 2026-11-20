@@ -88,6 +88,33 @@ describe('newGame', () => {
     expect(box.at(-1)).toEqual({ t: 'status', status: status(GAME_A, 1) });
   });
 
+  it('passes the chosen mode into the startGame command', () => {
+    open('s1');
+    client('s1', { t: 'newGame', mode: 'hard' });
+    expect(sent[0]!.command).toMatchObject({ type: 'startGame', mode: 'hard' });
+  });
+
+  it('defaults the mode to normal when newGame names none', () => {
+    open('s1');
+    client('s1', { t: 'newGame' });
+    expect(sent[0]!.command).toMatchObject({ type: 'startGame', mode: 'normal' });
+  });
+
+  it('rejects an unknown mode like any invalid message, sending nothing', () => {
+    const box = open('s1');
+    client('s1', { t: 'newGame', mode: 'nightmare' });
+    expect(sent).toHaveLength(0);
+    expect(box).toEqual([{ t: 'error', reason: 'invalid message' }]);
+  });
+
+  it('still binds on a pre-mode gameStart record', () => {
+    const box = open('s1');
+    client('s1', { t: 'newGame' });
+    const { mode: _mode, ...legacy } = gameStart(GAME_A) as Record<string, unknown>;
+    deliver(TOPICS.events, GAME_A, legacy);
+    expect(box[0]).toEqual({ t: 'game', gameId: GAME_A });
+  });
+
   it('rejects a second newGame on the same socket', () => {
     const box = open('s1');
     client('s1', { t: 'newGame' });
