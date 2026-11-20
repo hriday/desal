@@ -91,6 +91,7 @@ Pace (§3) has no persistent state, so there is nothing to migrate for it.
 - **Normal:** when a fired event is still not cleared `HINT_DELAY_MIN` = **20 plant minutes** after it fired (30 real seconds at busy pace; 5 plant minutes would be under 8 real seconds), and its fix is **not already under way**, the radio shows `Hint: <fix text>`, once per event. **Hard:** no hints (my call; the Hard start line already promises a harsh plant).
 - **"Under way"** is a per-kind check in the same table as the text (entries carry `text` and an optional `underway(status)`): for kinds fixed by a crew job, that job is running; for kinds fixed by an action whose result shows in status (a standby pump started, a fuel changeover in progress), that state is present. Kinds with no such check always get the hint at the delay. Events that clear only with time (for example a tsunami surge still running) are hinted with what to do once it passes.
 - Informational and noted kinds get no hint.
+- **Start screen (user-approved, 2026-11-20):** the "When disaster strikes" list is removed; its three fixes become the `FIX` texts of `fuelContamination`, `earthquake` (shown at the handover only, since earthquake is noted) and `tsunami`. The line under "Start a Hard run" stays. The start screen's plant picture shows 24 stages (heat recovery and heat rejection), not 20.
 
 ## 5. End-of-shift "what to do"
 
