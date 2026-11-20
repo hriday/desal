@@ -182,6 +182,9 @@ export class GameHost {
           out = this.finish(entry, 'abandoned', first);
         } else {
           const r = tick(entry.state, pending.get(gameId) ?? []);
+          // Each phase gets its full idle allowance: a shift that ends on its own lands in handover
+          // with the player's last action a whole shift ago, and must not count as abandoned at once.
+          if (r.state.phase !== entry.state.phase) entry.lastPlayerActionMs = nowMs;
           entry.state = r.state;
           // A game created this step is saved at once: until its first shift runs, no periodic
           // snapshot would come, and a crash would lose it.

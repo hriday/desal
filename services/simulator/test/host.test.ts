@@ -164,6 +164,20 @@ describe('GameHost', () => {
       expect(h.step([], 5001).ended).toEqual([gid(2)]);
     });
 
+    it('a shift that ends on its own starts a fresh handover clock (a passive player is not dropped at shift end)', () => {
+      const h = started([gid(1)], { idleHandoverMs: 1000, idleRunningMs: 5000 });
+      h.step([cmd(gid(1), { type: 'startShift', mode: 'auto' })], 0);
+      let t = 0;
+      while (h.games().get(gid(1))!.state.phase === 'running') {
+        t += 5;
+        expect(h.step([], t).ended).toEqual([]);
+      }
+      expect(h.games().get(gid(1))!.state.phase).toBe('handover');
+      expect(t).toBeGreaterThan(1000); // the shift outlasted the handover limit
+      expect(h.step([], t + 1000).ended).toEqual([]);
+      expect(h.step([], t + 1001).ended).toEqual([gid(1)]);
+    });
+
     it('a restored game counts its player-action clock from the restore', () => {
       const s = started([gid(1)]).games().get(gid(1))!.state;
       const h = new GameHost();
