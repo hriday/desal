@@ -8,6 +8,7 @@ import {
   TUBE_LEAK_GROWTH_PPM_PER_MIN,
   TUBE_PLUG_DERATE,
 } from '../constants.js';
+import { contaminationActive } from './disaster/fuelContamination.js';
 import { nextRandom } from '../rng.js';
 import { isLoopSensor, trueLoopValue } from '../sensors.js';
 import type { LoopSensorId, PlantState } from '../state.js';
@@ -117,7 +118,8 @@ export function crewJobHasFault(s: PlantState, job: CrewJob): boolean {
     case 'cleanScreens':
       return f.stormRemainingTicks > 0 || f.stormFouling > 0;
     case 'flushFuel':
-      return false; // Plan 6 Task 3
+      // Only once the bad fuel is off the burner (or on its way off): flushing a fuel in use is pointless.
+      return f.fuelContamination !== null && !contaminationActive(s);
   }
 }
 
@@ -142,7 +144,7 @@ function finishCrewJob(s: PlantState, job: CrewJob): PlantState {
         faults: { ...f, stormFouling: 0, stormCleanedByCrew: true },
       };
     case 'flushFuel':
-      return s; // Plan 6 Task 3
+      return { ...s, faults: { ...f, fuelContamination: null } };
   }
 }
 

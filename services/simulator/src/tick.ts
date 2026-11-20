@@ -11,9 +11,12 @@ import { autoOutputRange } from './control/loops.js';
 import { pidStep } from './control/pid.js';
 import { chargeStanding, spendPerTick } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
+import { nextRandom } from './rng.js';
 import { checkGameOver, endGame } from './gameover.js';
 import { applyTrip, checkInterlocks } from './safety/interlocks.js';
+import { CONTAMINATION_FLAMEOUT_P } from './constants.js';
 import { stepAcidClean, stepRestart } from './safety/restart.js';
+import { contaminationActive } from './scenario/disaster/fuelContamination.js';
 import { stepScenario } from './scenario/engine.js';
 import { stepCrew, stepFaults } from './scenario/sharp.js';
 import { measured } from './sensors.js';
@@ -87,9 +90,16 @@ export function stepPlant(s0: PlantState): PlantStep {
   // Faults and the crew run after the scenario, so a crew completion (also after it) is seen by the director next tick.
   let s = stepOverhauls(stepIntake(stepLoops(stepCrew(stepFaults(sc.state, dt))), dt));
 
+  const burningBadFuel = contaminationActive(s);
   const fuel = stepFuel(s, heaterDemandMW(s), dt);
   s = fuel.state;
-  const flameOut = fuel.events.some((e) => e.type === 'fuelChangeover' && e.phase === 'flameOut');
+  let flameOut = fuel.events.some((e) => e.type === 'fuelChangeover' && e.phase === 'flameOut');
+  if (burningBadFuel) {
+    // Contaminated fuel: a small chance each tick that the flame goes out.
+    const [roll, seed] = nextRandom(s.seed);
+    s = { ...s, seed };
+    if (roll < CONTAMINATION_FLAMEOUT_P) flameOut = true;
+  }
   const burnerUp = s.status === 'online' || s.status === 'restarting';
   // A flame-out only matters while the burner is up; drop the report otherwise.
   events.push(...fuel.events.filter((e) => burnerUp || !(e.type === 'fuelChangeover' && e.phase === 'flameOut')));

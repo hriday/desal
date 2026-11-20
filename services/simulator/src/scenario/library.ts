@@ -49,7 +49,7 @@ export function eventMessage(kind: ScenarioKind, p: Record<string, number | stri
     case 'sensorFailure':
       return radioLine(kind, p);
     case 'fuelContamination':
-      return 'Fuel contamination reported.'; // Plan 6 Task 3
+      return `Fuel lab: the ${p.fuel === 'gas' ? 'gas supply' : 'backup tank'} is contaminated. Switch fuel and flush it.`;
     case 'earthquake':
       return 'Earthquake.'; // Plan 6 Task 4
     case 'tsunami':
@@ -91,6 +91,8 @@ export function drawEvent(
   n: number,
   /** The pumps a trip or dip may hit (running ones); defaults to all three. */
   hittablePumps: readonly string[] = PUMPS,
+  /** The fuel the burner is on; fuelContamination hits this one. */
+  activeFuel: 'gas' | 'backup' = 'gas',
 ): [ScenarioEvent, number] {
   let s = seed;
   const d = difficulty(n);
@@ -163,6 +165,9 @@ export function drawEvent(
       params = { fouling: tidy(Math.min(0.4, 0.1 * d)), deltaC: tidy(Math.min(6, 1.5 * d)), minutes };
       break;
     }
+    case 'fuelContamination':
+      params = { fuel: activeFuel };
+      break;
     case 'sensorFailure': {
       let loop: string, mode: string;
       if (n === 1) {

@@ -118,6 +118,16 @@ export const BURNER_WEAR_GAS = 1.4e-5;
 export const BURNER_WEAR_STANDARD_MULT = 3;
 /** Burner wear multiplier on off-grade backup fuel. */
 export const BURNER_WEAR_OFFGRADE_MULT = 6;
+/** Contaminated fuel: share of the demanded heat that still reaches the brine. */
+export const CONTAMINATION_HEAT_FACTOR = 0.7;
+/** Contaminated fuel: burner wear per tick, as a multiple of BURNER_WEAR_GAS (replaces the fuel's usual multiplier). */
+export const CONTAMINATION_WEAR_MULT = 40;
+/** Contaminated fuel: chance per tick of a flame-out trip while the burner fires it. */
+export const CONTAMINATION_FLAMEOUT_P = 0.01;
+/** Contaminated fuel is drawn only if the other fuel could carry this many plant hours of nominal burn (backup tank)... */
+export const CONTAMINATION_BACKUP_HOURS = 2;
+/** ...or, for gas, if the cap is at least this share of nominal burn. */
+export const CONTAMINATION_GAS_CAP_FRACTION = 0.7;
 /** Brine density (kg/m3). */
 export const BRINE_DENSITY = 1025;
 /** Floor on brine recirculation mass flow (kg/s) so zero flow stays finite. */

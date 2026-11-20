@@ -1,11 +1,13 @@
 import {
   BURNER_MAX_MW,
   CHANGEOVER_CAP_FRACTION,
+  CONTAMINATION_HEAT_FACTOR,
   FLAMEOUT_FIRING_PCT,
   LHV_OFFGRADE_MJkg,
   LHV_STANDARD_MJkg,
   OFFGRADE_CAP_FRACTION,
 } from '../constants.js';
+import { contaminationActive } from '../scenario/disaster/fuelContamination.js';
 import type { Delivery, PlantState, SimEvent } from '../state.js';
 
 export interface FuelStep {
@@ -49,6 +51,9 @@ export function stepFuel(s: PlantState, demandMW: number, dtS: number): FuelStep
       events.push({ ...base, type: 'fuelChangeover', from: active, to: s.fuel.changeover.to, phase: 'flameOut' });
     }
   }
+
+  // Contaminated fuel burns poor: the heat that reaches the brine is cut.
+  if (contaminationActive(s)) capMW *= CONTAMINATION_HEAT_FACTOR;
 
   let deliveredMW: number;
   // Gas is paid as it burns; backup fuel was paid in full when ordered, so it burns at no cost.
