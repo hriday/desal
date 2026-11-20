@@ -476,6 +476,7 @@ describe('crew buttons', () => {
     ['ProductView', ProductView, 'plugTubes', 'Send crew: plug tubes — $800, 60 min'],
     ['StagesView', StagesView, 'repairEjector', 'Send crew: repair ejector — $1,000, 45 min'],
     ['IntakeView', IntakeView, 'cleanScreens', 'Send crew: clean screens — $300, 30 min'],
+    ['FuelView', FuelView, 'flushFuel', 'Send crew: flush fuel — $1,500, 60 min'],
     ['ShiftView', ShiftView, 'replaceSensor', 'Send crew: replace instrument — $400, 30 min'],
   ];
   it.each(BUTTONS)('%s sends the crew job on click, whatever the fault state', (_n, View, job, text) => {

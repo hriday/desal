@@ -72,7 +72,7 @@ export function Screens() {
       body = <ControlRoom />;
       break;
     case 'over':
-      body = <GameOver reason={state.endReason} score={state.score} onPlayAgain={() => dispatch({ type: 'reset' })} />;
+      body = <GameOver reason={state.endReason} mode={state.endMode ?? state.status?.mode ?? 'normal'} score={state.score} onPlayAgain={() => dispatch({ type: 'reset' })} />;
       break;
   }
   return (

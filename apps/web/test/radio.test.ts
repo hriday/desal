@@ -41,6 +41,9 @@ describe('monitorFor', () => {
     expect(monitorFor('sensorFailure')).toBe('shift');
     expect(monitorFor('gasPriceSpike')).toBe('fuel');
     expect(monitorFor('demandChange')).toBe('shift');
+    expect(monitorFor('fuelContamination')).toBe('fuel');
+    expect(monitorFor('earthquake')).toBe('shift');
+    expect(monitorFor('tsunami')).toBe('shift');
     expect(monitorFor('controllerFault', 'Controller fault on loop tbt')).toBe('heater');
     expect(monitorFor('controllerFault', 'loop recirc stuck')).toBe('stages');
   });

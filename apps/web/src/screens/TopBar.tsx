@@ -23,6 +23,7 @@ export function TopBar({ status, conn, quitting, onQuit }: TopBarProps) {
   return (
     <header className="topbar">
       <span className="topbar__item topbar__shift">Shift {fmt(status?.shiftNumber)}</span>
+      {status?.mode === 'hard' && <span className="topbar__item topbar__hard tone--bad">HARD</span>}
       <span className="topbar__item" title="Plant clock">
         <span className="topbar__k">Plant</span> {plantClock(status?.plantTime)}
       </span>

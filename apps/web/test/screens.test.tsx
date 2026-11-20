@@ -7,6 +7,7 @@ import { GAME_ID_KEY } from '../src/net/socket';
 import { GameOver, REASON_TEXT } from '../src/screens/GameOver';
 import { Handover } from '../src/screens/Handover';
 import { Start } from '../src/screens/Start';
+import { TopBar } from '../src/screens/TopBar';
 import { GameProvider } from '../src/state/GameProvider';
 
 afterEach(cleanup);
@@ -29,7 +30,18 @@ describe('Start', () => {
     expect(getByText('You run a thermal desalination plant.')).toBeTruthy();
     expect(getByText(/Deliver the water, shift after shift — until the money, the fuel or the plant gives out\./)).toBeTruthy();
     fireEvent.click(getByRole('button', { name: 'Start a run' }));
-    expect(onStart).toHaveBeenCalled();
+    expect(onStart).toHaveBeenCalledWith('normal');
+  });
+  it('offers a Hard run with its line, and the how-to-play disaster lines', () => {
+    const onStart = vi.fn();
+    const { getByText, getByRole } = render(<Start onStart={onStart} />);
+    const hard = getByRole('button', { name: 'Start a Hard run' });
+    expect(hard.parentElement!.nextElementSibling!.textContent).toBe('Every shift is a bad one, and disasters strike.');
+    fireEvent.click(hard);
+    expect(onStart).toHaveBeenCalledWith('hard');
+    getByText('Contaminated fuel: switch to the other fuel, then send the crew to flush it.');
+    getByText('Earthquake: everything breaks at once; fix what hurts most first.');
+    getByText('Tsunami: when the siren sounds, run on one intake pump until the surge passes, then clean the screens.');
   });
   it('capacity shows the message and a retry button', () => {
     const onStart = vi.fn();
@@ -147,6 +159,24 @@ describe('GameOver', () => {
   });
 });
 
+describe('TopBar HARD tag', () => {
+  it('shows HARD only in hard mode', () => {
+    const props = { conn: 'open' as const, quitting: false, onQuit: vi.fn() };
+    const hard = render(<TopBar status={demoStatus({ mode: 'hard' })} {...props} />);
+    expect(hard.queryByText('HARD')).not.toBeNull();
+    cleanup();
+    const normal = render(<TopBar status={demoStatus({ mode: 'normal' })} {...props} />);
+    expect(normal.queryByText('HARD')).toBeNull();
+  });
+});
+
+describe('GameOver mode', () => {
+  it.each([['hard', 'Hard'], ['normal', 'Normal']] as const)('shows %s', (mode, text) => {
+    const { getByText } = render(<GameOver reason="quit" mode={mode} score={null} onPlayAgain={vi.fn()} />);
+    expect(getByText(text)).toBeTruthy();
+  });
+});
+
 describe('Screens with provider', () => {
   const socks: FakeWS[] = [];
   class FakeWS {
@@ -174,6 +204,13 @@ describe('Screens with provider', () => {
     socks[0]!.open();
     expect(socks[0]!.sent.map((m) => JSON.parse(m).t)).toEqual(['newGame']);
     expect(container.querySelector('[data-screen="start"]')).not.toBeNull(); // still waiting for the plant
+  });
+
+  it('Start a Hard run sends newGame with mode hard on the next open', () => {
+    const { getByRole } = mount();
+    fireEvent.click(getByRole('button', { name: 'Start a Hard run' }));
+    socks[0]!.open();
+    expect(JSON.parse(socks[0]!.sent[0]!)).toMatchObject({ t: 'newGame', mode: 'hard' });
   });
 
   it('a stored game opens the socket at once, to resume', () => {

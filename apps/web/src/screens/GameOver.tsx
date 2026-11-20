@@ -1,4 +1,4 @@
-import type { GameEndReason, GameScore } from '@desal/schema';
+import type { GameEndReason, GameMode, GameScore } from '@desal/schema';
 import { useId } from 'react';
 import { fmt, usd } from '../equipment/format';
 import { GAME_ID_KEY } from '../net/socket';
@@ -17,11 +17,12 @@ export const REASON_TEXT: Record<GameEndReason, string> = {
 
 export interface GameOverProps {
   reason: GameEndReason | null;
+  mode?: GameMode;
   score: GameScore | null;
   onPlayAgain: () => void;
 }
 
-export function GameOver({ reason, score, onPlayAgain }: GameOverProps) {
+export function GameOver({ reason, mode = 'normal', score, onPlayAgain }: GameOverProps) {
   const titleId = useId();
   const playAgain = () => {
     try { sessionStorage.removeItem(GAME_ID_KEY); } catch { /* storage unavailable */ }
@@ -35,6 +36,7 @@ export function GameOver({ reason, score, onPlayAgain }: GameOverProps) {
         <p className="screen__big" aria-label="Water delivered">{fmt(score?.totalProductM3)}</p>
         <p className="screen__unit">m³ of in-spec water delivered</p>
         <dl className="sheet__figures">
+          <div><dt>Mode</dt><dd>{mode === 'hard' ? 'Hard' : 'Normal'}</dd></div>
           <div><dt>Shifts completed</dt><dd>{fmt(score?.shiftsCompleted)}</dd></div>
           <div><dt>Final balance</dt><dd>{usd(score?.balanceUsd)}</dd></div>
         </dl>

@@ -2,6 +2,7 @@ import type { FuelKind } from '@desal/schema';
 import { useRef, useState } from 'react';
 import { orderFuel, selectFuel } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
+import { CrewButton } from '../controls/CrewButton';
 import { canSend, pendingCommand, type ControlCtx } from '../controls/ctx';
 import { Stepper } from '../controls/Stepper';
 import { Trend } from '../controls/Trend';
@@ -134,6 +135,7 @@ export function FuelView(props: ExpandedProps) {
         <>
           <FuelSelect {...ctl} />
           <FuelOrder {...ctl} />
+          <CrewButton job="flushFuel" {...ctl} />
         </>
       }
     />

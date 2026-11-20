@@ -1,3 +1,4 @@
+import type { GameMode } from '@desal/schema';
 import { Fragment } from 'react';
 import { demoReadings, demoStatus, demoTarget } from '../demo';
 import { BrineHeater } from '../equipment/BrineHeater';
@@ -7,7 +8,7 @@ import { ProductWater } from '../equipment/ProductWater';
 import './screens.css';
 
 export interface StartProps {
-  onStart: () => void;
+  onStart: (mode: GameMode) => void;
   /** True while a start request is in flight. */
   starting?: boolean;
   /** Set when the plant refused the game for capacity. */
@@ -50,10 +51,22 @@ export function Start({ onStart, starting = false, capacityMessage = null }: Sta
       <PlantStrip />
       {capacityMessage && <p className="screen__note" role="alert">{capacityMessage}</p>}
       <div className="screen__actions start__actions">
-        <button type="button" className="primary start__go" onClick={onStart} disabled={starting}>
+        <button type="button" className="primary start__go" onClick={() => onStart('normal')} disabled={starting}>
           {starting ? 'Starting…' : capacityMessage ? 'Try again' : 'Start a run'}
         </button>
+        <button type="button" className="primary start__go start__hard" onClick={() => onStart('hard')} disabled={starting}>
+          Start a Hard run
+        </button>
       </div>
+      <p className="start__hardnote">Every shift is a bad one, and disasters strike.</p>
+      <section className="start__help" aria-label="Disasters">
+        <h2>When disaster strikes</h2>
+        <ul>
+          <li>Contaminated fuel: switch to the other fuel, then send the crew to flush it.</li>
+          <li>Earthquake: everything breaks at once; fix what hurts most first.</li>
+          <li>Tsunami: when the siren sounds, run on one intake pump until the surge passes, then clean the screens.</li>
+        </ul>
+      </section>
     </main>
   );
 }

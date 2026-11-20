@@ -1,4 +1,4 @@
-import type { Command, GameEndReason, GameScore, PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
+import type { Command, GameEndReason, GameMode, GameScore, PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
 import { commandKey } from '../commands';
 import type { ConnState } from '../net/socket';
 import { initialRadio, radioReducer, type RadioState } from './radio';
@@ -28,6 +28,8 @@ export interface State {
   toast: Toast | null;
   score: GameScore | null;
   endReason: GameEndReason | null;
+  /** The mode the finished run was played in (from gameEnd), for the over screen. */
+  endMode: GameMode | null;
   conn: Conn;
   /** The socket has been open at least once, so a later 'connecting' is a reconnect. */
   everOpen: boolean;
@@ -78,7 +80,7 @@ const startFailed = (s: State): State => ({ ...s, session: 'start', toast: { kin
 export function initialState(resuming = false): State {
   return {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
-    pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
+    pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, endMode: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
     epoch: 0, telemetryLost: false, radio: initialRadio, sessionStartPlantTime: null, seenAlarms: new Set(),
   };
 }
@@ -138,7 +140,7 @@ function addEvent(s: State, e: PlantEvent): State {
       }
       break;
     case 'gameEnd':
-      next = { ...next, session: 'over', score: e.score, endReason: e.reason };
+      next = { ...next, session: 'over', score: e.score, endReason: e.reason, endMode: e.mode };
       break;
     case 'commandRejected':
       next = { ...next, ...withoutRejected(s, e.commandId), toast: { kind: 'rejected', message: e.reason } };
