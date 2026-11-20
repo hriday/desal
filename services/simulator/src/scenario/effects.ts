@@ -91,7 +91,7 @@ export function applyEffect(s: PlantState, kind: ScenarioKind, p: Record<string,
       return applySharpEffect(s, kind, p);
     case 'fuelContamination':
       return applyFuelContamination(s);
-    case 'earthquake': // Plan 6 Task 4
+    case 'earthquake':
     case 'tsunami': // Plan 6 Task 5
       return s;
   }

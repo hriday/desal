@@ -23,6 +23,8 @@ export function radioLine(kind: ScenarioKind, p: Record<string, number | string>
     case 'sensorFailure':
       // Deliberately vague: a sensor failure is visible only as the reading's behaviour.
       return 'Control, one of the field instruments is acting up — trust your eyes over the numbers.';
+    case 'earthquake':
+      return 'Earthquake! Everyone is OK. Check the plant: power, tubes and instruments.';
     default:
       return `Control, event on the plant: ${kind}.`;
   }

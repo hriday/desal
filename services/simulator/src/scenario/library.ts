@@ -51,7 +51,7 @@ export function eventMessage(kind: ScenarioKind, p: Record<string, number | stri
     case 'fuelContamination':
       return `Fuel lab: the ${p.fuel === 'gas' ? 'gas supply' : 'backup tank'} is contaminated. Switch fuel and flush it.`;
     case 'earthquake':
-      return 'Earthquake.'; // Plan 6 Task 4
+      return radioLine(kind, p);
     case 'tsunami':
       return 'Tsunami warning.'; // Plan 6 Task 5
   }

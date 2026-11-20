@@ -3,9 +3,11 @@ import { TICK_PLANT_S } from '../constants.js';
 import { nextRandom } from '../rng.js';
 import type { LoopSensorId, PlantState, SimEvent } from '../state.js';
 import type { ActiveChaos, FiredEvent, QueuedEvent } from './chaosTypes.js';
+import { earthquakeFollowUps } from './disaster/earthquake.js';
 import { applyEffect } from './effects.js';
 import { drawEvent, eventMessage } from './library.js';
 import { radioLine } from './orders.js';
+import { pumpAvailability } from './sharp.js';
 
 /** Normal shift: the first event fires in this plant-minute window. */
 const NORMAL_FIRST_MIN = [30, 150] as const;
@@ -32,6 +34,7 @@ const INFORMATIONAL: readonly ScenarioKind[] = [
   'deliveryDelay',
   'demandChange',
   'pumpBearing',
+  'earthquake',
 ];
 
 type Params = Record<string, number | string>;
@@ -98,7 +101,7 @@ export function isCleared(s: PlantState, e: FiredEvent): ClearHow | null {
       return null;
     case 'fuelContamination':
       return f.fuelContamination === null ? 'crew' : null;
-    case 'earthquake': // Plan 6 Task 4
+    case 'earthquake':
     case 'tsunami': // Plan 6 Task 5
       return null;
   }
@@ -112,18 +115,6 @@ export function isSettled(s: PlantState): boolean {
   const fired = s.chaos.active?.fired ?? [];
   const maxPpm = s.shift?.target.maxSalinityPpm ?? Infinity;
   return fired.every((e) => e.cleared) && s.status === 'online' && s.product.salinityPpm <= maxPpm;
-}
-
-/**
- * The pumps a trip or dip may hit (running, not under overhaul), and the spares that could replace
- * one (not running, not under overhaul).
- */
-function pumpAvailability(s: PlantState): { running: string[]; spares: string[] } {
-  const pumps = Object.entries(s.intake.pumps).filter(([, p]) => p.overhaulRemainingTicks === 0);
-  return {
-    running: pumps.filter(([, p]) => p.running).map(([id]) => id),
-    spares: pumps.filter(([, p]) => !p.running).map(([id]) => id),
-  };
 }
 
 /**
@@ -149,6 +140,12 @@ function resolve(s: PlantState, e: QueuedEvent, minute: number, seed: number, n:
   }
   return [e.kind, e.params, seed]; // unreachable: SHARP_KINDS holds non-pump kinds
 }
+
+/** A follow-up a disaster queued (as opposed to the disaster itself). */
+const isDisasterChild = (e: QueuedEvent): boolean => e.cascade && e.disaster;
+
+/** Events that count toward the shift's cap: disasters and their children do not. */
+const countsTowardCap = (events: readonly { disaster: boolean }[]): number => events.filter((e) => !e.disaster).length;
 
 /** A hell-shift cascade that `kind` may trigger: the follow-up, its chance, and its delay window. */
 const CASCADES: Partial<Record<ScenarioKind, { kind: ScenarioKind; p: number; delayMin: readonly [number, number] }>> = {
@@ -202,7 +199,8 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
   const head = queue[0];
   if (!head || minute < head.earliestMinute) return { state: s, events };
   const last = a0.lastFiredMinute;
-  if (!plan.hell && last !== null) {
+  // A disaster's children fire as soon as they are due, whatever the gap or settling rules.
+  if (!plan.hell && last !== null && !isDisasterChild(head)) {
     const since = minute - last;
     if (since < NORMAL_GAP_MIN) return { state: s, events };
     if (!isSettled(s) && since < NORMAL_OVERRIDE_MIN) return { state: s, events };
@@ -236,7 +234,7 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
   // Schedule the next head: never earlier than its own minimum.
   let rest = queue.slice(1);
   const next = rest[0];
-  if (next) {
+  if (next && !isDisasterChild(next)) {
     let gap = NORMAL_GAP_MIN;
     if (plan.hell) [gap, seed] = randInt(seed, HELL_GAP_MIN[0], HELL_GAP_MIN[1]);
     rest = [{ ...next, earliestMinute: Math.max(next.earliestMinute, minute + gap) }, ...rest.slice(1)];
@@ -244,11 +242,11 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
 
   // Hell cascades: an immediate follow-up jumps the queue; a delayed one joins its end.
   let nextEventId = a0.nextEventId;
-  const cascade = plan.hell ? CASCADES[kind] : undefined;
+  const cascade = plan.hell && !head.disaster ? CASCADES[kind] : undefined;
   if (cascade) {
     let v: number;
     [v, seed] = nextRandom(seed);
-    if (v < cascade.p && fired.length + 1 + rest.length < MAX_EVENTS) {
+    if (v < cascade.p && countsTowardCap(fired) + 1 + countsTowardCap(rest) < MAX_EVENTS) {
       let delay: number, drawn;
       [delay, seed] = randInt(seed, cascade.delayMin[0], cascade.delayMin[1]);
       [drawn, seed] = drawEvent(cascade.kind, minute + delay, seed, plan.shiftNumber);
@@ -259,11 +257,30 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     }
   }
 
+  // A disaster's follow-ups: due ones go ahead of the queue (and fire this same tick), later ones keep time order.
+
+  if (kind === 'earthquake') {
+    let children: Omit<QueuedEvent, 'eventId'>[];
+    [children, seed] = earthquakeFollowUps(s, minute, seed);
+    for (const c of children) {
+      const entry: QueuedEvent = { ...c, eventId: nextEventId++ };
+      const at = rest.findIndex((q) => q.earliestMinute > entry.earliestMinute);
+      rest = at === -1 ? [...rest, entry] : [...rest.slice(0, at), entry, ...rest.slice(at)];
+    }
+  }
+
   active = {
     plan: { ...plan, queue: rest },
     fired: [...fired, record],
     lastFiredMinute: minute,
     nextEventId,
   };
-  return { state: { ...s, seed, chaos: { ...s.chaos, active } }, events };
+  const after: PlantState = { ...s, seed, chaos: { ...s.chaos, active } };
+  // Disaster children that are due fire in this same tick.
+  const due = rest[0];
+  if (due && isDisasterChild(due) && due.earliestMinute <= minute) {
+    const more = stepDirector(after);
+    return { state: more.state, events: [...events, ...more.events] };
+  }
+  return { state: after, events };
 }

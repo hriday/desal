@@ -155,3 +155,15 @@ export function stepCrew(s: PlantState): PlantState {
   if (remainingTicks > 0) return { ...s, crew: { ...s.crew, remainingTicks } };
   return { ...finishCrewJob(s, s.crew.job), crew: null };
 }
+
+/**
+ * The pumps a trip or dip may hit (running, not under overhaul), and the spares that could replace
+ * one (not running, not under overhaul).
+ */
+export function pumpAvailability(s: PlantState): { running: string[]; spares: string[] } {
+  const pumps = Object.entries(s.intake.pumps).filter(([, p]) => p.overhaulRemainingTicks === 0);
+  return {
+    running: pumps.filter(([, p]) => p.running).map(([id]) => id),
+    spares: pumps.filter(([, p]) => !p.running).map(([id]) => id),
+  };
+}
