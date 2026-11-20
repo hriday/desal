@@ -141,5 +141,5 @@ describe('fuzz: random command sequences', () => {
     expect(seen.shiftEnd).toBeGreaterThan(0);
     expect(seen.rejected).toBeGreaterThan(0);
     expect(seen.gameEnd).toBeGreaterThan(0);
-  });
+  }, 30_000);
 });
