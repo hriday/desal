@@ -85,6 +85,9 @@
 .ctl__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .ctl__meta { color: var(--muted); font-size: 11px; }
 .ctl__pending { color: var(--muted); font-style: italic; }
+.ctl--notice { flex-basis: 100%; max-width: 46em; padding: 6px 8px; border: 1px solid var(--bad); border-radius: 4px; }
+.ctl--notice .ctl__label { color: var(--bad); }
+.ctl--notice .ctl__meta { color: var(--text); font-size: 12px; }
 .ctl-group { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 12px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; }
 
 .stepper { display: inline-flex; align-items: center; gap: 2px; }

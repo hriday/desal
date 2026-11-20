@@ -5,6 +5,17 @@ export const TRIP_TEXT: Record<string, string> = {
   noFuel: 'no fuel', flameOut: 'burner flame-out', manual: 'manual trip',
 };
 
+/** What to do about each trip cause before restarting: one imperative line, naming on-screen controls. */
+export const TRIP_FIX: Record<string, string> = {
+  tbtHighHigh: 'Lower the TBT setpoint, then press Restart.',
+  stageFlood: 'Bring the stage levels down (level valves, brine recirculation), then press Restart.',
+  lossOfVacuum: 'Get vacuum back first (repair the ejector if it has failed), then press Restart.',
+  noIntakeFlow: 'Get intake flow back first: clean the intake screens and run every healthy intake pump, then press Restart.',
+  noFuel: 'Switch to a fuel that is available, then press Restart.',
+  flameOut: 'Check the fuel (a changeover or bad fuel puts the flame out), then press Restart.',
+  manual: 'Press Restart when you are ready.',
+};
+
 export const STEP_TEXT: Record<string, string> = { vacuum: 'Vacuum', recirc: 'Recirculation', ignition: 'Ignition', ramp: 'Ramp' };
 
 export const PLANT_TEXT: Record<string, string> = { online: 'Online', tripped: 'Tripped', restarting: 'Restarting', acidCleaning: 'Acid cleaning' };

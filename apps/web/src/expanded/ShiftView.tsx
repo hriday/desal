@@ -9,7 +9,7 @@ import { ShiftAccount } from '../equipment/ShiftAccount';
 import { CREW_JOBS } from '../plantConstants';
 import { crewMinutesLeft } from '../screens/quota';
 import { clock, eventText } from './eventText';
-import { MODE_TEXT, PLANT_TEXT, STEP_TEXT, TRIP_TEXT } from './labels';
+import { MODE_TEXT, PLANT_TEXT, STEP_TEXT, TRIP_FIX, TRIP_TEXT } from './labels';
 import { Detail, Row, ViewLayout } from './Layout';
 import type { ExpandedProps } from './types';
 
@@ -29,40 +29,78 @@ export function nextRestartStep(st: PlantStatus | null): RestartStep | null {
   return i < 0 ? null : STEPS[i + 1] ?? null;
 }
 
-function ShiftControls(ctl: ControlCtx) {
+/**
+ * Why the burner is locked out and what to do, while the plant is tripped or restarting; nothing otherwise.
+ * Shown wherever the player may look for the burner (the shift and heater views).
+ */
+export function TripNotice({ status }: { status: PlantStatus | null | undefined }) {
+  if (status?.status === 'tripped') {
+    const cause = typeof status.tripCause === 'string' ? status.tripCause : undefined;
+    const why = cause ? label(TRIP_TEXT, cause) ?? cause : undefined;
+    return (
+      <div className="ctl ctl--notice" role="status">
+        <span className="ctl__label">Plant tripped{why ? `: ${why}` : ''}</span>
+        <span className="ctl__meta">
+          The burner is locked out until the plant restarts. {(cause && TRIP_FIX[cause]) || 'Fix the cause, then press Restart.'}
+        </span>
+      </div>
+    );
+  }
+  if (status?.status === 'restarting') {
+    const step = label(STEP_TEXT, status.restartStep);
+    return (
+      <div className="ctl ctl--notice" role="status">
+        <span className="ctl__label">Restarting{step ? `: ${step.toLowerCase()}` : ''}</span>
+        <span className="ctl__meta">The restart sequence controls the burner until it reaches ignition.</span>
+      </div>
+    );
+  }
+  return null;
+}
+
+/** The restart control: one button in Auto, the four steps in order in Manual. */
+export function RestartControl(ctl: ControlCtx) {
   const st = ctl.status;
   const ok = canSend(ctl);
   const busy = (key: string) => pendingCommand(ctl, key) !== undefined;
   const next = nextRestartStep(st);
+  return st?.controlMode === 'manual' ? (
+    <div className="ctl">
+      <span className="ctl__label">Restart, step by step</span>
+      <span className="ctl__row">
+        {STEPS.map((step) => (
+          <ActionButton
+            key={step}
+            label={label(STEP_TEXT, step)!}
+            disabled={!ok || step !== next}
+            pending={busy(`restartStep:${step}`)}
+            onAction={() => ctl.send?.(restartStep(step))}
+          />
+        ))}
+      </span>
+    </div>
+  ) : (
+    <div className="ctl">
+      <span className="ctl__label">Restart</span>
+      <ActionButton
+        label="Restart"
+        disabled={!ok || st?.status !== 'tripped'}
+        pending={busy('restart')}
+        onAction={() => ctl.send?.(restart())}
+      />
+    </div>
+  );
+}
+
+function ShiftControls(ctl: ControlCtx) {
+  const st = ctl.status;
+  const ok = canSend(ctl);
+  const busy = (key: string) => pendingCommand(ctl, key) !== undefined;
   const paused = st?.phase === 'paused';
   return (
     <>
-      {st?.controlMode === 'manual' ? (
-        <div className="ctl">
-          <span className="ctl__label">Restart, step by step</span>
-          <span className="ctl__row">
-            {STEPS.map((step) => (
-              <ActionButton
-                key={step}
-                label={label(STEP_TEXT, step)!}
-                disabled={!ok || step !== next}
-                pending={busy(`restartStep:${step}`)}
-                onAction={() => ctl.send?.(restartStep(step))}
-              />
-            ))}
-          </span>
-        </div>
-      ) : (
-        <div className="ctl">
-          <span className="ctl__label">Restart</span>
-          <ActionButton
-            label="Restart"
-            disabled={!ok || st?.status !== 'tripped'}
-            pending={busy('restart')}
-            onAction={() => ctl.send?.(restart())}
-          />
-        </div>
-      )}
+      <TripNotice status={st} />
+      <RestartControl {...ctl} />
       <div className="ctl">
         <span className="ctl__label">Crew</span>
         <CrewButton job="replaceSensor" {...ctl} />

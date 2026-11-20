@@ -122,7 +122,7 @@ describe('alarmsFor', () => {
   it('tripped is bad on the shift monitor', () => {
     expect(level('tripped', clean(), demoStatus({ status: 'restarting' }))).toBeUndefined();
     const a = alarmsFor(demoStatus({ status: 'tripped', tripCause: 'tbtHighHigh' }), clean()).find((x) => x.id === 'tripped');
-    expect(a).toMatchObject({ monitor: 'shift', level: 'bad' });
+    expect(a).toMatchObject({ monitor: 'shift', level: 'bad', text: 'Plant tripped: TBT high-high' });
   });
 
   it('balance: warn below $5,000, bad below $0', () => {

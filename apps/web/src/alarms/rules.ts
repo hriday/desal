@@ -1,5 +1,6 @@
 import type { PlantEvent, PlantStatus, ShiftTarget } from '@desal/schema';
 import { usd } from '../equipment/format';
+import { TRIP_TEXT } from '../expanded/labels';
 import { DEFAULT_MAX_SALINITY_PPM, INTAKE_REQUIRED_BASE_M3H, INTAKE_REQUIRED_PER_C, STAGE_COUNT } from '../plantConstants';
 
 export type MonitorId = 'intake' | 'heater' | 'stages' | 'product' | 'fuel' | 'shift';
@@ -102,7 +103,7 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
   if (typeof status?.fuel?.gasCurtailmentNotice === 'string') add('gasCurtail', 'fuel', 'warn', status.fuel.gasCurtailmentNotice);
 
   // Shift & account
-  if (status?.status === 'tripped') add('tripped', 'shift', 'bad', `Plant tripped${typeof status.tripCause === 'string' ? `: ${status.tripCause}` : ''}`);
+  if (status?.status === 'tripped') add('tripped', 'shift', 'bad', `Plant tripped${typeof status.tripCause === 'string' ? `: ${TRIP_TEXT[status.tripCause] ?? status.tripCause}` : ''}`);
   const bal = Number.isFinite(status?.balanceUsd) ? status!.balanceUsd : undefined;
   add('balance', 'shift', low(bal, 5000, 0), `Balance ${usd(bal)}`);
 

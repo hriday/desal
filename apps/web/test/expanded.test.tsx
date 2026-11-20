@@ -91,6 +91,18 @@ describe('expanded views', () => {
     expect(render(<HeaterView {...sample()} status={unknown} />).container.textContent).toContain('Changing over to backup, — left');
   });
 
+  it('HeaterView explains a trip lockout, says what to do and offers Restart', () => {
+    const { container, getByRole } = render(<HeaterView {...sample({ status: 'tripped', tripCause: 'noIntakeFlow' })} />);
+    expect(container.textContent).toContain('Plant tripped: no intake flow');
+    expect(container.textContent).toContain('The burner is locked out until the plant restarts.');
+    expect(container.textContent).toContain('clean the intake screens');
+    expect(getByRole('button', { name: 'Restart' })).toBeTruthy();
+    cleanup();
+    const online = render(<HeaterView {...sample()} />);
+    expect(online.container.textContent).not.toContain('locked out');
+    expect(online.queryByRole('button', { name: 'Restart' })).toBeNull();
+  });
+
   it('FuelView lists deliveries in transit with their arrival in plant-minutes, and the curtailment notice', () => {
     const st = demoStatus({
       deliveries: [{ arrivesInTicks: 45, tonnes: 50, grade: 'standard' }, { arrivesInTicks: 90, tonnes: 20, grade: 'offgrade' }],
