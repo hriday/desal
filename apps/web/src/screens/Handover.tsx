@@ -103,6 +103,7 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
         <section aria-labelledby={ordersId}>
           <h2 id={ordersId}>Orders for shift {n}</h2>
           <dl>
+            <dt>Mode</dt><dd>{status?.mode === 'hard' ? 'Hard' : 'Normal'}</dd>
             <dt>Water target</dt><dd>{target}</dd>
             {orders && <><dt>Salinity limit</dt><dd>{fmt(orders.maxSalinityPpm, 0, 'ppm')}</dd></>}
             {orders && <><dt>Fuel budget</dt><dd>{usd(orders.budgetUsd)}</dd></>}

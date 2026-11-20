@@ -41,7 +41,7 @@ describe('Start', () => {
     expect(onStart).toHaveBeenCalledWith('hard');
     getByText('Contaminated fuel: switch to the other fuel, then send the crew to flush it.');
     getByText('Earthquake: everything breaks at once; fix what hurts most first.');
-    getByText('Tsunami: when the siren sounds, run on one intake pump until the surge passes, then clean the screens.');
+    getByText('Tsunami: when the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens.');
   });
   it('capacity shows the message and a retry button', () => {
     const onStart = vi.fn();
@@ -124,6 +124,14 @@ describe('Handover', () => {
     const third = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 2, shiftTarget: null })} events={[]} />);
     expect(third.getByRole('button', { name: 'Start shift 3' })).toBeTruthy();
     expect(third.container.textContent).toContain(`≈ ${nextTargetEstimateM3(3).toLocaleString('en-US')} m³`);
+  });
+  it('shows the run mode, Normal or Hard', () => {
+    for (const [mode, text] of [['normal', 'Normal'], ['hard', 'Hard']] as const) {
+      const status = demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null, mode });
+      const { getByText, unmount } = render(<Handover {...base} status={status} events={[]} />);
+      expect(getByText('Mode').nextElementSibling!.textContent).toBe(text);
+      unmount();
+    }
   });
   it('sends the chosen mode, and quit', () => {
     const onStartShift = vi.fn();

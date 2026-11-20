@@ -64,7 +64,7 @@ export function Start({ onStart, starting = false, capacityMessage = null }: Sta
         <ul>
           <li>Contaminated fuel: switch to the other fuel, then send the crew to flush it.</li>
           <li>Earthquake: everything breaks at once; fix what hurts most first.</li>
-          <li>Tsunami: when the siren sounds, run on one intake pump until the surge passes, then clean the screens.</li>
+          <li>Tsunami: when the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens.</li>
         </ul>
       </section>
     </main>
