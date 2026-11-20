@@ -2,6 +2,7 @@ import {
   CrewJobSchema,
   FuelGradeSchema,
   GameEndReasonSchema,
+  GameModeSchema,
   FuelKindSchema,
   LoopModeSchema,
   PhaseSchema,
@@ -31,6 +32,7 @@ const QueuedEventSchema = z.object({
   params: z.record(z.string(), z.union([num, z.string()])),
   earliestMinute: num,
   cascade: z.boolean(),
+  disaster: z.boolean(),
 });
 const ChaosPlanSchema = z.object({
   shiftNumber: num,
@@ -54,6 +56,7 @@ const FiredEventSchema = z.object({
   atMinute: num,
   cleared: z.boolean(),
   how: z.enum(['player', 'crew', 'expired', 'noted']).nullable(),
+  disaster: z.boolean(),
 });
 const SensorFaultSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('freeze'), value: num }),
@@ -160,6 +163,7 @@ export const PlantStateSchema = z.object({
   }),
   run: z.object({
     gameId: z.uuid(),
+    mode: GameModeSchema,
     balanceUsd: num,
     shiftNumber: num,
     totalProductM3: num,
@@ -175,6 +179,7 @@ export const PlantStateSchema = z.object({
       .object({ plan: ChaosPlanSchema, fired: z.array(FiredEventSchema), lastFiredMinute: num.nullable(), nextEventId: num })
       .nullable(),
     lastWasHell: z.boolean(),
+    lastHadDisaster: z.boolean(),
   }),
   crew: z.object({ job: CrewJobSchema, remainingTicks: num }).nullable(),
   faults: z.object({
@@ -186,6 +191,10 @@ export const PlantStateSchema = z.object({
     stormRemainingTicks: num,
     stormFouling: num,
     stormCleanedByCrew: z.boolean(),
+    fuelContamination: z.object({ fuel: FuelKindSchema }).nullable(),
+    tsunami: z
+      .object({ warnRemainingTicks: num, surgeRemainingTicks: num, surgeDone: z.boolean(), cleanedAfterSurge: z.boolean() })
+      .nullable(),
     sensors: z.object({
       tbt: SensorFaultSchema.optional(),
       intakeFlow: SensorFaultSchema.optional(),
@@ -202,13 +211,46 @@ type Inferred = z.infer<typeof PlantStateSchema>;
 export const _schemaToState = (x: Inferred): PlantState => x;
 export const _stateToSchema = (x: PlantState): Inferred => x;
 
+/** Fill the version 4 fields a version 3 state lacks; anything malformed is left for the schema to reject. */
+function migrateV3(state: unknown): unknown {
+  if (state === null || typeof state !== 'object') return state;
+  const s = state as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const obj = (v: unknown): v is Record<string, any> => v !== null && typeof v === 'object' && !Array.isArray(v); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const plan = (p: unknown): unknown => {
+    if (!obj(p)) return p;
+    return { ...p, queue: Array.isArray(p.queue) ? p.queue.map((e) => (obj(e) ? { ...e, disaster: false } : e)) : p.queue };
+  };
+  const chaos = obj(s.chaos)
+    ? {
+        ...s.chaos,
+        lastHadDisaster: false,
+        pending: plan(s.chaos.pending),
+        active: obj(s.chaos.active)
+          ? {
+              ...s.chaos.active,
+              plan: plan(s.chaos.active.plan),
+              fired: Array.isArray(s.chaos.active.fired) ? s.chaos.active.fired.map((e: unknown) => (obj(e) ? { ...e, disaster: false } : e)) : s.chaos.active.fired,
+            }
+          : s.chaos.active,
+      }
+    : s.chaos;
+  return {
+    ...s,
+    run: obj(s.run) ? { ...s.run, mode: 'normal' } : s.run,
+    chaos,
+    faults: obj(s.faults) ? { ...s.faults, fuelContamination: null, tsunami: null } : s.faults,
+  };
+}
+
 const FORMAT = 'desal-snapshot';
 /**
  * 2 = the multi-game era (economy and game-over state, one save per gameId). Version 1 saves are
  * single-career saves from before games existed; they are rejected and skipped on load.
  * 3 = chaos plan, crew and fault fields.
+ * 4 = game mode, disaster flags on events, fuel contamination and tsunami faults. Version 3 saves
+ * (in-progress games on a live server) are migrated to Normal with the new fields defaulted.
  */
-const VERSION = 3;
+const VERSION = 4;
 
 export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });
@@ -241,8 +283,8 @@ export function restore(json: string): RestoreResult {
   }
   const d = doc as Record<string, unknown>;
   if (d.format !== FORMAT) return { ok: false, reason: `wrong format: ${JSON.stringify(d.format)}` };
-  if (d.version !== VERSION) return { ok: false, reason: `unknown version: ${JSON.stringify(d.version)}` };
-  const parsed = PlantStateSchema.safeParse(d.state);
+  if (d.version !== VERSION && d.version !== 3) return { ok: false, reason: `unknown version: ${JSON.stringify(d.version)}` };
+  const parsed = PlantStateSchema.safeParse(d.version === 3 ? migrateV3(d.state) : d.state);
   if (!parsed.success) return { ok: false, reason: issueText(parsed.error) };
   return { ok: true, state: parsed.data };
 }

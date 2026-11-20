@@ -25,7 +25,7 @@ function midShift2(): PlantState {
 const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0, GAME_ID)));
 
 function wrap(state: unknown, over: Record<string, unknown> = {}): string {
-  return JSON.stringify({ format: 'desal-snapshot', version: 3, savedAt: 0, state, ...over });
+  return JSON.stringify({ format: 'desal-snapshot', version: 4, savedAt: 0, state, ...over });
 }
 
 describe('snapshots', () => {
@@ -49,11 +49,38 @@ describe('snapshots', () => {
 
   it('rejects garbage, wrong format and unknown version', () => {
     const s = createInitialState(1, T0, GAME_ID);
-    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 4 })]) {
+    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 5 })]) {
       const r = restore(bad);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason.length).toBeGreaterThan(0);
     }
+  });
+
+  it('serializes version 4', () => {
+    expect(JSON.parse(serialize(createInitialState(1, T0, GAME_ID))).version).toBe(4);
+  });
+
+  it('migrates a version 3 save to Normal with the new fields defaulted', () => {
+    const doc = JSON.parse(serialize({ ...midShift2(), run: { ...midShift2().run, mode: 'hard' } }));
+    const st = doc.state;
+    expect(st.chaos.active.plan.queue.length + st.chaos.active.fired.length).toBeGreaterThan(0);
+    delete st.run.mode;
+    delete st.chaos.lastHadDisaster;
+    delete st.faults.fuelContamination;
+    delete st.faults.tsunami;
+    for (const p of [st.chaos.pending, st.chaos.active.plan]) for (const e of p?.queue ?? []) delete e.disaster;
+    for (const e of st.chaos.active.fired) delete e.disaster;
+    doc.version = 3;
+    const r = restore(JSON.stringify(doc));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.run.mode).toBe('normal');
+    expect(r.state.chaos.lastHadDisaster).toBe(false);
+    expect(r.state.faults.fuelContamination).toBeNull();
+    expect(r.state.faults.tsunami).toBeNull();
+    const events = [...(r.state.chaos.pending?.queue ?? []), ...r.state.chaos.active!.plan.queue, ...r.state.chaos.active!.fired];
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e) => e.disaster === false)).toBe(true);
   });
 
   it('rejects a version 2 save with its reason', () => {
@@ -71,7 +98,7 @@ describe('snapshots', () => {
       targetM3: 100,
       initial: { seawaterTempC: 31.5, chlorophyllUgL: 1.2, gasCapMW: 30 },
       orders,
-      queue: [{ eventId: 2, kind: 'tubeLeak' as const, params: { stage: 3, ppm: 40, note: 'x' }, earliestMinute: 15, cascade: true }],
+      queue: [{ eventId: 2, kind: 'tubeLeak' as const, params: { stage: 3, ppm: 40, note: 'x' }, earliestMinute: 15, cascade: true, disaster: false }],
     };
     const populated: PlantState = {
       ...s,
@@ -79,11 +106,12 @@ describe('snapshots', () => {
         pending: plan,
         active: {
           plan,
-          fired: [{ eventId: 1, kind: 'pumpTrip', params: { pumpId: 'P-101' }, atMinute: 5, cleared: true, how: 'crew' }],
+          fired: [{ eventId: 1, kind: 'pumpTrip', params: { pumpId: 'P-101' }, atMinute: 5, cleared: true, how: 'crew', disaster: false }],
           lastFiredMinute: 5,
           nextEventId: 3,
         },
         lastWasHell: true,
+        lastHadDisaster: false,
       },
       crew: { job: 'replaceSensor', remainingTicks: 12 },
       faults: {

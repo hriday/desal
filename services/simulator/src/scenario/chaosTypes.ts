@@ -8,6 +8,8 @@ export interface QueuedEvent {
   params: Record<string, number | string>;
   earliestMinute: number;
   cascade: boolean;
+  /** A disaster or one of its children: never counts toward the shift's event cap. */
+  disaster: boolean;
 }
 
 /** The director's plan for one shift, drawn before the shift starts. */
@@ -33,6 +35,7 @@ export interface FiredEvent {
   atMinute: number;
   cleared: boolean;
   how: 'player' | 'crew' | 'expired' | 'noted' | null;
+  disaster: boolean;
 }
 
 /** The plan in force during a shift, with what has fired so far. */

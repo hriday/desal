@@ -2,6 +2,7 @@ import type {
   CrewJob,
   FuelGrade,
   GameEndReason,
+  GameMode,
   PlantEvent,
   FuelKind,
   Phase,
@@ -101,9 +102,18 @@ export interface ScenarioEffects {
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 export type SimEvent = DistributiveOmit<PlantEvent, 'gameId' | 'epoch' | 'seq'>;
 
+/** A tsunami in progress: the warning, the surge, and whether the crew cleaned up after it. */
+export interface TsunamiFault {
+  warnRemainingTicks: number;
+  surgeRemainingTicks: number;
+  surgeDone: boolean;
+  cleanedAfterSurge: boolean;
+}
+
 /** One game = one run of shifts in one sitting; the operating account lives here. */
 export interface Run {
   gameId: string;
+  mode: GameMode;
   balanceUsd: number;
   shiftNumber: number;
   totalProductM3: number;
@@ -159,7 +169,7 @@ export interface PlantState {
   shift: ShiftState | null;
   scenario: { id: string; definition: Scenario | null; nextEventIndex: number; effects: ScenarioEffects };
   run: Run;
-  chaos: { pending: ChaosPlan | null; active: ActiveChaos | null; lastWasHell: boolean };
+  chaos: { pending: ChaosPlan | null; active: ActiveChaos | null; lastWasHell: boolean; lastHadDisaster: boolean };
   crew: { job: CrewJob; remainingTicks: number } | null;
   faults: {
     tubeLeak: { stage: number; ppm: number } | null;
@@ -173,6 +183,9 @@ export interface PlantState {
     stormFouling: number;
     /** Set by the cleanScreens crew job (Task 8); it alone makes a storm count as cleared by the crew. */
     stormCleanedByCrew: boolean;
+    /** Fuel contaminated by a bad delivery; set while the contaminated fuel is the active one. */
+    fuelContamination: { fuel: FuelKind } | null;
+    tsunami: TsunamiFault | null;
     sensors: Partial<Record<LoopSensorId, SensorFault>>;
     /** Per-stage capacity multiplier, 1 = healthy. */
     stageDerate: number[];
@@ -238,12 +251,14 @@ export function noFaults(): PlantState['faults'] {
     stormRemainingTicks: 0,
     stormFouling: 0,
     stormCleanedByCrew: false,
+    fuelContamination: null,
+    tsunami: null,
     sensors: {},
     stageDerate: Array.from({ length: STAGE_COUNT }, () => 1),
   };
 }
 
-export function createInitialState(seed: number, startPlantTime: number, gameId: string): PlantState {
+export function createInitialState(seed: number, startPlantTime: number, gameId: string, mode: GameMode = 'normal'): PlantState {
   const stages: Stage[] = Array.from({ length: STAGE_COUNT }, (_, i) => ({
     tempC: NOMINAL.tbtC - (NOMINAL.tbtC - BOTTOM_C) * ((i + 0.5) / STAGE_COUNT),
     levelM: NOMINAL.levelM,
@@ -302,8 +317,8 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
       nextEventIndex: 0,
       effects: { offgradeOnly: false, deliveryDelayTicks: 0, chlorophyllTarget: 1, chlorophyllRampPerTick: 0 },
     },
-    run: { gameId, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
-    chaos: { pending: null, active: null, lastWasHell: false },
+    run: { gameId, mode, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
+    chaos: { pending: null, active: null, lastWasHell: false, lastHadDisaster: false },
     crew: null,
     faults: noFaults(),
   };

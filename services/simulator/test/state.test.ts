@@ -13,11 +13,11 @@ describe('createInitialState', () => {
     expect(s.shift).toBeNull();
   });
   it('starts with no chaos or crew and healthy faults', () => {
-    expect(s.chaos).toEqual({ pending: null, active: null, lastWasHell: false });
+    expect(s.chaos).toEqual({ pending: null, active: null, lastWasHell: false, lastHadDisaster: false });
     expect(s.crew).toBeNull();
     expect(s.faults.stageDerate).toHaveLength(20);
     expect(s.faults.stageDerate.every((d) => d === 1)).toBe(true);
-    expect(s.faults).toMatchObject({ tubeLeak: null, ejectorFailed: false, powerDipRemainingTicks: 0, stormRemainingTicks: 0, stormFouling: 0, sensors: {} });
+    expect(s.faults).toMatchObject({ tubeLeak: null, ejectorFailed: false, powerDipRemainingTicks: 0, stormRemainingTicks: 0, stormFouling: 0, fuelContamination: null, tsunami: null, sensors: {} });
   });
   it('has only finite numbers', () => {
     expect(allFinite(s)).toBe(true);

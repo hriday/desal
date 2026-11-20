@@ -94,6 +94,7 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
       pending: null,
       active: { plan, fired: [], lastFiredMinute: null, nextEventId: plan.queue.length + 1 },
       lastWasHell: plan.hell,
+      lastHadDisaster: s.chaos.lastHadDisaster,
     },
     intake: lineUpPumps(loaded.intake),
     crew: null,

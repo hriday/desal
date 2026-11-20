@@ -34,6 +34,17 @@ describe('GameHost', () => {
     expect(r.hostEvents).toEqual([]);
   });
 
+  it('startGame carries the mode into the run, gameStart and status; it defaults to normal', () => {
+    const h = new GameHost();
+    const r = h.step([cmd(gid(1), { type: 'startGame', mode: 'hard' }), cmd(gid(2), { type: 'startGame' })], 1000);
+    expect(h.games().get(gid(1))!.state.run.mode).toBe('hard');
+    expect(r.perGame.get(gid(1))!.events[0]).toMatchObject({ type: 'gameStart', mode: 'hard' });
+    expect(h.games().get(gid(2))!.state.run.mode).toBe('normal');
+    expect(r.perGame.get(gid(2))!.events[0]).toMatchObject({ type: 'gameStart', mode: 'normal' });
+    const out = h.step([], 2000).perGame.get(gid(1))!;
+    expect(out.status).toMatchObject({ mode: 'hard' });
+  });
+
   it('draws shift 1 pending plan at creation, deterministically from the host seed', () => {
     const a = started([gid(1)], { seed: 9 }).games().get(gid(1))!.state;
     const b = started([gid(1)], { seed: 9 }).games().get(gid(1))!.state;
@@ -193,6 +204,13 @@ describe('GameHost', () => {
     expect(r.ended).toEqual([gid(1)]);
     expect(types(r.perGame.get(gid(1))!.events)).toEqual(['gameEnd']);
     expect(h.games().size).toBe(0);
+  });
+
+  it('quitGame emits a gameEnd with the run mode', () => {
+    const h = new GameHost();
+    h.step([cmd(gid(1), { type: 'startGame', mode: 'hard' })], 0);
+    const r = h.step([cmd(gid(1), { type: 'quitGame' })], 1000);
+    expect(r.perGame.get(gid(1))!.events.at(-1)).toMatchObject({ type: 'gameEnd', mode: 'hard' });
   });
 
   it('a throwing game ends with reason error; the others continue', () => {

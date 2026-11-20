@@ -139,8 +139,8 @@ export function toStatus(s: PlantState): PlantStatus {
     crew: s.crew ? { job: s.crew.job, remainingTicks: s.crew.remainingTicks } : null,
     // Handover shows the pending orders; a live shift shows the active ones.
     orders: s.phase === 'handover' ? (s.chaos.pending?.orders ?? null) : inShift ? (s.chaos.active?.plan.orders ?? null) : null,
+    mode: s.run.mode,
     // Never exposed in handover, so an unwarned hell shift cannot be peeked at.
-    mode: 'normal', // Plan 6 Task 2 reads the run's mode
     hell: s.phase === 'running' ? (s.chaos.active?.plan.hell ?? null) : null,
   };
 }

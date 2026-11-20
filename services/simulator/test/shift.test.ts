@@ -32,7 +32,7 @@ describe('startShift resets per-shift supply conditions and controller faults', 
     // A career that has played shifts 1 and 2; shift 3 is given a curtailment and a price spike by hand.
     const career = { ...createInitialState(1, T0, GAME_ID), run: { ...createInitialState(1, T0, GAME_ID).run, shiftNumber: 2 } };
     const started = startShift(career, 'auto').state;
-    const ev = (eventId: number, kind: 'offgradeOnly' | 'gasCurtailNotice' | 'gasPriceSpike', params: Record<string, number>) => ({ eventId, kind, params, earliestMinute: 0, cascade: false });
+    const ev = (eventId: number, kind: 'offgradeOnly' | 'gasCurtailNotice' | 'gasPriceSpike', params: Record<string, number>) => ({ eventId, kind, params, earliestMinute: 0, cascade: false, disaster: false });
     // A hell plan fires all three by minute 200 (first by 120, then 10–40 apart).
     const active = started.chaos.active!;
     const plan = {
@@ -187,7 +187,7 @@ describe('chaos plan lifecycle', () => {
       ...s0.chaos.active!,
       // Queue entries pinned past minute 420 never fire, and the summary leaves them out.
       plan: { ...s0.chaos.active!.plan, hell: true, queue: s0.chaos.active!.plan.queue.map((e) => ({ ...e, earliestMinute: 430 })) },
-      fired: [{ eventId: 1, kind: 'pumpTrip' as const, params: { pumpId: 'P-101' }, atMinute: 40, cleared: true, how: 'player' as const }],
+      fired: [{ eventId: 1, kind: 'pumpTrip' as const, params: { pumpId: 'P-101' }, atMinute: 40, cleared: true, how: 'player' as const, disaster: false }],
     };
     let s: PlantState = { ...s0, chaos: { ...s0.chaos, active } };
     const ends: unknown[] = [];
@@ -215,6 +215,8 @@ describe('chaos plan lifecycle', () => {
         stormRemainingTicks: 9,
         stormFouling: 0.2,
         stormCleanedByCrew: true,
+        fuelContamination: null,
+        tsunami: null,
         sensors: { tbt: { kind: 'freeze', value: 100 } },
         stageDerate: s0.faults.stageDerate.map(() => 0.5),
       },

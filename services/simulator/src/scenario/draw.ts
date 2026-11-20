@@ -101,7 +101,7 @@ export function drawChaosPlan(input: {
   for (const k of kinds) {
     let e;
     [e, s] = drawEvent(k, 0, s, n, running);
-    queue.push({ eventId: queue.length + 1, kind: k, params: e.params, earliestMinute: 0, cascade: false });
+    queue.push({ eventId: queue.length + 1, kind: k, params: e.params, earliestMinute: 0, cascade: false, disaster: false });
   }
 
   const base = shiftTargetM3(n);

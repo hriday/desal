@@ -146,9 +146,9 @@ export class GameHost {
           hostEvent(gameId, { type: 'gameRejected', reason: 'capacity' });
         } else {
           // Shift 1's plan is drawn now, deterministically from the game seed, so the first handover has orders.
-          const initial = drawPendingPlan(createInitialState(this.newSeed(), nowMs, gameId));
+          const initial = drawPendingPlan(createInitialState(this.newSeed(), nowMs, gameId, command.mode));
           // gameStart is seq 0 of the new game, stamped from its own state.
-          const start = stamped([{ type: 'gameStart', mode: 'normal', tick: 0, plantTime: nowMs, shiftId: null }], initial);
+          const start = stamped([{ type: 'gameStart', mode: initial.run.mode, tick: 0, plantTime: nowMs, shiftId: null }], initial);
           this.entries.set(gameId, { state: start.state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });
           lead.set(gameId, start.events);
         }

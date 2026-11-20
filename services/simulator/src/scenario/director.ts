@@ -229,6 +229,7 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     atMinute: minute,
     cleared: noted,
     how: noted ? 'noted' : null,
+    disaster: head.disaster,
   };
 
   // Schedule the next head: never earlier than its own minimum.
@@ -252,7 +253,7 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
       [drawn, seed] = drawEvent(cascade.kind, minute + delay, seed, plan.shiftNumber);
       // The bearing goes on the standby the player will start in place of the tripped pump.
       const p = cascade.kind === 'pumpBearing' && spares[0] ? { ...drawn.params, pumpId: spares[0] } : drawn.params;
-      const entry: QueuedEvent = { eventId: nextEventId++, kind: cascade.kind, params: p, earliestMinute: minute + delay, cascade: true };
+      const entry: QueuedEvent = { eventId: nextEventId++, kind: cascade.kind, params: p, earliestMinute: minute + delay, cascade: true, disaster: false };
       rest = delay === 0 ? [entry, ...rest] : [...rest, entry];
     }
   }

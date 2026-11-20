@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import { DISASTER_MINUTE, DISASTER_SALT, PROFILES } from '../../src/scenario/difficulty.js';
 import { drawEvent, scenarioForShift } from '../../src/scenario/library.js';
 import { allFinite } from '../helpers.js';
 
 const target = (n: number) => Math.round(3900 * (1 + 0.04 * (n - 1)));
+
+describe('difficulty profiles', () => {
+  it('has the Normal and Hard values', () => {
+    expect(PROFILES.normal).toEqual({ hellEveryShift: false, disasterChance: 0.08, disasterFromShift: 3 });
+    expect(PROFILES.hard).toEqual({ hellEveryShift: true, disasterChance: 0.4, disasterFromShift: 2 });
+    expect(DISASTER_SALT).toBe(0xd15a5);
+    expect(DISASTER_MINUTE).toEqual([90, 300]);
+  });
+});
 
 describe('escalating difficulty', () => {
   it('the target grows 4% per shift with no cap, hand-written shifts included', () => {

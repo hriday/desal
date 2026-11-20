@@ -5,7 +5,7 @@ import { drawChaosPlan } from '../../src/scenario/draw.js';
 import { buildOrders, radioLine } from '../../src/scenario/orders.js';
 
 const state = createInitialState(1, 0, '00000000-0000-4000-8000-000000000000');
-const q = (kind: ChaosPlan['queue'][number]['kind'], id = 1) => ({ eventId: id, kind, params: {}, earliestMinute: 0, cascade: false });
+const q = (kind: ChaosPlan['queue'][number]['kind'], id = 1) => ({ eventId: id, kind, params: {}, earliestMinute: 0, cascade: false, disaster: false });
 const plan = (over: Partial<Omit<ChaosPlan, 'orders'>>): Omit<ChaosPlan, 'orders'> => ({
   shiftNumber: 5,
   hell: false,

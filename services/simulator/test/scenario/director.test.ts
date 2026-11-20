@@ -23,6 +23,7 @@ function running(queue: Q[], hell: boolean, seed = 1): PlantState {
     params: e.params ?? {},
     earliestMinute: e.earliestMinute ?? 0,
     cascade: false,
+    disaster: false,
   }));
   const plan = { ...started.chaos.active!.plan, hell, queue: q };
   return { ...started, chaos: { ...started.chaos, active: { plan, fired: [], lastFiredMinute: null, nextEventId: q.length + 1 } } };
@@ -319,6 +320,7 @@ describe('isCleared', () => {
     atMinute: 40,
     cleared: false,
     how: null,
+    disaster: false,
   });
   const p = s.intake.pumps;
   const oneRunning = { ...s, intake: { ...s.intake, pumps: { ...p, 'P-101': { ...p['P-101'], running: false } } } };
