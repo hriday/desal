@@ -1,5 +1,7 @@
 # Plan 5 design: Flink report card and leaderboard
 
+> **Amended 2026-11-20 for Plan 6 (modes).** Plan 6 (`2026-11-20-hard-mode-disasters-design.md`) adds a game mode (`'normal' | 'hard'`), three new scenario kinds (`fuelContamination`, `earthquake`, `tsunami`) and the crew job `flushFuel`, and takes snapshot version 4. Changes here: `mode` on the run records and the report card; the leaderboard, its stats and "today" are computed per mode and served as `{ normal, hard }`; verdicts cover the new kinds; Plan 5's snapshot bump is v5 (migrating v4). Amended passages say "(modes)".
+
 Status: draft for approval, 2026-11-19. This document extends the "main spec", `2026-11-18-desal-operator-game-design.md`, and Plan 4's `2026-11-19-chaos-director-design.md`. Where they disagree, this document wins for Flink. It replaces the main spec's plan to move alarms into Flink.
 
 ## 1. Intent and why
@@ -19,7 +21,7 @@ What this buys:
 
 **Goals**
 - A **report card** for every completed shift. Shift N's report shows on the handover for shift N+1, starting with shift 1's report on shift 2's handover. Flink computes it from the shift's events and status stream. A shift cut short by game over gets no report card; its events still count in the run's stats (§4.3).
-- A **leaderboard** on the start screen, plus the run's rank on the game-over Final report.
+- A **leaderboard** on the start screen, plus the run's rank on the game-over Final report. (Modes) There is one board per game mode, Normal and Hard, and a run is ranked only against runs of its own mode.
 - A **call sign** for every run, for example "Kestrel-42", shown in the top bar, on the handover and on the Final report.
 - The **Flink web UI** at `https://desal.moosha.org/flink`, behind the same basic auth as `/kafka`.
 
@@ -69,14 +71,15 @@ plant.status ─┘   (also counts plants online)
 
 ### 4.2 Call sign and runId (simulator)
 
-- At `startGame`, the simulator draws a **call sign** from the game's seed. It is an adjective or bird name from a fixed list of about 64 clean words, plus a number from 10 to 99, for example "Kestrel-42". It also mints a **runId** (a UUID). Both go into game state and the snapshot (v4).
-- The call sign appears in `gameStart`, in `gameEnd`, and in status as `callSign`. The runId appears only in `gameEnd` and `shiftEnd` (as `runId`), which Flink reads. The gateway does not forward `runId` to browsers; a test pins this.
+- At `startGame`, the simulator draws a **call sign** from the game's seed. It is an adjective or bird name from a fixed list of about 64 clean words, plus a number from 10 to 99, for example "Kestrel-42". It also mints a **runId** (a UUID). Both go into game state and the snapshot (v5, since Plan 6 took v4; a v4 save is migrated by deriving the call sign from its seed and minting a fresh runId).
+- The call sign appears in `gameStart`, in `gameEnd`, and in status as `callSign`. (Modes) Plan 6 puts `mode` on `gameStart`, `gameEnd` and at the top level of `PlantStatus`; each defaults to `'normal'` for older records, and Flink reads it from there. The runId appears only in `gameEnd` and `shiftEnd` (as `runId`), which Flink reads. The gateway does not forward `runId` to browsers; a test pins this.
 - Call signs need not be unique. The leaderboard shows the call sign with the run's date, for example "Kestrel-42 · 19 Nov".
 
 ### 4.3 Report card (Job 1, Java DataStream)
 
 The job is keyed by gameId and joins `plant.events` with `plant.status` (connect + KeyedCoProcessFunction or equivalent). Per shift, it keeps:
 
+- (Modes) The run's `mode` is read from `gameStart` (default `'normal'`) and copied onto every `ShiftReport` and the `RunResult`; the report card shows it.
 - **Each fired event** (`scenario`): kind, fire time, and:
   - **response time:** plant minutes from firing to the first status in which the player's response is visible. The required response per kind follows Plan 4 §4.3:
     - pumpTrip: two intake pumps running;
@@ -84,16 +87,18 @@ The job is keyed by gameId and joins `plant.events` with `plant.status` (connect
     - sensorFailure: a `replaceSensor` crew job. The faulted loop is deliberately not in any event or status (Plan 4 ruling R4: the radio must not give it away), so Flink cannot tell which loop it is. Putting "a loop" in Manual would credit lucky guesses, so only the crew counts;
     - tubeLeak, vacuumLoss and storm: a matching crew job dispatched;
     - powerDip: two pumps running;
-    - bloom: the chlorine dose raised. My call: compare the dose against the value at firing, which the job holds in state.
+    - bloom: the chlorine dose raised. My call: compare the dose against the value at firing, which the job holds in state;
+    - (modes) `fuelContamination` and `tsunami`: no status signal separates "responded" from "cleared" (the right response is a fuel switch or running on one pump, and the damage keeps coming), so they are graded on **time-to-clear**: the response time is the plant minutes from firing to the `eventCleared` with `how` player or crew. Crew job `flushFuel` is not treated as a response;
+    - (modes) `earthquake` is **noted**: it clears at once with `how: 'noted'`, gets outcome "noted" and no verdict. Its consequences arrive as ordinary child `scenario` events (`cascade: true`) and are graded as the sharp kinds they are.
   - **time to clear:** from `eventCleared`, with the `how` value.
   - **outcome:** "cleared by you", "fixed by crew", "passed", "noted" or "not cleared". This is the same wording as the debrief.
-  - **verdict:** *quick* (response ≤ 5 plant min), *ok* (≤ 15), *slow* (> 15), or *missed* (no response by shift end). Informational kinds get no verdict. The thresholds are my call, as named constants.
+  - **verdict:** *quick* (response ≤ 5 plant min), *ok* (≤ 15), *slow* (> 15), or *missed* (no response by shift end). Informational kinds, and `earthquake`, get no verdict. The thresholds are my call, as named constants.
 - **Shift totals are copied from the `shiftEnd` summary, not recomputed.** That covers in-spec and off-spec water, off-spec minutes, trips and spend. Status and `accountChange` can't reproduce them: gas burn is not an `accountChange`, and status has no salinity. Copying keeps the "match the simulator exactly" anti-goal trivially true. Flink's own work is everything the summary lacks: per-event response timing, the hourly pace, plant minutes tripped (from status), the comparisons, the grade, and the cross-run aggregation.
 - **Hourly pace:** in-spec water at the end of each plant hour against the hour's share of the target (8 points). The handover draws this as a small sparkline.
 - **Comparison:** this shift against the previous shift and against the best shift so far in this run, on target %, events handled well, and minutes tripped. This is kept in keyed state. Shift 1 has no previous shift, so its report leaves the comparison out.
 - **Grade:** A to F from one documented formula, for example 50 % target achievement, 30 % event handling, 20 % no trips or off-spec. The formula is a named, unit-tested function. My call on the weights; the builder tunes them so that a shift handled well by Plan 4's engaged bot gets a B or better and an untouched shift gets a D or worse.
 - **Emitted on `shiftEnd`:** one `ShiftReport` record to `shift.reports`.
-- **Emitted on `gameEnd`:** one `RunResult` record to `run.results`, containing runId, callSign, endedAt (wall clock), shiftsCompleted, totalProductM3, the end reason, and per-kind event stats (count, handled-well count, mean response).
+- **Emitted on `gameEnd`:** one `RunResult` record to `run.results`, containing runId, callSign, `mode`, endedAt (wall clock), shiftsCompleted, totalProductM3, the end reason, and per-kind event stats (count, handled-well count, mean response).
 - **Restarts:** the job uses checkpoints and resumes from them. Upgrades use stop-with-savepoint and then restore (§4.6).
 - **Snapshot epochs:** follow `docs/streaming-notes.md`. A record with a higher `epoch` than the job has seen means the simulator restored from a snapshot, possibly up to 30 ticks back after a crash. The job resets its marks and treats that epoch's records as the truth:
   - Per-event records are keyed by eventId within the shift. A re-fired event in the new epoch overwrites the old record.
@@ -102,20 +107,20 @@ The job is keyed by gameId and joins `plant.events` with `plant.status` (connect
 
 ### 4.4 Leaderboard (Job 2, Flink SQL)
 
-The job publishes one record, `{ updatedAt, allTime: Row[10], today: Row[10], online: n, stats: [...] }`.
+The job publishes one record. (Modes) Everything below is computed per mode (the SQL partitions by `mode`), so the record holds two boards: `{ updatedAt, online: n, normal: Board, hard: Board }` with `Board = { allTime: Row[10], today: Row[10], stats: [...] }`. `online` counts plants across both modes. The assembler emits both boards in the one record. Everything below describes one board.
 - **allTime:** top 10 by `totalProductM3`, ties broken by more shifts, then the earlier run.
 - **today:** the same ranking over runs that ended in the last 24 hours of wall clock.
 - **Row:** rank, callSign, shiftsCompleted, totalProductM3, the end date, and `runId` (needed so the gateway can work out "your rank"). The browser never receives runId; the gateway strips it (§4.5).
 - **online:** the number of distinct gameIds with a status record in the last 60 s. The count leaves the job, but the gameIds do not.
 - **stats:** for each sharp event kind, the share handled well across all runs, for example "62 % of operators handled their first vacuum loss well".
-- **Ranks for every run:** the job also writes each run's all-time rank, and today's rank while the run is still within 24 h, to a compacted topic `run.ranks` (key runId). The gateway reads it to show the player their own rank even outside the top 10, for example "#57 all time". Like `run.results`, this topic is read only by the gateway and never reaches browsers.
+- **Ranks for every run:** the job also writes each run's all-time rank, and today's rank while the run is still within 24 h (both within the run's own mode), to a compacted topic `run.ranks` (key runId). The gateway reads it to show the player their own rank even outside the top 10, for example "#57 all time". Like `run.results`, this topic is read only by the gateway and never reaches browsers.
 - **Update rate:** at most every 5 s. My call: SQL results go through a small DataStream step that assembles the one record and throttles it.
 
 ### 4.5 Gateway
 
 - Consumes `shift.reports`. It forwards each report only to sockets bound to that gameId, as a new server message `shiftReport`.
 - Consumes `leaderboard` and caches the latest record.
-  - It sends a `leaderboard` message on connect and on each change, with `runId` removed.
+  - It sends a `leaderboard` message on connect and on each change, with `runId` removed. (Modes) `GET /api/leaderboard` returns both boards: `{ updatedAt, online, normal, hard }`.
   - For a socket whose game has ended, it adds `yourRank: { allTime, today | null }`, looked up in `run.ranks` through the runId from that game's `gameEnd`. The gateway sees `gameEnd`; the browser never sees the runId.
 - Schema: new zod schemas in `packages/schema` for `ShiftReport`, `RunResult` and the leaderboard record. These are the shared types, and the Java side mirrors them.
 - **Java mirror:** the Java POJOs for these records are checked by a contract test. The test feeds the zod schemas example JSON produced by the Java serializers. My call on the mechanism: a JSON fixture committed by the Java tests and validated by a schema test.
@@ -148,11 +153,11 @@ The job publishes one record, `{ updatedAt, allTime: Row[10], today: Row[10], on
 
 ### 4.7 Web
 
-- **Handover:** a "Report card" section above "Last shift" holds the grade (a large letter stamped on the clipboard sheet), the event table with verdicts, the hourly pace sparkline, and the comparison lines.
+- **Handover:** a "Report card" section above "Last shift" (modes: tagged HARD for a Hard run) holds the grade (a large letter stamped on the clipboard sheet), the event table with verdicts, the hourly pace sparkline, and the comparison lines.
   - Until the report arrives, the section shows "Grading…".
   - If no report has arrived 10 s after `shiftEnd`, the section is hidden and the existing debrief stands alone. A report that arrives later still appears.
-- **Start screen:** a leaderboard card under the plant strip, with an "All time" / "Today" toggle, the top 10, "N plants running now", and two or three rotating stats lines. If no leaderboard is received within 5 s of connecting, it shows "Leaderboard offline".
-- **Final report:** the call sign, plus "Rank #N all time · #M today" when available, otherwise "Ranking…".
+- **Start screen:** a leaderboard card under the plant strip (modes: showing both the Normal and the Hard board, each labelled), with an "All time" / "Today" toggle, the top 10, "N plants running now", and two or three rotating stats lines. If no leaderboard is received within 5 s of connecting, it shows "Leaderboard offline".
+- **Final report:** the call sign, plus "Rank #N all time · #M today" (within the run's mode) when available, otherwise "Ranking…".
 - **Top bar:** the call sign.
 - **Visual style:** follows Plan 4 §4.11, with the clipboard sheet and display font. Motion goes in `motion.css`, covered by the reduced-motion override.
 
@@ -177,7 +182,7 @@ The job publishes one record, `{ updatedAt, allTime: Row[10], today: Row[10], on
 - Use Java 17 and Maven. Pin versions exactly. Flink 2.x and its Kafka connector must have been released at least two weeks ago.
 - Code comments explain each Flink concept where it is first used, as the main spec requires (keyed state, connect, checkpoint, savepoint, upsert table, windows).
 - All existing guarantees stay: the game plays without Flink, saves resume across redeploys, and no gameId leaks.
-- Snapshot goes to v4 for callSign and runId. Older saves follow the existing skip rule, so in-flight games end at that deploy. This is acceptable and the user has been told before.
+- Snapshot goes to v5 for callSign and runId (Plan 6 took v4 for modes and disasters, and migrates v3). Plan 5's step migrates v4 saves (callSign derived from the seed, a fresh runId) and keeps v3 -> v4 -> v5 working; versions older than v3 follow the existing skip rule.
 
 ## 6. Left to the builder
 
@@ -203,3 +208,4 @@ The job publishes one record, `{ updatedAt, allTime: Row[10], today: Row[10], on
 12. After a crash restore, the newer epoch's records win, following `streaming-notes.md`.
 13. Every run gets a rank, through `run.ranks`, so the Final report shows "#57" rather than only top-10 ranks.
 14. Shift N's report shows at shift N+1's handover. A shift cut short by game over gets no report, but its events count in the run's stats.
+15. (Modes) Boards, stats and "today" are per mode; the public endpoint returns `{ normal, hard }` and the start screen shows both. `mode` rides on the run records. `fuelContamination` and `tsunami` are graded on time-to-clear, `earthquake` is noted.
