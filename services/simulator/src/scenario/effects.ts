@@ -2,6 +2,7 @@ import type { PumpId, ScenarioKind } from '@desal/schema';
 import { TICK_PLANT_S } from '../constants.js';
 import type { Loop, PlantState } from '../state.js';
 import { applyFuelContamination } from './disaster/fuelContamination.js';
+import { applyTsunami } from './disaster/tsunami.js';
 import { applySharpEffect } from './sharp.js';
 
 function setLoopFault(s: PlantState, loopId: string, kind: string): PlantState {
@@ -91,8 +92,9 @@ export function applyEffect(s: PlantState, kind: ScenarioKind, p: Record<string,
       return applySharpEffect(s, kind, p);
     case 'fuelContamination':
       return applyFuelContamination(s);
+    case 'tsunami':
+      return applyTsunami(s, { warnMinutes: Number(p.warnMinutes), coolC: Number(p.coolC) });
     case 'earthquake':
-    case 'tsunami': // Plan 6 Task 5
       return s;
   }
 }

@@ -9,6 +9,7 @@ import {
   TUBE_PLUG_DERATE,
 } from '../constants.js';
 import { contaminationActive } from './disaster/fuelContamination.js';
+import { stepTsunami } from './disaster/tsunami.js';
 import { nextRandom } from '../rng.js';
 import { isLoopSensor, trueLoopValue } from '../sensors.js';
 import type { LoopSensorId, PlantState } from '../state.js';
@@ -29,7 +30,7 @@ function stopPump(s: PlantState, id: PumpId, extraWear: number): PlantState {
 }
 
 /** Add screen fouling that stays until the screens are cleaned; faults.stormFouling tracks the amount added. */
-function addStormFouling(s: PlantState, amount: number): PlantState {
+export function addStormFouling(s: PlantState, amount: number): PlantState {
   const added = Math.min(Math.max(0, amount), 1 - s.intake.screenFouling);
   return {
     ...s,
@@ -91,6 +92,7 @@ export function stepFaults(s: PlantState, dt: number): PlantState {
     next = addStormFouling(next, STORM_FOULING_PER_TICK * k);
     next = { ...next, faults: { ...next.faults, stormRemainingTicks: Math.max(0, f.stormRemainingTicks - k) } };
   }
+  next = stepTsunami(next, k);
   if (f.powerDipRemainingTicks > 0) {
     next = { ...next, faults: { ...next.faults, powerDipRemainingTicks: Math.max(0, f.powerDipRemainingTicks - k) } };
   }
@@ -116,7 +118,7 @@ export function crewJobHasFault(s: PlantState, job: CrewJob): boolean {
     case 'replaceSensor':
       return Object.keys(f.sensors).length > 0;
     case 'cleanScreens':
-      return f.stormRemainingTicks > 0 || f.stormFouling > 0;
+      return f.stormRemainingTicks > 0 || f.stormFouling > 0 || (f.tsunami?.surgeDone === true && !f.tsunami.cleanedAfterSurge);
     case 'flushFuel':
       // Only once the bad fuel is off the burner (or on its way off): flushing a fuel in use is pointless.
       return f.fuelContamination !== null && !contaminationActive(s);
@@ -141,7 +143,12 @@ function finishCrewJob(s: PlantState, job: CrewJob): PlantState {
       return {
         ...s,
         intake: { ...s.intake, screenFouling: Math.max(0, s.intake.screenFouling - f.stormFouling) },
-        faults: { ...f, stormFouling: 0, stormCleanedByCrew: true },
+        faults: {
+          ...f,
+          stormFouling: 0,
+          stormCleanedByCrew: true,
+          tsunami: f.tsunami?.surgeDone ? { ...f.tsunami, cleanedAfterSurge: true } : f.tsunami,
+        },
       };
     case 'flushFuel':
       return { ...s, faults: { ...f, fuelContamination: null } };

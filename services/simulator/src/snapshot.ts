@@ -193,7 +193,7 @@ export const PlantStateSchema = z.object({
     stormCleanedByCrew: z.boolean(),
     fuelContamination: z.object({ fuel: FuelKindSchema }).nullable(),
     tsunami: z
-      .object({ warnRemainingTicks: num, surgeRemainingTicks: num, surgeDone: z.boolean(), cleanedAfterSurge: z.boolean() })
+      .object({ warnRemainingTicks: num, surgeRemainingTicks: num, surgeDone: z.boolean(), cleanedAfterSurge: z.boolean(), coolC: num })
       .nullable(),
     sensors: z.object({
       tbt: SensorFaultSchema.optional(),

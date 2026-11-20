@@ -101,8 +101,9 @@ export function isCleared(s: PlantState, e: FiredEvent): ClearHow | null {
       return null;
     case 'fuelContamination':
       return f.fuelContamination === null ? 'crew' : null;
+    case 'tsunami':
+      return f.tsunami?.surgeDone && f.tsunami.cleanedAfterSurge && runningPumps(s) >= 2 ? 'player' : null;
     case 'earthquake':
-    case 'tsunami': // Plan 6 Task 5
       return null;
   }
 }

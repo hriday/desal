@@ -108,6 +108,8 @@ export interface TsunamiFault {
   surgeRemainingTicks: number;
   surgeDone: boolean;
   cleanedAfterSurge: boolean;
+  /** Seawater cooling (degC) applied when the surge arrives, drawn when the tsunami fires. */
+  coolC: number;
 }
 
 /** One game = one run of shifts in one sitting; the operating account lives here. */

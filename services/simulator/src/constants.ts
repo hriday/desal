@@ -304,6 +304,16 @@ export const MAX_GAMES = 10;
 
 /** Wear a tripped pump takes (fraction of its life). */
 export const PUMP_TRIP_WEAR = 0.1;
+/** Ticks the tsunami surge lasts (30 plant minutes). */
+export const TSUNAMI_SURGE_TICKS = 45;
+/** Total pump wear the surge adds to every running pump (fraction of its life), spread over the surge. */
+export const TSUNAMI_SURGE_WEAR = 0.7;
+/**
+ * Debris fouling the surge adds to the screens (fraction of flow lost) until the crew cleans them. Well
+ * beyond a storm (0.1 at shift 1), but under the cavitation threshold (0.5), and small enough that one
+ * pump at full speed, 0.7 more worn, still passes about 1.2x the noIntakeFlow trip line.
+ */
+export const TSUNAMI_FOULING = 0.35;
 /** Screen fouling a storm adds per tick while it lasts. */
 export const STORM_FOULING_PER_TICK = 0.0005;
 /** Recirculation cap (fraction of the pump's maximum) when a power dip gives none. */

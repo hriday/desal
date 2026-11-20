@@ -51,9 +51,8 @@ export function eventMessage(kind: ScenarioKind, p: Record<string, number | stri
     case 'fuelContamination':
       return `Fuel lab: the ${p.fuel === 'gas' ? 'gas supply' : 'backup tank'} is contaminated. Switch fuel and flush it.`;
     case 'earthquake':
-      return radioLine(kind, p);
     case 'tsunami':
-      return 'Tsunami warning.'; // Plan 6 Task 5
+      return radioLine(kind, p);
   }
 }
 
@@ -163,6 +162,13 @@ export function drawEvent(
       let minutes: number;
       [minutes, s] = range(s, 60, 120, 10);
       params = { fouling: tidy(Math.min(0.4, 0.1 * d)), deltaC: tidy(Math.min(6, 1.5 * d)), minutes };
+      break;
+    }
+    case 'tsunami': {
+      let warnMinutes: number, coolC: number;
+      [warnMinutes, s] = range(s, 15, 25);
+      [coolC, s] = range(s, 1, 2, 0.1);
+      params = { warnMinutes, coolC };
       break;
     }
     case 'fuelContamination':
