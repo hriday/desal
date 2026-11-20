@@ -116,6 +116,8 @@ export function crewJobHasFault(s: PlantState, job: CrewJob): boolean {
       return Object.keys(f.sensors).length > 0;
     case 'cleanScreens':
       return f.stormRemainingTicks > 0 || f.stormFouling > 0;
+    case 'flushFuel':
+      return false; // Plan 6 Task 3
   }
 }
 
@@ -139,6 +141,8 @@ function finishCrewJob(s: PlantState, job: CrewJob): PlantState {
         intake: { ...s.intake, screenFouling: Math.max(0, s.intake.screenFouling - f.stormFouling) },
         faults: { ...f, stormFouling: 0, stormCleanedByCrew: true },
       };
+    case 'flushFuel':
+      return s; // Plan 6 Task 3
   }
 }
 

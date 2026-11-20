@@ -14,7 +14,7 @@ export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
   for (let i = 1; i <= 20; i++) loops[`level${i}`] = loop(0.35, 50);
   return {
     gameId: DEMO_GAME_ID, epoch: 0, shiftNumber: 3, balanceUsd: 12450, tick: 1720, plantTime: 68800, shiftId: 3,
-    phase: 'running', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
+    phase: 'running', mode: 'normal', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
     loops: loops as PlantStatus['loops'],
     pumps: {
       'P-101': { running: true, overhaulRemainingTicks: 0 },

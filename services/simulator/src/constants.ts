@@ -307,6 +307,7 @@ export const CREW_JOBS = {
   repairEjector: { costUsd: 1000, minutes: 45 },
   replaceSensor: { costUsd: 400, minutes: 30 },
   cleanScreens: { costUsd: 300, minutes: 30 },
+  flushFuel: { costUsd: 1500, minutes: 60 },
 } as const;
 /** Capacity multiplier of a stage whose tubes the crew has plugged. */
 export const TUBE_PLUG_DERATE = 0.6;

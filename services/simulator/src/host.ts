@@ -148,7 +148,7 @@ export class GameHost {
           // Shift 1's plan is drawn now, deterministically from the game seed, so the first handover has orders.
           const initial = drawPendingPlan(createInitialState(this.newSeed(), nowMs, gameId));
           // gameStart is seq 0 of the new game, stamped from its own state.
-          const start = stamped([{ type: 'gameStart', tick: 0, plantTime: nowMs, shiftId: null }], initial);
+          const start = stamped([{ type: 'gameStart', mode: 'normal', tick: 0, plantTime: nowMs, shiftId: null }], initial);
           this.entries.set(gameId, { state: start.state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });
           lead.set(gameId, start.events);
         }

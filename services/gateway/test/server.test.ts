@@ -93,7 +93,7 @@ describe('gateway server', () => {
     ws.send(JSON.stringify({ t: 'newGame' }));
     await expect.poll(() => kafka.sent.length).toBe(1);
     const gameId = kafka.sent[0]!.gameId;
-    expect(kafka.sent[0]!.command).toEqual({ type: 'startGame' });
+    expect(kafka.sent[0]!.command).toEqual({ type: 'startGame', mode: 'normal' });
     const reply = nextMsg(ws);
     gw!.onRecord(TOPICS.events, gameId, gameStart(gameId));
     expect(await reply).toEqual({ t: 'game', gameId });

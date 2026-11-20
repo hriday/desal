@@ -218,7 +218,7 @@ describe('applyCommand', () => {
 });
 
 describe('dispatchCrew', () => {
-  const dispatch = (s: PlantState, job: 'plugTubes' | 'repairEjector' | 'replaceSensor' | 'cleanScreens') =>
+  const dispatch = (s: PlantState, job: keyof typeof CREW_JOBS) =>
     applyCommand(s, env({ type: 'dispatchCrew', job }));
   const leaking = (): PlantState => applyEffect(running(), 'tubeLeak', { stage: 2, ppm: 30 });
   const idle = (s: PlantState, n: number): PlantState => {

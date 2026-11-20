@@ -167,7 +167,7 @@ export class Sessions {
           this.error(s, 'capacity');
           this.unbind(socketId, s);
         }, START_WAIT_MS);
-        this.dispatch(this.envelope(gameId, { type: 'startGame' }), () => this.startFailed(gameId));
+        this.dispatch(this.envelope(gameId, { type: 'startGame', mode: 'normal' }), () => this.startFailed(gameId)); // Plan 6 Task 2 passes the chosen mode
         return;
       }
       case 'resume': {

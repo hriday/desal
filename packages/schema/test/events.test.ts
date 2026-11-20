@@ -21,9 +21,9 @@ const events: PlantEvent[] = [
   { ...base, type: 'deliveryArrived', tonnes: 20, grade: 'offgrade' },
   { ...base, type: 'commandRejected', commandId: 'c1', reason: 'tripped', shiftId: null },
   { ...base, type: 'damage', component: 'pump', value: 0.5 },
-  { ...base, type: 'gameStart' },
+  { ...base, type: 'gameStart', mode: 'normal' },
   { ...base, type: 'gameRejected', reason: 'capacity' },
-  { ...base, type: 'gameEnd', reason: 'bankrupt', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: -5 } },
+  { ...base, type: 'gameEnd', mode: 'normal', reason: 'bankrupt', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: -5 } },
   { ...base, type: 'accountChange', deltaUsd: -6000, balanceUsd: 34000, cause: 'acidClean' },
   { ...base, type: 'accountChange', deltaUsd: 9700, balanceUsd: 24000, cause: 'allocation' },
 ];

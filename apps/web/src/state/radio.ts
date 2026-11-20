@@ -22,8 +22,8 @@ export function monitorFor(kind: ScenarioKind, message = ''): MonitorId {
     case 'tubeLeak': return 'product';
     case 'vacuumLoss': return 'stages';
     case 'controllerFault': return faultMonitor(message);
-    case 'gasCurtailNotice': case 'gasPriceSpike': case 'offgradeOnly': case 'deliveryDelay': return 'fuel';
-    case 'demandChange': case 'sensorFailure': return 'shift';
+    case 'gasCurtailNotice': case 'gasPriceSpike': case 'offgradeOnly': case 'deliveryDelay': case 'fuelContamination': return 'fuel';
+    case 'demandChange': case 'sensorFailure': case 'earthquake': case 'tsunami': return 'shift';
   }
 }
 

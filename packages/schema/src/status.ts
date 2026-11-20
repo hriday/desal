@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CrewJobSchema, FuelGradeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
+import { CrewJobSchema, FuelGradeSchema, GameModeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
 
 const num = z.number().finite();
 
@@ -84,5 +84,6 @@ export const PlantStatusSchema = z.object({
   orders: ShiftOrdersSchema.nullable(),
   /** The active shift's hell flag; null in handover so an unwarned hell can't be peeked at. */
   hell: z.boolean().nullable(),
+  mode: GameModeSchema.default('normal'),
 });
 export type PlantStatus = z.infer<typeof PlantStatusSchema>;

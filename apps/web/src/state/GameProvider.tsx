@@ -47,7 +47,7 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
   const hello = useCallback((): ClientMsg | null => {
     if (wantNewGame.current) {
       wantNewGame.current = false;
-      return { t: 'newGame' };
+      return { t: 'newGame', mode: 'normal' };
     }
     const id = storedGameId();
     return id ? { t: 'resume', gameId: id } : null;
@@ -125,7 +125,7 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
     const s = sock.current;
     if (s) {
       // A socket is already open (it normally is not, on Start): ask on it.
-      const ok = s.send({ t: 'newGame' });
+      const ok = s.send({ t: 'newGame', mode: 'normal' });
       if (ok) dispatch({ type: 'startClicked' });
       return ok;
     }

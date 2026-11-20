@@ -96,6 +96,10 @@ export function isCleared(s: PlantState, e: FiredEvent): ClearHow | null {
     case 'demandChange':
     case 'pumpBearing':
       return null;
+    case 'fuelContamination': // Plan 6 Task 3
+    case 'earthquake': // Plan 6 Task 4
+    case 'tsunami': // Plan 6 Task 5
+      return null;
   }
 }
 

@@ -10,6 +10,7 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
   return {
     gameId,
     epoch: 0,
+    mode: 'normal',
     shiftNumber: 1,
     balanceUsd: 15000,
     tick,
@@ -52,11 +53,12 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
 
 const base = (gameId: string, tick = 0) => ({ gameId, epoch: 0, seq: tick, tick, plantTime: tick * 40, shiftId: null });
 
-export const gameStart = (gameId: string): PlantEvent => ({ ...base(gameId), type: 'gameStart' });
+export const gameStart = (gameId: string): PlantEvent => ({ ...base(gameId), type: 'gameStart', mode: 'normal' });
 export const gameRejected = (gameId: string): PlantEvent => ({ ...base(gameId), type: 'gameRejected', reason: 'capacity' });
 export const gameEnd = (gameId: string, tick = 10): PlantEvent => ({
   ...base(gameId, tick),
   type: 'gameEnd',
+  mode: 'normal',
   reason: 'quit',
   score: { shiftsCompleted: 0, totalProductM3: 0, balanceUsd: 15000 },
 });

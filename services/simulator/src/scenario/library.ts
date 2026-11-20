@@ -48,6 +48,12 @@ export function eventMessage(kind: ScenarioKind, p: Record<string, number | stri
     case 'storm':
     case 'sensorFailure':
       return radioLine(kind, p);
+    case 'fuelContamination':
+      return 'Fuel contamination reported.'; // Plan 6 Task 3
+    case 'earthquake':
+      return 'Earthquake.'; // Plan 6 Task 4
+    case 'tsunami':
+      return 'Tsunami warning.'; // Plan 6 Task 5
   }
 }
 

@@ -30,6 +30,7 @@ export const KIND_TEXT: Record<string, string> = {
   gasPriceSpike: 'Gas price spike', offgradeOnly: 'Off-grade fuel only', deliveryDelay: 'Fuel delivery delay', demandChange: 'Demand change',
   controllerFault: 'Controller fault', pumpTrip: 'Pump trip', tubeLeak: 'Tube leak', vacuumLoss: 'Vacuum loss', powerDip: 'Power dip',
   storm: 'Storm', sensorFailure: 'Instrument failure',
+  fuelContamination: 'Contaminated fuel', earthquake: 'Earthquake', tsunami: 'Tsunami',
 };
 
 /** How an event ended, as the debrief and the event log say it. */

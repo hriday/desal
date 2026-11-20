@@ -4,7 +4,7 @@ import { status } from './fixtures.js';
 const G = '3f2b8c1e-5d4a-4e7b-9a10-2c6d8e4f1a7b';
 
 const client = [
-  { t: 'newGame' },
+  { t: 'newGame', mode: 'normal' },
   { t: 'resume', gameId: G },
   { t: 'cmd', command: { type: 'pause' } },
   { t: 'cmd', command: { type: 'pause' }, commandId: G },

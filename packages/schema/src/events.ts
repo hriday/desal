@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { FuelGradeSchema, FuelKindSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
+import { FuelGradeSchema, GameModeSchema, FuelKindSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
 import { ShiftOrdersSchema, TripCauseSchema } from './status.js';
 
 const num = z.number().finite();
@@ -23,8 +23,13 @@ export const ScenarioKindSchema = z.enum([
   'powerDip',
   'storm',
   'sensorFailure',
+  'fuelContamination',
+  'earthquake',
+  'tsunami',
 ]);
 export type ScenarioKind = z.infer<typeof ScenarioKindSchema>;
+
+export const DISASTER_KINDS: readonly ScenarioKind[] = ['fuelContamination', 'earthquake', 'tsunami'];
 
 export const SHARP_KINDS: readonly ScenarioKind[] = ['pumpTrip', 'tubeLeak', 'vacuumLoss', 'powerDip', 'storm', 'sensorFailure'];
 
@@ -101,9 +106,9 @@ export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('deliveryArrived'), tonnes: num, grade: FuelGradeSchema }),
   z.object({ ...base, type: z.literal('commandRejected'), commandId: z.string(), reason: z.string() }),
   z.object({ ...base, type: z.literal('damage'), component: DamageComponentSchema, value: num }),
-  z.object({ ...base, type: z.literal('gameStart') }),
+  z.object({ ...base, type: z.literal('gameStart'), mode: GameModeSchema.default('normal') }),
   z.object({ ...base, type: z.literal('gameRejected'), reason: z.enum(['capacity', 'duplicate']) }),
-  z.object({ ...base, type: z.literal('gameEnd'), reason: GameEndReasonSchema, score: GameScoreSchema }),
+  z.object({ ...base, type: z.literal('gameEnd'), mode: GameModeSchema.default('normal'), reason: GameEndReasonSchema, score: GameScoreSchema }),
   z.object({ ...base, type: z.literal('accountChange'), deltaUsd: num, balanceUsd: num, cause: AccountCauseSchema }),
 ]);
 export type PlantEvent = z.infer<typeof PlantEventSchema>;

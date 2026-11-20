@@ -30,4 +30,5 @@ export const CREW_JOBS = {
   repairEjector: { costUsd: 1000, minutes: 45, plain: 'repair ejector', doing: 'Repairing ejector' },
   replaceSensor: { costUsd: 400, minutes: 30, plain: 'replace instrument', doing: 'Replacing sensor' },
   cleanScreens: { costUsd: 300, minutes: 30, plain: 'clean screens', doing: 'Cleaning screens' },
+  flushFuel: { costUsd: 1500, minutes: 60, plain: 'flush fuel', doing: 'Flushing fuel' },
 } as const;

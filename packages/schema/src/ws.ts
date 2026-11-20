@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CommandSchema } from './commands.js';
+import { CommandSchema, GameModeSchema } from './commands.js';
 import { PlantEventSchema } from './events.js';
 import { PlantStatusSchema } from './status.js';
 
@@ -7,7 +7,7 @@ const num = z.number().finite();
 
 // Client -> gateway.
 export const ClientMsgSchema = z.discriminatedUnion('t', [
-  z.object({ t: z.literal('newGame') }),
+  z.object({ t: z.literal('newGame'), mode: GameModeSchema.default('normal') }),
   z.object({ t: z.literal('resume'), gameId: z.uuid() }),
   // commandId is optional: the gateway uses it as the envelope commandId so rejections can be matched to a send.
   z.object({ t: z.literal('cmd'), command: CommandSchema, commandId: z.uuid().optional() }),

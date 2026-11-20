@@ -9,6 +9,7 @@ export const status: PlantStatus = {
   plantTime: 300,
   shiftId: null,
   phase: 'handover',
+  mode: 'normal',
   status: 'online',
   controlMode: 'auto',
   tripCause: null,

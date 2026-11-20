@@ -146,9 +146,9 @@ describe('eventText', () => {
     deliveryArrived: { ...base, type: 'deliveryArrived', tonnes: 50, grade: 'offgrade' },
     commandRejected: { ...base, type: 'commandRejected', commandId: 'c', reason: 'insufficient funds' },
     damage: { ...base, type: 'damage', component: 'burner', value: 0.6 },
-    gameStart: { ...base, type: 'gameStart' },
+    gameStart: { ...base, type: 'gameStart', mode: 'normal' },
     gameRejected: { ...base, type: 'gameRejected', reason: 'capacity' },
-    gameEnd: { ...base, type: 'gameEnd', reason: 'outOfFuel', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: 100 } },
+    gameEnd: { ...base, type: 'gameEnd', mode: 'normal', reason: 'outOfFuel', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: 100 } },
     accountChange: { ...base, type: 'accountChange', deltaUsd: -8000, balanceUsd: 4450, cause: 'overhaul' },
   };
 
