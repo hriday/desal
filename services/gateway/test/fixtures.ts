@@ -44,6 +44,7 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
     divertToDrain: false,
     divertMode: 'auto',
     standbySteam: false,
+    standbyEjectors: false,
     shiftTicksRemaining: 720 - tick,
     deliveries: [],
     acidCleanRemainingTicks: 0,

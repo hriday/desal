@@ -36,6 +36,11 @@ test('setDivertMode takes auto or manual only', () => {
   expect(CommandSchema.safeParse({ type: 'setDivertMode', mode: 'manual' }).success).toBe(true);
   expect(CommandSchema.safeParse({ type: 'setDivertMode', mode: 'off' }).success).toBe(false);
 });
+test('standbyEjectors needs a boolean on', () => {
+  expect(CommandSchema.safeParse({ type: 'standbyEjectors', on: true }).success).toBe(true);
+  expect(CommandSchema.safeParse({ type: 'standbyEjectors' }).success).toBe(false);
+  expect(CommandSchema.safeParse({ type: 'standbyEjectors', on: 'yes' }).success).toBe(false);
+});
 test('standbySteam needs a boolean on', () => {
   expect(CommandSchema.safeParse({ type: 'standbySteam', on: true }).success).toBe(true);
   expect(CommandSchema.safeParse({ type: 'standbySteam' }).success).toBe(false);

@@ -203,6 +203,8 @@ export const RECIRC_TAU_S = 60;
 export const VACUUM_QUALITY_MIN = 0.3;
 /** Nominal vacuum quality. */
 export const VACUUM_QUALITY_NOMINAL = 0.95;
+/** Nominal condenser cooling capacity of the ejector train: two trains' worth. */
+export const COOL_CAP_NOMINAL = 2;
 /** Nominal ejector motive steam pressure (bar). */
 export const MOTIVE_STEAM_NOMINAL_BAR = 14.5;
 /** Motive steam at and above which the ejectors reach full vacuum (bar). */

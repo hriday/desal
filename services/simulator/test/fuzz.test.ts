@@ -40,7 +40,7 @@ const SP: Record<string, [number, number]> = Object.fromEntries(
 const PUMPS = ['P-101', 'P-102', 'P-103'] as const;
 
 function randomCommand(r: Rand, s: PlantState): unknown {
-  const k = r.int(0, 23);
+  const k = r.int(0, 24);
   const loop = r.pick(LOOPS);
   const [lo, hi] = SP[loop] ?? [0.15, 0.6];
   switch (k) {
@@ -88,6 +88,8 @@ function randomCommand(r: Rand, s: PlantState): unknown {
       return env(s, { type: 'setDivertMode', mode: r.pick(['auto', 'manual']) });
     case 22:
       return env(s, { type: 'standbySteam', on: r.next() < 0.5 });
+    case 23:
+      return env(s, { type: 'standbyEjectors', on: r.next() < 0.5 });
     default:
       return env(s, { type: 'setSetpoint', loop: 'level99', value: 0.3 });
   }

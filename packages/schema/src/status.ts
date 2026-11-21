@@ -81,6 +81,8 @@ export const PlantStatusSchema = z.object({
   divertMode: DivertModeSchema.default('manual'),
   /** The standby motive steam line is on. */
   standbySteam: z.boolean().default(false),
+  /** The standby ejector train is on. */
+  standbyEjectors: z.boolean().default(false),
   shiftTicksRemaining: num,
   deliveries: z.array(z.object({ arrivesInTicks: num, tonnes: num, grade: FuelGradeSchema })),
   acidCleanRemainingTicks: num,

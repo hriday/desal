@@ -29,7 +29,7 @@ export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
     },
     doses: { chlorineMgL: 1.5, antiscalantMgL: 3 },
     shiftTarget: demoTarget,
-    ballCleaning: false, divertToDrain: false, divertMode: 'auto', standbySteam: false, shiftTicksRemaining: 330, deliveries: [],
+    ballCleaning: false, divertToDrain: false, divertMode: 'auto', standbySteam: false, standbyEjectors: false, shiftTicksRemaining: 330, deliveries: [],
     acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard',
     shiftProductM3: 0, shiftOffSpecM3: 0, productFlowM3h: 0, crew: null, orders: null, hell: null, // Plan 4 Task 11 replaces
     ...over,

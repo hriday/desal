@@ -49,6 +49,7 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('divertToDrain'), on: z.boolean() }),
   z.object({ type: z.literal('setDivertMode'), mode: DivertModeSchema }),
   z.object({ type: z.literal('standbySteam'), on: z.boolean() }),
+  z.object({ type: z.literal('standbyEjectors'), on: z.boolean() }),
   z.object({ type: z.literal('selectFuel'), fuel: FuelKindSchema }),
   z.object({ type: z.literal('orderFuel'), tonnes: num }),
   z.object({ type: z.literal('manualTrip') }),

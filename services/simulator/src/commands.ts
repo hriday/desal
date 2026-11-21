@@ -146,6 +146,8 @@ function apply(s: PlantState, id: string, c: Command): Out {
       return ok({ ...s, product: { ...s.product, divertMode: c.mode } });
     case 'standbySteam':
       return ok({ ...s, steam: { ...s.steam, standby: c.on } });
+    case 'standbyEjectors':
+      return ok({ ...s, ejectors: { ...s.ejectors, standby: c.on } });
     case 'selectFuel':
       if (s.fuel.changeover) return no('fuel changeover in progress');
       if (c.fuel === s.fuel.active) return no(`${c.fuel} is already the active fuel`);

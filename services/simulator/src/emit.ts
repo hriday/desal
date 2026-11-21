@@ -139,6 +139,7 @@ export function toStatus(s: PlantState): PlantStatus {
     divertToDrain: s.product.divertToDrain,
     divertMode: s.product.divertMode,
     standbySteam: s.steam.standby,
+    standbyEjectors: s.ejectors.standby,
     shiftTicksRemaining: inShift ? Math.max(0, SHIFT_TICKS - (s.tick - s.shift!.startTick)) : 0,
     deliveries: deliveryView(s),
     acidCleanRemainingTicks: s.acidCleanRemainingTicks,
