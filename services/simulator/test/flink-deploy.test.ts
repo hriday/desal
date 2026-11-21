@@ -58,6 +58,13 @@ describe('deploy/compose.yml: Flink', () => {
     // The 1.x names, which Flink 2 no longer reads.
     expect(prod).not.toMatch(/state\.(checkpoints|savepoints)\.dir/);
   });
+
+  it('retains checkpoints when a job is cancelled or the jobmanager goes away, and restarts the jobmanager', () => {
+    for (const s of [jobmanager(), taskmanager()]) {
+      expect(s).toMatch(/^\s*execution\.checkpointing\.externalized-checkpoint-retention:\s*RETAIN_ON_CANCELLATION\s*$/m);
+      expect(s).toMatch(/^\s*restart:\s*unless-stopped\s*$/m);
+    }
+  });
 });
 
 describe('infra/docker-compose.yml: Flink', () => {
@@ -68,6 +75,9 @@ describe('infra/docker-compose.yml: Flink', () => {
     for (const s of [jm, tm]) expect(s).toMatch(/dockerfile:\s*services\/flink\/Dockerfile/);
     expect(jm).toMatch(/^\s*-\s*"?127\.0\.0\.1:8082:8081"?\s*$/m);
     expect(local).toMatch(/web\.submit\.enable:\s*false/);
+    for (const s of [jm, tm]) {
+      expect(s).toMatch(/^\s*execution\.checkpointing\.externalized-checkpoint-retention:\s*RETAIN_ON_CANCELLATION\s*$/m);
+    }
   });
 });
 
@@ -161,8 +171,66 @@ describe('services/flink/flink-jobs.sh', () => {
   });
 });
 
+describe('services/flink/flink-jobs.sh: recovery after a jobmanager restart', () => {
+  const text = read('services/flink/flink-jobs.sh');
+  const fn = (name: string) => text.slice(text.indexOf(`${name}() {`), text.indexOf('\n}\n', text.indexOf(`${name}() {`)));
+
+  it('records every submitted job id in /flink-data/jobs.txt', () => {
+    expect(text).toMatch(/^JOBS_FILE=\/flink-data\/jobs\.txt$/m);
+    expect(fn('submit')).toMatch(/record_job "\$name" "\$id"/);
+  });
+
+  it('restores from the newest complete checkpoint when it is newer than the savepoint, else the savepoint', () => {
+    expect(fn('latest_checkpoint')).toMatch(/chk-\$n\/_metadata/);
+    const restore = fn('restore_point');
+    expect(restore).toMatch(/-nt "\$\{savepoint#file:\}\/_metadata"/);
+    const submitAll = fn('submit_all');
+    expect(submitAll).toMatch(/from="\$\(restore_point "\$name" "\$savepoint"\)"/);
+    expect(submitAll).toMatch(/submit "\$name" "\$from"/);
+    // The incompatible-state fallback is still a fresh start.
+    expect(submitAll).toMatch(/savepoint incompatible, starting fresh"\n\s*submit "\$name" \|\| failed=1/);
+  });
+
+  it('serializes submit-all runs with a lock, so two runs never submit a job twice', () => {
+    expect(fn('submit_all')).toMatch(/flock -w \d+ 9/);
+  });
+
+  it('prunes old checkpoints after submitting, and only with the cluster job list in hand', () => {
+    expect(fn('submit_all')).toMatch(/prune_checkpoints\n\s*return "\$failed"/);
+    expect(fn('prune_checkpoints')).toMatch(/overview="\$\(list_jobs\)" \|\| return 0/);
+  });
+});
+
+describe('services/flink/desal-entrypoint.sh', () => {
+  const script = file('services/flink/desal-entrypoint.sh');
+  const text = readFileSync(script, 'utf8');
+
+  it('is valid bash', () => {
+    const r = spawnSync('bash', ['-n', script], { encoding: 'utf8' });
+    expect(r.stderr).toBe('');
+    expect(r.status).toBe(0);
+  });
+
+  it('hands over to the stock entrypoint, resubmitting the jobs in the background on a jobmanager', () => {
+    const code = text.replace(/^\s*#.*$/gm, '');
+    expect(code).toMatch(/^exec \/docker-entrypoint\.sh "\$@"\s*$/m);
+    expect(code).toMatch(/if \[ "\$\{1:-\}" = jobmanager \]/);
+    expect(code).toMatch(/^\s*auto_submit .*&\s*$/m);
+    expect(code).toMatch(/flink-jobs\.sh submit-all "\$LIST"/);
+    expect(code).toMatch(/^LIST=\/flink-data\/savepoints\/last\.txt$/m);
+    for (const call of code.match(/curl [^|\n]*/g) ?? []) expect(call).toMatch(/--max-time \d+/);
+  });
+});
+
 describe('services/flink/Dockerfile', () => {
+  const dockerfile = read('services/flink/Dockerfile');
   it("caps Maven's heap so the build cannot push the small server into swap", () => {
-    expect(read('services/flink/Dockerfile')).toMatch(/^ENV MAVEN_OPTS=-Xmx512m$/m);
+    expect(dockerfile).toMatch(/^ENV MAVEN_OPTS=-Xmx512m$/m);
+  });
+
+  it('runs desal-entrypoint.sh as the entrypoint and keeps the base image default command', () => {
+    expect(dockerfile).toMatch(/^COPY --chmod=755 services\/flink\/desal-entrypoint\.sh \/opt\/flink\/bin\/desal-entrypoint\.sh$/m);
+    expect(dockerfile).toMatch(/^ENTRYPOINT \["\/opt\/flink\/bin\/desal-entrypoint\.sh"\]$/m);
+    expect(dockerfile).toMatch(/^CMD \["help"\]$/m);
   });
 });

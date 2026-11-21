@@ -128,6 +128,8 @@ services:
       # at 64 MB; and the jobmanager's JVM overhead reserve is cut from its 192 MB minimum to
       # 128 MB so its heap gets the recommended 128 MB.
       # Checkpoints (periodic, automatic) and savepoints (taken by deploys) go to the shared volume.
+      # A job's last checkpoint is kept when it is cancelled or the jobmanager goes away, so a
+      # restarted jobmanager can resubmit the jobs from it (desal-entrypoint.sh, flink-jobs.sh).
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
         jobmanager.memory.process.size: 640m
@@ -139,6 +141,7 @@ services:
         state.backend.type: hashmap
         execution.checkpointing.dir: file:///flink-data/checkpoints
         execution.checkpointing.savepoint-dir: file:///flink-data/savepoints
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
         web.submit.enable: false
         rest.bind-address: 0.0.0.0
     volumes:
@@ -163,6 +166,8 @@ services:
       # at 64 MB; and the jobmanager's JVM overhead reserve is cut from its 192 MB minimum to
       # 128 MB so its heap gets the recommended 128 MB.
       # Checkpoints (periodic, automatic) and savepoints (taken by deploys) go to the shared volume.
+      # A job's last checkpoint is kept when it is cancelled or the jobmanager goes away, so a
+      # restarted jobmanager can resubmit the jobs from it (desal-entrypoint.sh, flink-jobs.sh).
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: flink-jobmanager
         jobmanager.memory.process.size: 640m
@@ -174,6 +179,7 @@ services:
         state.backend.type: hashmap
         execution.checkpointing.dir: file:///flink-data/checkpoints
         execution.checkpointing.savepoint-dir: file:///flink-data/savepoints
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
         web.submit.enable: false
         rest.bind-address: 0.0.0.0
     volumes:

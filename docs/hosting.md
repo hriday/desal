@@ -32,7 +32,7 @@ Everything desal adds is named `desal*`. Nothing else runs on the server (the pr
 | Source trees | `/opt/desal/src-<commit>/` (the two newest are kept; images are built from them) |
 | Images | `desal-simulator:<commit>`, `desal-gateway:<commit>` and `desal-flink:<commit>` (two newest of each kept), `apache/kafka:4.1.1`, `kafbat/kafka-ui:v1.3.0` |
 | Data | Docker volume `desal_kafka-data`: every topic, including the game saves (`plant.state`) |
-| Flink state | Docker volume `desal_flink-checkpoints` at `/flink-data`: `checkpoints/`, `savepoints/` and `savepoints/last.txt` (the savepoints the last deploy took) |
+| Flink state | Docker volume `desal_flink-checkpoints` at `/flink-data`: `checkpoints/`, `savepoints/`, `savepoints/last.txt` (the savepoints the last deploy took) and `jobs.txt` (the job ids submit-all started, to find their checkpoints) |
 | Basic-auth credentials | `/opt/desal/basic-auth.txt` (mode 600; user `operator`) |
 | Caddy | `/etc/caddy/sites/desal.caddy`, imported by `import /etc/caddy/sites/*.caddy` in `/etc/caddy/Caddyfile`. Caddy runs on the host, holds ports 80 and 443, and gets the TLS certificate itself |
 | Swap | `/swapfile` (2 GB, in `/etc/fstab`), `vm.swappiness=10` in `/etc/sysctl.d/99-desal-swap.conf` |
@@ -62,8 +62,22 @@ and web UI; `desal-flink-taskmanager` runs the jobs in its 2 slots. Both run the
 - `leaderboard` (`org.desal.flink.leaderboard.LeaderboardJob`): `run.results` + `plant.status` into `leaderboard` and `run.ranks`.
 
 The game never needs Flink: with it down, handover shows the plain debrief and the start screen "Leaderboard offline".
-Each job checkpoints every minute to `/flink-data/checkpoints` (the shared volume), so a crashed task restarts from
-its last checkpoint by itself.
+Each job checkpoints every minute to `/flink-data/checkpoints/<jobId>/chk-<n>` (the shared volume), so a crashed task
+or taskmanager restarts from its last checkpoint by itself.
+
+**Jobmanager restarts.** The session cluster has no high availability: a jobmanager that restarts (host reboot, Docker
+restart, crash; `restart: unless-stopped` brings it back) comes back with no jobs. Checkpoints are retained when a job
+is cancelled or the jobmanager goes away (`execution.checkpointing.externalized-checkpoint-retention:
+RETAIN_ON_CANCELLATION`), and the image's entrypoint (`/opt/flink/bin/desal-entrypoint.sh`) runs
+`flink-jobs.sh submit-all /flink-data/savepoints/last.txt` in the background each time the jobmanager starts, once
+both task slots have registered (and only if the jobs have run there before). `submit-all` restores each job from its
+newest state: the newest complete checkpoint (`chk-<n>` with a `_metadata` file) of its last run, if that is newer
+than its savepoint in `last.txt`, else that savepoint. It finds a run's checkpoints through `/flink-data/jobs.txt`,
+where every submit records `name=jobId` (the last two per job). So after a reboot both jobs come back by themselves,
+at most a minute behind; `docker logs desal-flink-jobmanager | grep auto-submit` shows what it did. If it printed
+`!!!`, rerun `docker exec desal-flink-jobmanager flink-jobs.sh submit-all /flink-data/savepoints/last.txt` by hand.
+After submitting, `submit-all` deletes the checkpoint directories of jobs that are neither running nor recorded in
+`jobs.txt`, and keeps only the newest complete checkpoint of a recorded job that is not running.
 
 **Flink memory.** Container caps above; what they really use (`docker stats --no-stream` on the server, filled in at the
 first deploy):
@@ -95,7 +109,8 @@ redeploy and writes final snapshots first (30 s grace), so a redeploy resumes ev
 state, then stops the job; the paths go to `last.txt`). A session cluster forgets its jobs when it restarts, so after
 `up` it waits (up to 120 s) for `127.0.0.1:8082/overview` to show a taskmanager and resubmits both
 (`flink-jobs.sh submit-all /flink-data/savepoints/last.txt`), each from its savepoint, so open shifts and the boards
-carry over. If a savepoint no longer fits the new job (the leaderboard's SQL operators get their ids from the query,
+carry over. (The new jobmanager's entrypoint runs the same `submit-all` as it starts; a lock makes the two take turns
+and the second finds both jobs running.) If a savepoint no longer fits the new job (the leaderboard's SQL operators get their ids from the query,
 so changing a query can do this), the script prints `!!! leaderboard: savepoint incompatible, starting fresh` and
 submits it without one: the board rebuilds from the compacted `run.results` topic. It never skips state with
 `--allowNonRestoredState`. A job already running is never submitted twice. A job that was not running at
@@ -111,7 +126,8 @@ docker exec desal-flink-jobmanager flink-jobs.sh submit-all /flink-data/savepoin
 ```
 
 To start a job with no state at all, cancel it in the UI (or `docker exec desal-flink-jobmanager flink cancel <jobId>`),
-remove its line from `last.txt`, and run `submit-all`.
+remove its lines from `/flink-data/savepoints/last.txt` and from `/flink-data/jobs.txt` (a cancelled job's checkpoints
+are retained, and `submit-all` would otherwise restore from them), and run `submit-all`.
 
 A redeploy that changes the snapshot version (it is 6 since call signs and runIds) migrates v3, v4 and v5 saves, so their games resume; saves older than v3 are skipped, so such games in flight at that deploy end.
 
