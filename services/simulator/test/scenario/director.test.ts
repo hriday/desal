@@ -472,6 +472,26 @@ describe('director: lowSteam runs on its own clock', () => {
     expect(fired(a)).toHaveLength(1);
   });
 
+  it('a normal event due on the same tick still fires on that tick (standby on)', () => {
+    const standbyOn = (s: PlantState): PlantState => ({ ...s, steam: { ...s.steam, standby: true } });
+    const timing = (s: PlantState) => fired(s).filter((e) => e.kind !== 'lowSteam').map((e) => [e.eventId, e.kind, e.atMinute]);
+    // Pinned together at minute 40; and a second event that becomes due (gap and settled) at minute 100, with lowSteam.
+    const cases: Q[][] = [
+      [{ kind: 'tubeLeak', params: LEAK, earliestMinute: 40 }, { kind: 'lowSteam', earliestMinute: 40 }],
+      [{ kind: 'demandChange', params: { deltaM3: 100 }, earliestMinute: 40 }, { kind: 'tubeLeak', params: LEAK }, { kind: 'lowSteam', earliestMinute: 100 }],
+    ];
+    for (const plan of cases) {
+      const others = plan.filter((q) => q.kind !== 'lowSteam');
+      const a = until(standbyOn(running(plan, false)), (x) => fired(x).length === plan.length, holdLeak);
+      const b = until(standbyOn(running(others, false)), (x) => fired(x).length === others.length, holdLeak);
+      expect(timing(a)).toEqual(timing(b));
+      expect(a.seed).toBe(b.seed);
+      const steam = fired(a).find((e) => e.kind === 'lowSteam')!;
+      expect(steam.cleared).toBe(true);
+      expect(fired(a).some((e) => e.kind !== 'lowSteam' && e.atMinute === steam.atMinute)).toBe(true);
+    }
+  });
+
   it('does not count toward the event cap', () => {
     // Six cleared events before a hell pump trip: its cascade needs room under the cap of 7 (fired
     // and queued). A lowSteam as the sixth leaves that room; any other event does not.

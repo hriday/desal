@@ -314,7 +314,10 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     nextEventId,
   };
   const state: PlantState = { ...s, seed, chaos: { ...s.chaos, active } };
-  if (dueOwnClock(rest, minute) !== -1) {
+  // Low steam must not cost anyone else their tick: run the director again, so its clear (standby on)
+  // is marked and whatever else is due fires this same tick. Terminates: the entry has left the queue.
+  // Disasters keep their pre-Plan-8 behaviour (only another due own-clock event follows this tick).
+  if (kind === 'lowSteam' || dueOwnClock(rest, minute) !== -1) {
     const more = stepDirector(state);
     return { state: more.state, events: [...events, ...more.events] };
   }
