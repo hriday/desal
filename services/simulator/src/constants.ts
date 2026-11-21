@@ -31,7 +31,7 @@ export const SNAPSHOT_EVERY_TICKS = 30;
  *   it was a linear -0.006 CF per % ((CF_MAX - CF_MIN) / 100). Gains unchanged.
  * - vacuum: 600 s lag, 0.007 quality per %.
  * - level: integrating plant, -0.0008 m/tick per % valve (reverse).
- * - makeup: integrating plant behind a MAKEUP_TAU_S lag, +0.000126 m/tick per % valve
+ * - makeup: integrating plant behind a MAKEUP_TAU_S lag, +0.000143 m/tick per % valve
  *   (MAKEUP_MAX_M3H / 100 x POOL_LEVEL_PER_M3H_S x TICK_PLANT_S).
  */
 export const LOOP_GAINS = {
@@ -221,9 +221,9 @@ export const BLOWDOWN_MAX_M3H = 2026;
 /**
  * Seawater makeup into the stage-24 brine pool at full makeup valve (m3/h). Sized to out-supply the
  * worst draw on the pool, distillate at PLANT_MAX_PRODUCT_M3H plus blowdown wide open (857 + 2026),
- * with about 4 % to spare, so the Auto makeup loop holds the pool at maximum load (test/layout.test.ts).
+ * with about 18 % to spare (3400 vs 2883), so the Auto makeup loop holds the pool at maximum load (test/layout.test.ts).
  */
-export const MAKEUP_MAX_M3H = 3000;
+export const MAKEUP_MAX_M3H = 3400;
 /** Makeup flow time constant (s): the makeup valve and line, like the recirc pump's. */
 export const MAKEUP_TAU_S = 60;
 /**

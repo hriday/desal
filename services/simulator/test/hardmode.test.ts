@@ -45,7 +45,7 @@ describe('passive play (startShift in Auto, nothing else)', () => {
   it('Hard: at least 14 of 20 runs end or miss a target by the end of shift 3', () => {
     const broke = hard.filter(brokeBy3).length;
     console.log(`passive Hard broken by shift 3: ${broke}/20`);
-    expect(broke).toBeGreaterThanOrEqual(14);
+    expect(broke).toBe(20); // Plan 7 baseline: 20/20 (test/plan7balance.test.ts)
   });
 
   // Ruling R5: an ignored shift-1 pump trip should cost a little water, so the bar is 95 % of the
@@ -77,6 +77,9 @@ describe('engaged play on Hard', () => {
     const lengths = SEEDS.map((seed) => engagedRun(seed, 10, { mode: 'hard' }).shifts);
     console.log(`engaged Hard runs (shift reached): ${[...lengths].sort((a, b) => a - b).join(',')}, median ${median(lengths)}`);
     expect(median(lengths)).toBeGreaterThanOrEqual(3);
+    // Plan 7 guard: the 24-stage plant keeps the baseline median of 6 within one shift.
+    expect(median(lengths)).toBeGreaterThanOrEqual(5);
+    expect(median(lengths)).toBeLessThanOrEqual(7);
   }, 120_000);
 });
 

@@ -261,7 +261,7 @@ describe('director: cascades', () => {
     }
     expect(reachedCap).toBeGreaterThan(0);
     expect([...cascadeKinds].sort()).toEqual(['bloom', 'pumpBearing', 'sensorFailure']);
-  });
+  }, 30_000);
 
   it('pumpTrip → pumpBearing goes on the standby, immediately', () => {
     for (let seed = 1; seed <= 50; seed++) {

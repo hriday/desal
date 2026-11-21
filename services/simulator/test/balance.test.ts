@@ -18,6 +18,9 @@ describe('balance: an engaged player', () => {
     const lengths = runs.map((r) => r.shifts);
     console.log(`engaged runs (shift reached): ${[...lengths].sort((a, b) => a - b).join(',')}, median ${median(lengths)}`);
     expect(median(lengths)).toBeGreaterThanOrEqual(8);
+    // Plan 7 guard: baseline median 8.5, within one shift.
+    expect(median(lengths)).toBeGreaterThanOrEqual(7.5);
+    expect(median(lengths)).toBeLessThanOrEqual(9.5);
   });
 
   it('still pays real money for the crew: it is a choice, not a free fix', () => {

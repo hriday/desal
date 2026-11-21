@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SHIFT_TICKS } from '../src/constants.js';
+import { PLANT_MAX_PRODUCT_M3H, SHIFT_TICKS } from '../src/constants.js';
 import { drawPendingPlan } from '../src/shift.js';
 import { createInitialState } from '../src/state.js';
 import { tick } from '../src/tick.js';
@@ -31,5 +31,9 @@ describe('Plan 7 balance baseline', () => {
     }
     expect(s.phase).toBe('handover');
     expect(Math.abs(productM3 - BASELINE_CALM_SHIFT_M3)).toBeLessThanOrEqual(0.01 * BASELINE_CALM_SHIFT_M3);
+  });
+
+  it('the flat-out product flow constant is unchanged (stage-count independent)', () => {
+    expect(PLANT_MAX_PRODUCT_M3H).toBe(857);
   });
 });
