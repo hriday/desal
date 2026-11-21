@@ -17,7 +17,7 @@ JM=desal-flink-jobmanager
 REST=http://localhost:8082
 JAR=/opt/flink/usrlib/desal-flink.jar
 LIST=/flink-data/savepoints/last.txt
-SUFFIX=".e2e-$(date +%s)"
+SUFFIX=".e2e-$(date +%s)-$$"
 JOB_IDS=()
 STOPPED_UNSUFFIXED=0
 
@@ -41,6 +41,10 @@ wait_for() {
   done
 }
 
+for tool in docker pnpm curl jq; do
+  command -v "$tool" >/dev/null || { log "needs $tool on PATH"; exit 1; }
+done
+
 cleanup() {
   local status=$? id
   set +e
@@ -56,17 +60,25 @@ cleanup() {
     --delete --topic ".*${SUFFIX//./\\.}" 2>&1 | tail -n 1
   if [ "$STOPPED_UNSUFFIXED" = 1 ]; then
     log "resubmitting the unsuffixed jobs from their savepoints"
-    docker exec "$JM" flink-jobs.sh submit-all "$LIST"
+    if ! docker exec "$JM" flink-jobs.sh submit-all "$LIST"; then
+      echo "!!! resubmit failed: report-card and/or leaderboard may be left stopped; their savepoints are in $LIST" >&2
+      echo "!!! retry: docker exec $JM flink-jobs.sh submit-all $LIST" >&2
+      [ "$status" -ne 0 ] || status=1
+    fi
   fi
   if [ "$status" -eq 0 ]; then log "PASS"; else log "FAIL (exit $status)"; fi
   exit "$status"
 }
 trap cleanup EXIT
+# A signal exits through the EXIT trap too, so Ctrl-C still cleans up.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 log "bringing up Kafka and Flink"
-# No --build: a rebuilt image recreates the Flink containers, and a session cluster loses its
-# running jobs with them. After changing the jobs, run `up -d --build` yourself first.
-"${COMPOSE[@]}" up -d kafka flink-jobmanager flink-taskmanager
+# No --build, and --no-recreate: a recreated Flink container (after a rebuild, or any drift in
+# the compose config or image) loses the session cluster's running jobs. After changing the
+# jobs, run `up -d --build` yourself first.
+"${COMPOSE[@]}" up -d --no-recreate kafka flink-jobmanager flink-taskmanager
 wait_for "[ \"\$(docker inspect -f '{{.State.Health.Status}}' desal-kafka)\" = healthy ]" 120
 wait_for "[ \"\$(curl -sf --max-time 5 $REST/overview | jq -r '.\"slots-total\"')\" -ge 2 ]" 120
 
