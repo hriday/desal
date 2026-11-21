@@ -14,7 +14,8 @@ Both items came from the user playing the live game:
    - A motive steam pressure reading, nominal **14.5 bar**, shown on the stages screen.
    - The vacuum loop's output is labelled **"Ejector steam valve"** (%).
    - Below **13 bar** the ejector's reach falls. The best vacuum the valve can pull scales down linearly to
-     VACUUM_QUALITY_MIN at 8 bar, so a fully open valve can still lose vacuum.
+     VACUUM_QUALITY_MIN at 10 bar (amended from 8 in Plan 8 ruling R1 so every 10–11 bar floor trips in ~20–30 min),
+     so a fully open valve can still lose vacuum. Sag rate 0.25 bar/min.
 2. **Low motive steam fault** (new scenario event kind `lowSteam`).
    - The steam pressure-reducing valve sticks and the pressure sags over a few plant minutes to **10–11 bar** (seeded).
    - The vacuum then drifts toward the loss-of-vacuum trip (VACUUM_TRIP 0.6) over roughly 20–30 plant minutes.

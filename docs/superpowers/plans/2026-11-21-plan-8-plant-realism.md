@@ -16,11 +16,11 @@
 
 ## Global Constraints
 
-- **Motive steam (spec values):** `MOTIVE_STEAM_NOMINAL_BAR = 14.5`, `EJECTOR_FULL_REACH_BAR = 13`, `EJECTOR_NO_REACH_BAR = 8`.
-  - `ejectorReach(bar) = clamp01((bar − 8) / (13 − 8))`.
+- **Motive steam (spec values):** `MOTIVE_STEAM_NOMINAL_BAR = 14.5`, `EJECTOR_FULL_REACH_BAR = 13`, `EJECTOR_NO_REACH_BAR = 10` (ruling R1, amended from the spec's 8 so every floor trips, see the rulings section).
+  - `ejectorReach(bar) = clamp01((bar − 10) / (13 − 10))`.
   - Vacuum target = `VACUUM_QUALITY_MIN + (1 − VACUUM_QUALITY_MIN) × pct(vacuum.output) × reach`. At 14.5 bar, reach is 1 and the result is exactly today's value.
 - **Builder constants (chosen here):**
-  - `LOW_STEAM_SAG_BAR_PER_MIN = 1.0`: the pressure falls linearly from 14.5 and reaches the floor in 3.5–4.5 plant minutes.
+  - `LOW_STEAM_SAG_BAR_PER_MIN = 0.25` (ruling R1): the pressure falls linearly from 14.5 and reaches the floor in 14–18 plant minutes.
   - The floor `floorBar` is drawn uniformly from 10.0–11.0 bar in 0.1 steps, when the event fires.
   - The standby line restores 14.5 bar on the same tick it is on. With the line off and the fault active, the pressure sags again from wherever it is, at the sag rate.
 - **Low-steam mix:**
@@ -245,7 +245,7 @@
     - `export function stepSteam(s: PlantState, dtS: number): PlantState`:
       - standby on, or no fault → `motiveBar = 14.5`;
       - otherwise → `max(floorBar, motiveBar − LOW_STEAM_SAG_BAR_PER_MIN × dtS / 60)`.
-  - Constants: `EJECTOR_FULL_REACH_BAR = 13`, `EJECTOR_NO_REACH_BAR = 8`, `LOW_STEAM_SAG_BAR_PER_MIN = 1.0`, `LOW_STEAM_FLOOR_BAR = [10, 11] as const`.
+  - Constants: `EJECTOR_FULL_REACH_BAR = 13`, `EJECTOR_NO_REACH_BAR = 10`, `LOW_STEAM_SAG_BAR_PER_MIN = 0.25`, `LOW_STEAM_FLOOR_BAR = [10, 11] as const`.
   - `stepStages`: the non-failed-ejector branch's target becomes the Global Constraints formula, using `ejectorReach(s.steam.motiveBar)`. The failed-ejector branch is unchanged.
   - `stepPlant` calls `stepSteam(s, dt)` immediately before `stepStages`.
   - `startShift` resets `steam` (Global Constraints ruling).
@@ -271,11 +271,11 @@
 
 - [ ] **Step 1: Write failing tests**
   - `steam.test.ts`:
-    - `ejectorReach` gives 1 at 13 and 14.5, 0.6 at 11, 0 at 8 and 5.
+    - `ejectorReach` gives 1 at 13 and 14.5, 1/3 at 11 (±1e-9), 0 at 10 and 8.
     - Nominal ticking (no fault) keeps `motiveBar === 14.5` and the vacuum quality identical to the pre-change value over 90 ticks (`plan7balance` calm shift also unchanged).
-    - With `faults.lowSteam = { floorBar: 10 }`, the pressure is 14.5 − 0.667 after one tick, at the floor by tick 7, and never below it.
-    - Ignored at floor 10.0 → `lossOfVacuum` trip between 25 and 45 plant minutes after the fault starts (modelled: about 33).
-    - At floor 11.0 the vacuum settles at 0.72 ± 0.01 and does not trip within 360 ticks.
+    - With `faults.lowSteam = { floorBar: 10 }`, the pressure is 14.5 − 0.1667 after one tick, at the floor by tick 27, and never below it.
+    - Ignored at floor 10.0 → `lossOfVacuum` trip between 15 and 30 plant minutes after the fault starts (modelled: about 21).
+    - Ignored at floor 11.0 → `lossOfVacuum` trip between 22 and 38 plant minutes after the fault starts (modelled: about 29). Every floor on the 10.0–11.0 grid trips when ignored.
     - Standby on → 14.5 on the same tick, and the vacuum recovers toward 0.95.
     - **Review Focus 2:**
       - the event fires, standby goes on, then off;
@@ -414,10 +414,7 @@
 
 ## Spec notes and rulings (for the reviewer)
 
-- **The trip timing and the 10–11 bar floor cannot both hold.** With the spec's curve (linear from 13 bar to `VACUUM_QUALITY_MIN` at 8 bar) and `VACUUM_TAU_S = 600`, a fully open valve holds 0.58 at 10 bar and 0.72 at 11 bar.
-  - Only floors of 10.1 bar or less go below `VACUUM_TRIP`, and they trip about 33–44 plant minutes after the fault starts.
-  - Floors of 10.2 bar and up settle at 0.61–0.72. That is alarmed on the web (< 0.7), with a hotter bottom stage and less distillate, but no trip.
-  - The plan keeps every spec number and pins the actual behaviour in Task 3's tests. Changing the knee, the floor or the lag is a user decision.
+- **Ruling R1 (controller): steam curve amended so the fault trips as the spec intends.** With the spec's curve (no reach at 8 bar) and `VACUUM_TAU_S = 600`, most floors settled at 0.61–0.72 vacuum and never tripped, contradicting "drifts toward the trip over roughly 20–30 plant minutes". `EJECTOR_NO_REACH_BAR` is now 10 and the sag is 0.25 bar/min. Modelled at full valve: trip at about 21 min (10.0 bar floor) to about 29 min (11.0 bar). Why: the spec's stated behaviour outranks its example curve. Cost if wrong: two constants and the Task 3 test windows.
 - **Standby reset at shift start** is a ruling the spec leaves open (see Global Constraints).
 - **The divert hint text** carries the Plan 7 `Hint: ` prefix.
 - **lowSteam is planned on a salted substream**, not added to `SHARP_KINDS`. Adding it to the drawn pool would change every seed's draws. That breaks the spec's "seeds keep their meaning".
