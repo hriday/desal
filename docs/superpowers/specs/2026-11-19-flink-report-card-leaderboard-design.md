@@ -2,6 +2,8 @@
 
 > **Amended 2026-11-20 for Plan 6 (modes).** Plan 6 (`2026-11-20-hard-mode-disasters-design.md`) adds a game mode (`'normal' | 'hard'`), three new scenario kinds (`fuelContamination`, `earthquake`, `tsunami`) and the crew job `flushFuel`, and takes snapshot version 4. Changes here: `mode` on the run records and the report card; the leaderboard, its stats and "today" are computed per mode and served as `{ normal, hard }`; verdicts cover the new kinds; Plan 5's snapshot bump is v5 (migrating v4). Amended passages say "(modes)".
 
+> **Amended 2026-11-20 for Plan 7 (plant layout, pace, hints).** Plan 7 (`2026-11-20-plant-layout-pace-hints-design.md`) is built first: 24 stages, a makeup loop, `PlantStatus.pace` and `FIX` hints, and it takes snapshot v5. Changes here: Plan 5's snapshot is **v6** (migrating v5; v3 -> v4 -> v5 -> v6); telemetry is 127 readings (24 stages, including `brine.makeupM3h` and `brine.coolingRejectM3h`) and loop ids are `makeup` and `level1`..`level23`; the report card shows the shared `FIX` text under every slow or missed verdict and "Last shift" does not repeat it when a report card is present; `pace` is ignored. Amended passages say "(Plan 7)".
+
 Status: draft for approval, 2026-11-19. This document extends the "main spec", `2026-11-18-desal-operator-game-design.md`, and Plan 4's `2026-11-19-chaos-director-design.md`. Where they disagree, this document wins for Flink. It replaces the main spec's plan to move alarms into Flink.
 
 ## 1. Intent and why
@@ -71,7 +73,7 @@ plant.status ─┘   (also counts plants online)
 
 ### 4.2 Call sign and runId (simulator)
 
-- At `startGame`, the simulator draws a **call sign** from the game's seed. It is an adjective or bird name from a fixed list of about 64 clean words, plus a number from 10 to 99, for example "Kestrel-42". It also mints a **runId** (a UUID). Both go into game state and the snapshot (v5, since Plan 6 took v4; a v4 save is migrated by deriving the call sign from its seed and minting a fresh runId).
+- At `startGame`, the simulator draws a **call sign** from the game's seed. It is an adjective or bird name from a fixed list of about 64 clean words, plus a number from 10 to 99, for example "Kestrel-42". It also mints a **runId** (a UUID). Both go into game state and the snapshot (v6 (Plan 7), since Plan 6 took v4 and Plan 7 took v5; a v5 save is migrated by deriving the call sign from its seed and minting a fresh runId, and v3 and v4 saves reach v6 through the existing chain).
 - The call sign appears in `gameStart`, in `gameEnd`, and in status as `callSign`. (Modes) Plan 6 puts `mode` on `gameStart`, `gameEnd` and at the top level of `PlantStatus`; each defaults to `'normal'` for older records, and Flink reads it from there. The runId appears only in `gameEnd` and `shiftEnd` (as `runId`), which Flink reads. The gateway does not forward `runId` to browsers; a test pins this.
 - Call signs need not be unique. The leaderboard shows the call sign with the run's date, for example "Kestrel-42 · 19 Nov".
 
@@ -156,6 +158,8 @@ The job publishes one record. (Modes) Everything below is computed per mode (the
 - **Handover:** a "Report card" section above "Last shift" (modes: tagged HARD for a Hard run) holds the grade (a large letter stamped on the clipboard sheet), the event table with verdicts, the hourly pace sparkline, and the comparison lines.
   - Until the report arrives, the section shows "Grading…".
   - If no report has arrived 10 s after `shiftEnd`, the section is hidden and the existing debrief stands alone. A report that arrives later still appears.
+  - (Plan 7) Under every event row with a `slow` or `missed` verdict the card shows that kind's `FIX` text (the `FIX` table in `apps/web/src/expanded/labels.ts`, read through the handover's `whatToDo(e)`). When a report card is present, "Last shift" does not repeat the "What to do" lines; without one they show as before.
+  - (Plan 7) The telemetry the plant publishes is 127 readings and `PlantStatus` carries `pace`; no Flink job reads either, and the Java status view ignores `pace`.
 - **Start screen:** a leaderboard card under the plant strip (modes: showing both the Normal and the Hard board, each labelled), with an "All time" / "Today" toggle, the top 10, "N plants running now", and two or three rotating stats lines. If no leaderboard is received within 5 s of connecting, it shows "Leaderboard offline".
 - **Final report:** the call sign, plus "Rank #N all time · #M today" (within the run's mode) when available, otherwise "Ranking…".
 - **Top bar:** the call sign.
@@ -182,7 +186,7 @@ The job publishes one record. (Modes) Everything below is computed per mode (the
 - Use Java 17 and Maven. Pin versions exactly. Flink 2.x and its Kafka connector must have been released at least two weeks ago.
 - Code comments explain each Flink concept where it is first used, as the main spec requires (keyed state, connect, checkpoint, savepoint, upsert table, windows).
 - All existing guarantees stay: the game plays without Flink, saves resume across redeploys, and no gameId leaks.
-- Snapshot goes to v5 for callSign and runId (Plan 6 took v4 for modes and disasters, and migrates v3). Plan 5's step migrates v4 saves (callSign derived from the seed, a fresh runId) and keeps v3 -> v4 -> v5 working; versions older than v3 follow the existing skip rule.
+- (Plan 7) Snapshot goes to v6 for callSign and runId (Plan 6 took v4 for modes and disasters and migrates v3; Plan 7 took v5 for the 24-stage plant and migrates v4). Plan 5's step migrates v5 saves (callSign derived from the seed, a fresh runId) and keeps v3 -> v4 -> v5 -> v6 working; versions older than v3 follow the existing skip rule.
 
 ## 6. Left to the builder
 

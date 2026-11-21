@@ -42,7 +42,7 @@
 - **Disaster FIX texts** (from the removed start-screen list, commit `a854abe`), verbatim:
   - fuelContamination: "Switch to the other fuel, then send the crew to flush it."
   - earthquake: "Everything breaks at once; fix what hurts most first."
-  - tsunami: "When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens."
+  - tsunami: "When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens and run two pumps again." (Amended by controller ruling during Task 7: the event clears only with two pumps running, so the original text left the player stuck.)
 - **Builder-tuned named constants:** the makeup gains, `MAKEUP_MAX_M3H`, `POOL_LEVEL_PER_M3H_S`, `RECIRC_SUCTION_MIN_M` and `BLOWDOWN_MAX_M3H`. Each one's test pins its behaviour. Record final values, and why, in the commit message.
 - **Snapshots:** `VERSION = 5`. `restore` accepts 3, 4 and 5 (v3 → v4 → v5). Version 2 is still rejected.
 - **Commands:** test with `pnpm -r test`, typecheck with `pnpm -r typecheck`. Both are green at the end of every task.
