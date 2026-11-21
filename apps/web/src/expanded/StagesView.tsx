@@ -10,8 +10,11 @@ import { Trend } from '../controls/Trend';
 import { FlashStages, scaleTint } from '../equipment/FlashStages';
 import { DASH, fmt, get, num, stageKey, usd } from '../equipment/format';
 import { ACID_CLEAN_COST_USD, loopRange, STANDBY_EJECTORS_COST_USD_PER_H, STANDBY_STEAM_COST_USD_PER_H } from '../limits';
-import { POOL_LOW_BAD_M, POOL_LOW_WARN_M } from '../alarms/rules';
-import { EJECTOR_FULL_REACH_BAR, LEVEL_LOOP_COUNT, RECOVERY_STAGES, STAGE_COUNT, STEAM_BAD_BAR, TICK_PLANT_S } from '../plantConstants';
+import { POOL_LOW_BAD_M, POOL_LOW_WARN_M, requiredIntakeM3h } from '../alarms/rules';
+import {
+  COOLING_OUT_WARN_RISE_C, EJECTOR_FULL_REACH_BAR, INTERCOND_WARN_HIGH_MBAR, INTERCOND_WARN_LOW_MBAR, LEVEL_LOOP_COUNT, RECOVERY_STAGES,
+  STAGE24_FLOW_PENALTY_C, STAGE24_NOMINAL_APPROACH_C, STAGE24_WARN_MARGIN_MBAR, STAGE_COUNT, STEAM_BAD_BAR, TICK_PLANT_S, VENT_AIR_WARN_HIGH_KGH, VENT_AIR_WARN_LOW_KGH,
+} from '../plantConstants';
 import { Detail, Row, ViewLayout, type Tone } from './Layout';
 import type { ExpandedProps } from './types';
 
@@ -93,6 +96,9 @@ function LevelControls(ctl: ControlCtx) {
   );
 }
 
+/** Saturation pressure of water (mbar) at `t` degC: the Magnus formula the simulator's stage 24 reading uses. */
+const magnusMbar = (t: number): number => 6.112 * Math.exp((17.62 * t) / (243.12 + t));
+
 export function StagesView(props: ExpandedProps) {
   const { status, readings, trends } = props;
   const vac = get(readings, 'vacuum.quality');
@@ -110,6 +116,11 @@ export function StagesView(props: ExpandedProps) {
   const coolOut = get(readings, 'vacuum.coolingOutC');
   const ventAir = get(readings, 'vacuum.ventAirKgH');
   const seaT = get(readings, 'intake.seawaterTempC');
+  // The nominal stage 24 pressure follows seawater, and the intake shortfall a hot-seawater event causes
+  // (it is not an ejector fault): Magnus at seawater plus the nominal approach plus the flow penalty.
+  const intakeFlow = get(readings, 'intake.flowM3h');
+  const flowShort = seaT === undefined || intakeFlow === undefined ? 0 : Math.max(0, 1 - intakeFlow / requiredIntakeM3h(seaT));
+  const stage24Nominal = seaT === undefined ? undefined : magnusMbar(seaT + STAGE24_NOMINAL_APPROACH_C + STAGE24_FLOW_PENALTY_C * flowShort);
   const warnIf = (bad: boolean | undefined): Tone => (bad ? 'warn' : undefined);
   return (
     <ViewLayout
@@ -129,13 +140,12 @@ export function StagesView(props: ExpandedProps) {
           <Row k="Ejector steam valve" v={fmt(num(valve) ? valve : undefined, 0, '%')} />
           <Row k="Ball cleaning" v={ball === true ? 'On' : ball === false ? 'Off' : DASH} />
         </Detail>
-        <Detail title="Ejector train">
-          <Row k="Stage 24 pressure" v={fmt(lastStage, 0, 'mbar')} tone={warnIf(lastStage !== undefined && lastStage >= 100)} />
-          <Row k="Intercondenser" v={fmt(interc, 0, 'mbar')} tone={warnIf(interc !== undefined && (interc >= 350 || interc <= 160))} />
-          <Row k="Condenser cooling out" v={fmt(coolOut, 1, '°C')} tone={warnIf(coolOut !== undefined && seaT !== undefined && coolOut >= seaT + 10)} />
-          <Row k="Vent air" v={fmt(ventAir, 0, 'kg/h')} tone={warnIf(ventAir !== undefined && (ventAir >= 18 || ventAir <= 6))} />
+        <Detail title="Ejector train" note="Hot cooling water → strainer. High vent air → air leak. Low intercondenser → failed ejector. Low motive steam → standby steam line.">
+          <Row k="Stage 24 pressure" v={fmt(lastStage, 0, 'mbar')} tone={warnIf(lastStage !== undefined && stage24Nominal !== undefined && lastStage >= stage24Nominal + STAGE24_WARN_MARGIN_MBAR)} />
+          <Row k="Intercondenser" v={fmt(interc, 0, 'mbar')} tone={warnIf(interc !== undefined && (interc >= INTERCOND_WARN_HIGH_MBAR || interc <= INTERCOND_WARN_LOW_MBAR))} />
+          <Row k="Condenser cooling out" v={fmt(coolOut, 1, '°C')} tone={warnIf(coolOut !== undefined && seaT !== undefined && coolOut >= seaT + COOLING_OUT_WARN_RISE_C)} />
+          <Row k="Vent air" v={fmt(ventAir, 0, 'kg/h')} tone={warnIf(ventAir !== undefined && (ventAir >= VENT_AIR_WARN_HIGH_KGH || ventAir <= VENT_AIR_WARN_LOW_KGH))} />
         </Detail>
-        <p className="ctl__meta">Hot cooling water → strainer. High vent air → air leak. Low intercondenser → failed ejector. Low motive steam → standby steam line.</p>
         </>
       }
       trends={

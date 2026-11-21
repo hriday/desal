@@ -5,6 +5,9 @@ import { bottomTempC, ejectorLoadFactor } from './stages.js';
 /** The smallest cooling capacity the readings divide by (the fault floors are far above it). */
 const MIN_COOL_CAP = 1e-3;
 
+/** The most the condenser cooling loss can raise the intercondenser pressure (a factor on the nominal 250 mbar, so 750 mbar at most). */
+const MAX_COOL_FACTOR = 3;
+
 /** Working ejector trains: train A unless its 1st-stage ejector has failed, plus train B when the standby is on. */
 export function ejectorTrains(s: PlantState): number {
   return (s.faults.ejectorFailed ? 0 : 1) + (s.ejectors.standby ? 1 : 0);
@@ -54,7 +57,7 @@ export function ejectorReadings(s: PlantState): {
   const coolCap = Math.max(MIN_COOL_CAP, s.ejectors.coolCap);
   return {
     lastStageMbar: 6.112 * Math.exp((17.62 * t) / (243.12 + t)),
-    intercondenserMbar: 250 * (trains > 0 ? 1 : 0.6) * Math.sqrt(air / Math.max(1, trains)) * Math.max(1, 1 / coolCap),
+    intercondenserMbar: 250 * (trains > 0 ? 1 : 0.6) * Math.sqrt(air / Math.max(1, trains)) * Math.min(MAX_COOL_FACTOR, Math.max(1, 1 / coolCap)),
     coolingOutC: s.seawater.tempC + 6 * Math.min(3, COOL_CAP_NOMINAL / coolCap),
     ventAirKgH: 10 * air * (trains > 0 ? 1 : 0.4),
   };

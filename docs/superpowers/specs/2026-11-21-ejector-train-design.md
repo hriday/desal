@@ -56,7 +56,7 @@ Success: when the vacuum drops, the player can **read the ejector train to find 
 
    | Reading | Unit | Nominal (builder's call) |
    |---|---|---|
-   | `vacuum.lastStageMbar`: stage 24 pressure | mbar abs | saturation pressure at the bottom-stage temperature, about 75 |
+   | `vacuum.lastStageMbar`: stage 24 pressure | mbar abs | about 63 at 30 °C seawater (saturation pressure at the bottom-stage temperature; follows seawater) |
    | `vacuum.intercondenserMbar` | mbar abs | about 250 |
    | `vacuum.coolingOutC`: condenser cooling water out | °C | seawater + about 6 |
    | `vacuum.ventAirKgH`: air vented from the after-condenser | kg/h | about 10 |

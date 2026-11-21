@@ -244,7 +244,7 @@ describe('divert and steam controls', () => {
 
   it('StagesView shows the Ejector train rows with their tones, none at nominal', () => {
     const { container: nom } = render(<StagesView {...sample()} />);
-    expect(rowValue(nom, 'Stage 24 pressure')!.textContent).toBe('74 mbar');
+    expect(rowValue(nom, 'Stage 24 pressure')!.textContent).toBe('56 mbar');
     expect(rowValue(nom, 'Intercondenser')!.textContent).toBe('250 mbar');
     expect(rowValue(nom, 'Condenser cooling out')!.textContent).toBe('34.0 °C');
     expect(rowValue(nom, 'Vent air')!.textContent).toBe('10 kg/h');
@@ -256,8 +256,6 @@ describe('divert and steam controls', () => {
       cleanup();
       return c;
     };
-    expect(cls('vacuum.lastStageMbar', 'Stage 24 pressure', 99)).toBe('');
-    expect(cls('vacuum.lastStageMbar', 'Stage 24 pressure', 100)).toBe('tone--warn');
     expect(cls('vacuum.intercondenserMbar', 'Intercondenser', 349)).toBe('');
     expect(cls('vacuum.intercondenserMbar', 'Intercondenser', 350)).toBe('tone--warn');
     expect(cls('vacuum.intercondenserMbar', 'Intercondenser', 177)).toBe('');
@@ -269,6 +267,34 @@ describe('divert and steam controls', () => {
     expect(cls('vacuum.ventAirKgH', 'Vent air', 18)).toBe('tone--warn');
     expect(cls('vacuum.ventAirKgH', 'Vent air', 6)).toBe('tone--warn');
     expect(cls('vacuum.ventAirKgH', 'Vent air', 7)).toBe('');
+  });
+
+  it('StagesView stage 24 pressure warns relative to the nominal at the seawater temperature', () => {
+    // Intake held at the 30 degC requirement, so a hot-seawater event leaves it short (as in the plant).
+    const at = (seaT: number | undefined, p: number) => {
+      const r = demoReadings({ 'vacuum.lastStageMbar': p, 'intake.seawaterTempC': seaT as number, 'intake.flowM3h': 5500 });
+      if (seaT === undefined) delete (r as Record<string, unknown>)['intake.seawaterTempC'];
+      const { container } = render(<StagesView {...sample()} readings={r} />);
+      const c = rowValue(container, 'Stage 24 pressure')!.className;
+      cleanup();
+      return c;
+    };
+    const magnus = (t: number) => 6.112 * Math.exp((17.62 * t) / (243.12 + t));
+    const nom = (seaT: number) => magnus(seaT + 7 + 15 * Math.max(0, 1 - 5500 / (5500 * (1 + 0.03 * Math.max(0, seaT - 30)))));
+    expect(at(30, 63)).toBe('');
+    expect(at(30, 82)).toBe('tone--warn');
+    expect(at(38, 110)).toBe('');
+    expect(at(30, nom(30) + 9.9)).toBe('');
+    expect(at(30, nom(30) + 10)).toBe('tone--warn');
+    expect(at(38, nom(38) + 9.9)).toBe('');
+    expect(at(38, nom(38) + 10)).toBe('tone--warn');
+    expect(at(undefined, 500)).toBe('');
+  });
+
+  it('StagesView puts the ejector legend inside the Ejector train section', () => {
+    const { container } = render(<StagesView {...sample()} />);
+    const sec = [...container.querySelectorAll('section.detail')].find((x) => x.querySelector('.detail__title')?.textContent === 'Ejector train')!;
+    expect(sec.textContent).toContain('Hot cooling water → strainer.');
   });
 
   it('StagesView groups the four ejector rows under an "Ejector train" heading', () => {

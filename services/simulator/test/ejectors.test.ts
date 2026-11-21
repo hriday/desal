@@ -120,6 +120,7 @@ describe('ejector readings', () => {
       expect(r.intercondenserMbar).toBeGreaterThanOrEqual(2 * base.intercondenserMbar);
       expect(r.coolingOutC).toBeGreaterThanOrEqual(base.coolingOutC + 6);
       expect(r.ventAirKgH).toBe(base.ventAirKgH);
+      expect(r.intercondenserMbar).toBeLessThanOrEqual(750);
     });
 
     it('airLeak 3.0: vent triples, intercondenser up, cooling same', () => {

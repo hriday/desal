@@ -49,3 +49,18 @@ export const CREW_JOBS = {
   cleanStrainer: { costUsd: 400, minutes: 30, plain: 'clean the condenser strainer', doing: 'Cleaning condenser strainer' },
   sealLeak: { costUsd: 600, minutes: 60, plain: 'seal the air leak', doing: 'Sealing air leak' },
 } as const;
+
+/** STAGE24_NOMINAL_APPROACH_C: nominal stage 24 temperature above seawater (degC): BOTTOM_APPROACH_C 6 + (1 - VACUUM_QUALITY_NOMINAL 0.95) x BOTTOM_VACUUM_PENALTY_C 20. Source: services/simulator/src/constants.ts and units/stages.ts bottomTempC. */
+export const STAGE24_NOMINAL_APPROACH_C = 7;
+/** STAGE24_WARN_MARGIN_MBAR: the Stage 24 pressure row warns this far (mbar) above the nominal for the seawater temperature. */
+export const STAGE24_WARN_MARGIN_MBAR = 10;
+/** INTERCOND_WARN_HIGH_MBAR / INTERCOND_WARN_LOW_MBAR: the Intercondenser row warns at or above / at or below these (nominal 250 mbar): cooling loss or air leak / failed ejector. */
+export const INTERCOND_WARN_HIGH_MBAR = 350;
+export const INTERCOND_WARN_LOW_MBAR = 160;
+/** COOLING_OUT_WARN_RISE_C: the Condenser cooling out row warns at or above seawater plus this (degC); nominal is seawater + 6. */
+export const COOLING_OUT_WARN_RISE_C = 10;
+/** VENT_AIR_WARN_HIGH_KGH / VENT_AIR_WARN_LOW_KGH: the Vent air row warns at or above / at or below these (nominal 10 kg/h): air leak / failed ejector. */
+export const VENT_AIR_WARN_HIGH_KGH = 18;
+export const VENT_AIR_WARN_LOW_KGH = 6;
+/** STAGE24_FLOW_PENALTY_C: stage 24 temperature rise at zero cooling (intake) flow (degC); scales with the intake shortfall. Source: BOTTOM_FLOW_PENALTY_C in services/simulator/src/constants.ts. */
+export const STAGE24_FLOW_PENALTY_C = 15;

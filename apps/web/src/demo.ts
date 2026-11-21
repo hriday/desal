@@ -51,7 +51,7 @@ export function demoReadings(over: Record<string, number> = {}): Record<string, 
     'brine.makeupM3h': 1714, 'brine.coolingRejectM3h': 4086,
     'vacuum.quality': 0.94,
     'vacuum.motiveSteamBar': 14.5,
-    'vacuum.lastStageMbar': 74, 'vacuum.intercondenserMbar': 250, 'vacuum.coolingOutC': 34, 'vacuum.ventAirKgH': 10,
+    'vacuum.lastStageMbar': 56, 'vacuum.intercondenserMbar': 250, 'vacuum.coolingOutC': 34, 'vacuum.ventAirKgH': 10,
     'product.flowM3h': 512, 'product.salinityPpm': 18, 'product.shiftProductM3': 2380,
     'fuel.gasCapMW': 60, 'fuel.gasPriceUsdPerGJ': 8, 'fuel.backupTonnes': 128, 'fuel.burnMW': 43.2, 'fuel.shiftCostUsd': 5120,
   };

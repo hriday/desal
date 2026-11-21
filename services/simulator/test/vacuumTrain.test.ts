@@ -85,8 +85,10 @@ describe('drawVacuumTrainFault', () => {
     }
     expect(cooling / total).toBeGreaterThan(0.4);
     expect(cooling / total).toBeLessThan(0.6);
-    // Nominally 20 % and 40 % of the 600 shift rolls; the small adjacent seeds land a little under
-    // (0.155 and 0.31 measured, as lowSteam's salted draw does), with Hard about twice Normal.
+    // Nominally 20 % and 40 % of the 600 shift rolls. The small adjacent seeds land a little under
+    // (0.155 and 0.31 measured) by sample noise, not bias: the seeds collide (seed i at shift 3 hashes
+    // the same as seed i^1 at shift 2), so only about 200 distinct inputs are drawn. Over seeds 1-100,000
+    // the rates are 0.1998 Normal and 0.4012 Hard. Hard is about twice Normal.
     expect(count.hard).toBeGreaterThan(1.5 * count.normal);
     expect(count.normal / 600).toBeGreaterThan(0.1);
     expect(count.normal / 600).toBeLessThan(0.3);

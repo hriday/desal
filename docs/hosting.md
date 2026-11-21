@@ -143,9 +143,11 @@ A redeploy that changes the snapshot version (it is 8 since Plan 9's ejector tra
 
 **Plan 9 (ejector train) deploy notes.**
 
-- Browser tabs left open across this deploy need a reload: their bundled schemas are strict, so `ScenarioKindSchema`
-  rejects the new `coolingLoss` and `airLeak` kinds, the crew job enum the new `cleanStrainer` and `sealLeak` jobs,
-  and `AccountCauseSchema` the new `standbyEjectors` account cause; an old tab drops those messages.
+- Browser tabs left open across this deploy need a reload: their bundled schemas are strict. An old tab's plant view
+  freezes (it drops every status) while a `cleanStrainer` or `sealLeak` crew job runs, because the old `CrewJobSchema`
+  rejects them, and its leaderboard card fails once the per-kind stats include `coolingLoss` or `airLeak`. It also drops
+  messages with the new `coolingLoss` and `airLeak` scenario kinds (`ScenarioKindSchema`) and the new `standbyEjectors`
+  account cause (`AccountCauseSchema`).
 - Rolling the simulator back past this version (snapshot v8) rejects every version-8 save, so every live game ends
   on the rollback. Roll back only if that is acceptable.
 
