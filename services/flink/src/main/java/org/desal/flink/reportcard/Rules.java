@@ -85,8 +85,8 @@ public final class Rules {
       case "storm":
       case "sensorFailure":
         // sensorFailure: only the crew counts; its loop is never given away (Plan 4 R4), so a loop
-        // in Manual would credit a guess. ShiftTracker goes further for these kinds: one dispatch
-        // credits only one event, so two open sensor failures need two replaceSensor jobs.
+        // in Manual would credit a guess. ShiftTracker credits these kinds per crew dispatch
+        // (one event per job, except that one replaceSensor job credits every open sensorFailure).
         return crewJobFor(e.kind).equals(s.crewJob);
       default:
         // fuelContamination and tsunami (graded on the clear tick), earthquake, informational kinds.

@@ -19,10 +19,12 @@ import org.desal.flink.model.ShiftReport;
  * fuelContamination and tsunami are graded).
  *
  * <p>Crew kinds (tubeLeak, vacuumLoss, storm, sensorFailure) are credited by a crew dispatch, not
- * by every status showing the job: the crew does one job at a time and each fixes one fault, so a
- * dispatch credits only the oldest open, not yet credited event of its kind. Two sensor failures
- * fired together by an earthquake need two replaceSensor jobs. A dispatch is a status whose crew
- * job differs from the previous status's, or whose remaining ticks went up (a new job).
+ * by every status showing the job. A plugTubes, repairEjector or cleanScreens job fixes one fault,
+ * so it credits only the oldest open, not yet credited event of its kind. A replaceSensor job
+ * repairs every failed sensor at once (the simulator then clears each sensorFailure), so it credits
+ * every open sensorFailure fired before it, e.g. the two an earthquake fires together. A dispatch
+ * is a status whose crew job differs from the previous status's, or whose remaining ticks went up
+ * (a new job).
  */
 public class ShiftTracker {
   public int shiftId;
@@ -49,6 +51,7 @@ public class ShiftTracker {
     public long tick;
     /** The job's remaining ticks at {@code tick}. */
     public long remainingTicks;
+    /** The event it credited (for replaceSensor, the last of those it credited); null: none yet. */
     public Integer eventId;
 
     public CrewDispatch() {}
@@ -97,7 +100,7 @@ public class ShiftTracker {
     }
     if (e.responseTick == null) {
       for (CrewDispatch d : dispatches) {
-        if (d.eventId == null && d.job.equals(job) && d.tick > e.fireTick) {
+        if ((d.eventId == null || fixesAll(job)) && d.job.equals(job) && d.tick > e.fireTick) {
           e.responseTick = d.tick;
           d.eventId = e.eventId;
           break;
@@ -228,7 +231,15 @@ public class ShiftTracker {
     return r;
   }
 
-  /** Records a new crew job seen in {@code s} and gives it to the oldest open event it fixes. */
+  /** replaceSensor repairs every failed sensor; the other jobs fix one fault each. */
+  private static boolean fixesAll(String job) {
+    return "replaceSensor".equals(job);
+  }
+
+  /**
+   * Records a new crew job seen in {@code s} and credits the event it fixes: the oldest open one,
+   * or every open one for replaceSensor.
+   */
   private void detectDispatch(StatusView s) {
     String job = s.crewJob;
     boolean dispatched = job != null && (!job.equals(crewJob) || s.crewRemainingTicks > crewRemainingTicks);
@@ -244,9 +255,12 @@ public class ShiftTracker {
     dispatches.add(d);
     OpenEvent oldest = null;
     for (OpenEvent e : events) {
-      if (e.clearTick == null && e.responseTick == null && job.equals(Rules.crewJobFor(e.kind))
-          && e.fireTick < s.tick
-          && (oldest == null || e.fireTick < oldest.fireTick
+      boolean fixes = e.clearTick == null && e.responseTick == null && job.equals(Rules.crewJobFor(e.kind))
+          && e.fireTick < s.tick;
+      if (fixes && fixesAll(job)) {
+        e.responseTick = s.tick;
+        d.eventId = e.eventId;
+      } else if (fixes && (oldest == null || e.fireTick < oldest.fireTick
               || (e.fireTick == oldest.fireTick && e.eventId < oldest.eventId))) {
         oldest = e;
       }

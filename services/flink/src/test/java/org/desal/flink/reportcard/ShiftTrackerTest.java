@@ -343,38 +343,38 @@ class ShiftTrackerTest {
   }
 
   @Test
-  void oneReplaceSensorJobCreditsOnlyOneOfTwoSensorFailures() {
-    // An earthquake fires two sensor failures at the same tick; the crew fixes one at a time.
+  void oneReplaceSensorJobCreditsEveryOpenSensorFailure() {
+    // An earthquake fires two sensor failures at the same tick. One replaceSensor job repairs every
+    // failed sensor and the director clears both as crew when it finishes (a second job is refused).
     ShiftTracker t = tracker();
     t.onScenario(1, "sensorFailure", 1000, status(999).view());
     t.onScenario(2, "sensorFailure", 1000, status(999).view());
     t.onStatus(status(1003).crew("replaceSensor", 45).view());
     t.onStatus(status(1004).crew("replaceSensor", 44).view());
-    t.onStatus(status(1004).crew("replaceSensor", 44).phase("paused").view());
     t.onStatus(status(1047).crew("replaceSensor", 1).view());
     t.onStatus(status(1048).crew(null).view());
     t.onCleared(1, "crew", 1048);
-    List<EventLine> events = finish(t).events;
-    assertEquals(2.0, events.get(0).responseMinutes, EPS);
-    assertEquals("quick", events.get(0).verdict);
-    assertNull(events.get(1).responseMinutes);
-    assertEquals("missed", events.get(1).verdict);
+    t.onCleared(2, "crew", 1048);
+    for (EventLine e : finish(t).events) {
+      assertEquals(2.0, e.responseMinutes, EPS);
+      assertEquals("quick", e.verdict);
+      assertEquals("fixed by crew", e.outcome);
+    }
   }
 
   @Test
-  void aSecondDispatchCreditsTheSecondEventAtItsOwnTick() {
+  void aReplaceSensorDispatchSeenBeforeTheScenariosCreditsEachOneFiredBeforeIt() {
     ShiftTracker t = tracker();
-    t.onScenario(1, "sensorFailure", 1000, status(999).view());
-    t.onScenario(2, "sensorFailure", 1000, status(999).view());
-    t.onStatus(status(1003).crew("replaceSensor", 45).view());
-    t.onStatus(status(1047).crew("replaceSensor", 1).view());
-    // The next job straight after the first, with no idle status between: remaining ticks jump up.
-    t.onStatus(status(1048).crew("replaceSensor", 45).view());
-    t.onCleared(1, "crew", 1048);
+    StatusView s = status(1003).crew("replaceSensor", 45).view();
+    t.onStatus(s);
+    t.onScenario(1, "sensorFailure", 1000, s);
+    t.onScenario(2, "sensorFailure", 1000, s);
+    // A sensor failure that fires after the job started is not credited by it.
+    t.onScenario(3, "sensorFailure", 1010, s);
     List<EventLine> events = finish(t).events;
     assertEquals(2.0, events.get(0).responseMinutes, EPS);
-    assertEquals(32.0, events.get(1).responseMinutes, EPS);
-    assertEquals("slow", events.get(1).verdict);
+    assertEquals(2.0, events.get(1).responseMinutes, EPS);
+    assertNull(events.get(2).responseMinutes);
   }
 
   @Test
