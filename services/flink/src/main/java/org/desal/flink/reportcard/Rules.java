@@ -17,12 +17,13 @@ public final class Rules {
 
   /**
    * Kinds that get a verdict: the six sharp kinds, controllerFault, bloom, the two disasters graded
-   * on time-to-clear, and lowSteam (answered by the standby steam line). earthquake is only noted
+   * on time-to-clear, and lowSteam (answered by the standby steam line), and
+   * coolingLoss and airLeak (fixed by the crew). earthquake is only noted
    * (its children are graded as their own kinds) and the informational kinds need no response.
    */
   private static final Set<String> GRADED = Set.of(
       "pumpTrip", "powerDip", "controllerFault", "sensorFailure", "tubeLeak", "vacuumLoss", "storm",
-      "bloom", "fuelContamination", "tsunami", "lowSteam");
+      "bloom", "fuelContamination", "tsunami", "lowSteam", "coolingLoss", "airLeak");
 
   private Rules() {}
 
@@ -54,6 +55,8 @@ public final class Rules {
       case "vacuumLoss": return "repairEjector";
       case "storm": return "cleanScreens";
       case "sensorFailure": return "replaceSensor";
+      case "coolingLoss": return "cleanStrainer";
+      case "airLeak": return "sealLeak";
       default: return null;
     }
   }
@@ -82,10 +85,14 @@ public final class Rules {
         return s.standbySteam;
       case "bloom":
         return e.baselineChlorine != null && s.chlorineMgL > e.baselineChlorine;
-      case "tubeLeak":
       case "vacuumLoss":
+        // The standby ejectors hold the vacuum without the crew; the repair still counts.
+        return s.standbyEjectors || crewJobFor(e.kind).equals(s.crewJob);
+      case "tubeLeak":
       case "storm":
       case "sensorFailure":
+      case "coolingLoss":
+      case "airLeak":
         // sensorFailure: only the crew counts; its loop is never given away (Plan 4 R4), so a loop
         // in Manual would credit a guess. ShiftTracker credits these kinds per crew dispatch
         // (one event per job, except that one replaceSensor job credits every open sensorFailure).

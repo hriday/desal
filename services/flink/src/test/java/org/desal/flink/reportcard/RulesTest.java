@@ -22,7 +22,7 @@ class RulesTest {
   @Test
   void whichKindsGetAVerdict() {
     for (String k : new String[] {"pumpTrip", "powerDip", "controllerFault", "sensorFailure", "tubeLeak",
-        "vacuumLoss", "storm", "bloom", "fuelContamination", "tsunami", "lowSteam"}) {
+        "vacuumLoss", "storm", "bloom", "fuelContamination", "tsunami", "lowSteam", "coolingLoss", "airLeak"}) {
       assertTrue(Rules.hasVerdict(k), k);
     }
     for (String k : new String[] {"earthquake", "seawaterTemp", "pumpBearing", "gasCurtailNotice",
@@ -44,11 +44,22 @@ class RulesTest {
   }
 
   @Test
+  void vacuumLossAcceptsStandbyEjectors() {
+    OpenEvent e = event("vacuumLoss");
+    assertTrue(Rules.responded(e, status(s -> s.standbyEjectors = true)));
+    assertTrue(Rules.responded(e, status(s -> s.crewJob = "repairEjector")));
+    assertFalse(Rules.responded(e, status(s -> s.standbyEjectors = false)));
+    assertFalse(Rules.responded(e, status(s -> s.crewJob = "cleanStrainer")));
+  }
+
+  @Test
   void crewJobs() {
     assertEquals("plugTubes", Rules.crewJobFor("tubeLeak"));
     assertEquals("repairEjector", Rules.crewJobFor("vacuumLoss"));
     assertEquals("cleanScreens", Rules.crewJobFor("storm"));
     assertEquals("replaceSensor", Rules.crewJobFor("sensorFailure"));
+    assertEquals("cleanStrainer", Rules.crewJobFor("coolingLoss"));
+    assertEquals("sealLeak", Rules.crewJobFor("airLeak"));
     assertNull(Rules.crewJobFor("fuelContamination"));
     assertNull(Rules.crewJobFor("tsunami"));
     assertNull(Rules.crewJobFor("pumpTrip"));

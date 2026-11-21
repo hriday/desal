@@ -32,6 +32,8 @@ public class StatusView {
   public double shiftProductM3;
   /** Whether the standby steam line is on (the response to lowSteam); false when the record has none. */
   public boolean standbySteam = false;
+  /** Whether the standby ejectors are on (answers vacuumLoss); false when the record has none. */
+  public boolean standbyEjectors = false;
 
   public StatusView() {}
 
@@ -70,6 +72,7 @@ public class StatusView {
     s.crewRemainingTicks = s.crewJob == null ? 0 : status.path("crew").path("remainingTicks").asLong();
     s.shiftProductM3 = status.path("shiftProductM3").asDouble();
     s.standbySteam = status.path("standbySteam").asBoolean(false);
+    s.standbyEjectors = status.path("standbyEjectors").asBoolean(false);
     return s;
   }
 

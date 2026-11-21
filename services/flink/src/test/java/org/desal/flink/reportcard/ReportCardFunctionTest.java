@@ -443,6 +443,50 @@ class ReportCardFunctionTest {
     assertEquals("quick", e.verdict);
   }
 
+  /** airLeak is fixed by the sealLeak crew job: a dispatch at T+3 is 2 plant minutes. */
+  @Test
+  void anAirLeakSealedByTheCrewIsGradedQuick() throws Exception {
+    gameStart(0, null);
+    sendStatus(harness, statusRecord(0, 700, "handover", 1, 0, 2, 3.0));
+    shiftStart(0, SHIFT2_START, 2);
+    send(scenario(0, 1000, 2, 1, "airLeak"), 1);
+    for (long t = SHIFT2_START; t <= 1010; t++) {
+      ObjectNode st = statusRecord(0, t, "running", 2, 0, 2, 2.0);
+      if (t >= 1003) {
+        ObjectNode crew = st.putObject("crew");
+        crew.put("job", "sealLeak");
+        crew.put("remainingTicks", 90);
+      }
+      sendStatus(harness, st);
+    }
+    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
+    EventLine e = reports().get(0).events.get(0);
+    assertEquals("airLeak", e.kind);
+    assertEquals(2.0, e.responseMinutes, EPS);
+    assertEquals("quick", e.verdict);
+  }
+
+  /** The standby ejectors answer a vacuumLoss with no crew at all. */
+  @Test
+  void aVacuumLossAnsweredByStandbyEjectorsIsGradedQuick() throws Exception {
+    gameStart(0, null);
+    sendStatus(harness, statusRecord(0, 700, "handover", 1, 0, 2, 3.0));
+    shiftStart(0, SHIFT2_START, 2);
+    send(scenario(0, 1000, 2, 1, "vacuumLoss"), 1);
+    for (long t = SHIFT2_START; t <= 1010; t++) {
+      ObjectNode st = statusRecord(0, t, "running", 2, 0, 2, 2.0);
+      st.put("standbyEjectors", t >= 1003);
+      sendStatus(harness, st);
+    }
+    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
+    EventLine e = reports().get(0).events.get(0);
+    assertEquals("vacuumLoss", e.kind);
+    assertEquals(2.0, e.responseMinutes, EPS);
+    assertEquals("quick", e.verdict);
+  }
+
   @Test
   void aLowSteamWithNoStandbyLineIsMissed() throws Exception {
     gameStart(0, null);

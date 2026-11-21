@@ -14,11 +14,12 @@ public final class LeaderboardSql {
 
   /**
    * The kinds the board has stats for: the six sharp kinds, the two disasters graded on
-   * time-to-clear, and lowSteam (answered by the standby steam line). earthquake is only noted (no
+   * time-to-clear, and lowSteam (answered by the standby steam line), and
+   * coolingLoss and airLeak (fixed by the crew). earthquake is only noted (no
    * verdict), and the other kinds are not sharp.
    */
   public static final String GRADED_KINDS = "'pumpTrip', 'tubeLeak', 'vacuumLoss', 'powerDip', 'storm', "
-      + "'sensorFailure', 'fuelContamination', 'tsunami', 'lowSteam'";
+      + "'sensorFailure', 'fuelContamination', 'tsunami', 'lowSteam', 'coolingLoss', 'airLeak'";
 
   private LeaderboardSql() {}
 
