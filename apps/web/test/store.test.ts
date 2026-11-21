@@ -364,6 +364,18 @@ describe('report cards and rank', () => {
     expect(s.reportWait).toBeNull();
   });
 
+  it('gameEnd starts the wait for the rank; the timeout expires it', () => {
+    let s = reducer(initialState(), { type: 'rankTimeout' });
+    expect(s.rankWait).toBeNull(); // nothing to wait for
+    s = server(s, eventMsg({ type: 'gameEnd', seq: 1, callSign: 'Kestrel-42', reason: 'quit', score: { totalProductM3: 1, shiftsCompleted: 0, balanceUsd: 1 } }));
+    expect(s.rankWait).toBe('waiting');
+    s = reducer(s, { type: 'rankTimeout' });
+    expect(s.rankWait).toBe('expired');
+    s = server(s, { t: 'rank', allTime: 3, today: 1 });
+    expect(s.rank).toEqual({ allTime: 3, today: 1 });
+    expect(reducer(s, { type: 'reset' }).rankWait).toBeNull();
+  });
+
   it('a new run forgets the old reports and rank', () => {
     let s = server(initialState(), { t: 'shiftReport', report: report() });
     s = server(s, { t: 'rank', allTime: 5, today: 1 });

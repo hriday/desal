@@ -75,7 +75,7 @@ export function Screens() {
     case 'over':
       body = (
         <GameOver reason={state.endReason} mode={state.endMode ?? state.status?.mode ?? 'normal'} score={state.score}
-          callSign={state.status?.callSign} rank={state.rank} onPlayAgain={() => dispatch({ type: 'reset' })} />
+          callSign={state.status?.callSign} rank={state.rank} rankWait={state.rankWait} onPlayAgain={() => dispatch({ type: 'reset' })} />
       );
       break;
   }

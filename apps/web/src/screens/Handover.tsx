@@ -5,7 +5,7 @@ import { FIX, HOW_TEXT, KIND_TEXT } from '../expanded/labels';
 import { nextTargetEstimateM3 } from '../limits';
 import { STAGE_COUNT } from '../plantConstants';
 import type { ReportWait } from '../state/store';
-import { ReportCard } from './ReportCard';
+import { cardFix, ReportCard } from './ReportCard';
 import { SheetHead } from './Sheet';
 import './screens.css';
 
@@ -55,8 +55,8 @@ export function whatToDo(e: Pick<ShiftSummary['events'][number], 'kind' | 'clear
   return `What to do: ${FIX[e.kind].text}`;
 }
 
-/** `fixes`: show "What to do" under uncleared events (off when a report card above already gives them). */
-function Summary({ s, fixes }: { s: ShiftSummary; fixes: boolean }) {
+/** `fixedAbove`: eventIds whose "What to do" the report card above already shows; they are not repeated here. */
+function Summary({ s, fixedAbove }: { s: ShiftSummary; fixedAbove: ReadonlySet<number> }) {
   return (
     <section aria-label="Last shift">
       <h2>Last shift{s.hell && <> <span className="tone--bad" data-hell>HELL SHIFT</span></>}</h2>
@@ -71,7 +71,7 @@ function Summary({ s, fixes }: { s: ShiftSummary; fixes: boolean }) {
       {s.events.length > 0 && (
         <ul aria-label="Shift events">
           {s.events.map((e) => {
-            const todo = fixes ? whatToDo(e) : null;
+            const todo = fixedAbove.has(e.eventId) ? null : whatToDo(e);
             return (
               <li key={e.eventId}>
                 {debriefLine(e)}
@@ -120,6 +120,7 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
   const n = (status?.shiftNumber ?? 0) + 1;
   // shiftId is the shift number, so the shift just ended is the last one started.
   const report = status && status.shiftNumber > 0 ? reports[status.shiftNumber] : undefined;
+  const fixedAbove = new Set(report?.events.filter((e) => cardFix(e) !== null).map((e) => e.eventId) ?? []);
   // status.shiftTarget is null outside a shift, so before it starts we show the estimate.
   const orders = status?.orders ?? null;
   const target = orders
@@ -152,7 +153,7 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
           )}
         </section>
         <ReportCard report={report} wait={reportWait} />
-        {summary && <Summary s={summary} fixes={!report} />}
+        {summary && <Summary s={summary} fixedAbove={fixedAbove} />}
         <Condition readings={readings} summary={summary} />
         <fieldset>
           <legend>Control mode</legend>

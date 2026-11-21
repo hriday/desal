@@ -9,7 +9,7 @@ import { Handover } from '../src/screens/Handover';
 import { Start } from '../src/screens/Start';
 import { TopBar } from '../src/screens/TopBar';
 import { FIX } from '../src/expanded/labels';
-import { GameProvider, REPORT_WAIT_MS } from '../src/state/GameProvider';
+import { GameProvider, RANK_WAIT_MS, REPORT_WAIT_MS } from '../src/state/GameProvider';
 import { board, report } from './fixtures';
 
 afterEach(cleanup);
@@ -165,6 +165,18 @@ describe('Handover', () => {
       expect(getByRole('region', { name: 'Last shift' }).textContent).not.toContain('What to do');
       expect(getByRole('region', { name: 'Report card' }).textContent).toContain(`What to do: ${FIX.storm.text}`);
     });
+    it("keeps a Last shift fix the card does not show (verdict ok, or not in the report)", () => {
+      const more = [...evs,
+        { eventId: 2, kind: 'tubeLeak', atMinute: 200, cleared: false, how: null }, // in the report as 'ok'
+        { eventId: 7, kind: 'bloom', atMinute: 20, cleared: false, how: null }, // not in the report
+      ];
+      const { getByRole } = render(<Handover {...base} status={status} events={[withEvents(more)]} reports={{ 2: report() }} reportWait="waiting" />);
+      const last = getByRole('region', { name: 'Last shift' }).textContent!;
+      expect(last).toContain(`What to do: ${FIX.tubeLeak.text}`);
+      expect(last).toContain(`What to do: ${FIX.bloom.text}`);
+      expect(last).not.toContain(FIX.storm.text); // the card shows it under 'missed'
+      expect(last.match(/What to do:/g)).toHaveLength(2);
+    });
     it('without one (Flink down, after the 10 s wait) Last shift shows them as before', () => {
       for (const reportWait of ['waiting', 'expired'] as const) {
         const { getByRole, container, unmount } = render(<Handover {...base} status={status} events={[withEvents(evs)]} reports={{}} reportWait={reportWait} />);
@@ -277,6 +289,14 @@ describe('GameOver call sign and rank', () => {
     const { container } = render(<GameOver {...props} rank={null} />);
     expect(container.textContent).toContain('Ranking…');
   });
+  it('leaves the rank out once the wait has expired, and shows a rank that comes later', () => {
+    const r = render(<GameOver {...props} rank={null} rankWait="expired" />);
+    expect(r.container.textContent).not.toContain('Ranking');
+    expect(r.container.textContent).not.toContain('Rank');
+    expect(r.container.querySelector('.sheet__rank')).toBeNull();
+    r.rerender(<GameOver {...props} rank={{ allTime: 57, today: 3 }} rankWait="expired" />);
+    expect(r.container.textContent).toContain('Rank #57 all time · #3 today');
+  });
 });
 
 describe('GameOver mode', () => {
@@ -369,6 +389,21 @@ describe('Screens with provider', () => {
       act(() => { vi.advanceTimersByTime(1); });
       expect(container.textContent).not.toContain('Grading…');
       expect(getByRole('region', { name: 'Last shift' }).textContent).toContain(`What to do: ${FIX.storm.text}`);
+    });
+
+    it('the final report says "Ranking…", leaves it out after 10 s, and shows a late rank', () => {
+      const { container, status } = handover();
+      push({ t: 'event', event: { type: 'gameEnd', gameId: status.gameId, epoch: 0, seq: 2, tick: 1441, plantTime: 2, shiftId: null,
+        callSign: 'Kestrel-42', mode: 'normal', reason: 'quit', score: { totalProductM3: 100, shiftsCompleted: 2, balanceUsd: 5 } } });
+      expect(container.querySelector('[data-screen="over"]')).not.toBeNull();
+      expect(container.textContent).toContain('Ranking…');
+      act(() => { vi.advanceTimersByTime(RANK_WAIT_MS - 1); });
+      expect(container.textContent).toContain('Ranking…');
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(container.textContent).not.toContain('Ranking…');
+      expect(container.textContent).not.toContain('Rank #');
+      push({ t: 'rank', allTime: 57, today: null });
+      expect(container.textContent).toContain('Rank #57 all time');
     });
 
     it('a report that comes shows above Last shift, which drops its fixes', () => {

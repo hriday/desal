@@ -35,6 +35,11 @@ function verdictText(v: Verdict, responseMinutes: number | null): string {
   return v !== 'missed' && responseMinutes !== null ? `${v} · ${fmt(responseMinutes)} min` : v;
 }
 
+/** The card's "What to do" line for an event: the FIX text under a slow or missed verdict, else null. */
+export function cardFix(e: ShiftReport['events'][number]): string | null {
+  return e.verdict === 'slow' || e.verdict === 'missed' ? whatToDo({ kind: e.kind, cleared: false }) : null;
+}
+
 const handled = (c: Comparison) => `${c.handledWell}/${c.handledOf}`;
 
 /** "vs last shift: 96 % of target (was 88 %) · handled well 2/4 (was 1/2) · tripped 7 min (was 0 min)". */
@@ -75,7 +80,7 @@ export function ReportCard({ report, wait }: ReportCardProps) {
         ? (
           <ul className="report__events" aria-label="Graded events">
             {report.events.map((e) => {
-              const fix = e.verdict === 'slow' || e.verdict === 'missed' ? whatToDo({ kind: e.kind, cleared: false }) : null;
+              const fix = cardFix(e);
               return (
                 <li key={e.eventId}>
                   <span>{e.outcome === 'noted' ? '' : `${clockAt(e.atMinute)} `}{label(KIND_TEXT, e.kind) ?? 'Plant event'} — {e.outcome}</span>

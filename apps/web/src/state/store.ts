@@ -18,6 +18,11 @@ export type Rank = { allTime: number; today: number | null };
  * ('expired': the debrief shows alone), null once the next shift starts.
  */
 export type ReportWait = 'waiting' | 'expired' | null;
+/**
+ * The final report's wait for the run's rank: 'waiting' from the gameEnd until RANK_WAIT_MS passes
+ * ('expired': the rank line is left out, since Flink may be down); a rank that comes later still shows.
+ */
+export type RankWait = 'waiting' | 'expired' | null;
 
 /** A command awaiting confirmation; `age` counts statuses received since it was sent. */
 export interface PendingEntry { command: Command; age: number }
@@ -60,6 +65,7 @@ export interface State {
   reports: Record<number, ShiftReport>;
   rank: Rank | null;
   reportWait: ReportWait;
+  rankWait: RankWait;
 }
 
 export type Action =
@@ -82,7 +88,9 @@ export type Action =
   // No status within the watchdog window while connected.
   | { type: 'telemetryLost' }
   // No report card within REPORT_WAIT_MS of a shiftEnd.
-  | { type: 'reportTimeout' };
+  | { type: 'reportTimeout' }
+  // No rank within RANK_WAIT_MS of the gameEnd.
+  | { type: 'rankTimeout' };
 
 export const MAX_EVENTS = 200;
 
@@ -99,7 +107,7 @@ export function initialState(resuming = false): State {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
     pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, endMode: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
     epoch: 0, telemetryLost: false, radio: initialRadio, sessionStartPlantTime: null, seenAlarms: new Set(),
-    hinted: new Set(), reports: {}, rank: null, reportWait: null,
+    hinted: new Set(), reports: {}, rank: null, reportWait: null, rankWait: null,
   };
 }
 
@@ -164,7 +172,7 @@ function addEvent(s: State, e: PlantEvent): State {
       next = { ...next, reportWait: null };
       break;
     case 'gameEnd':
-      next = { ...next, session: 'over', score: e.score, endReason: e.reason, endMode: e.mode };
+      next = { ...next, session: 'over', score: e.score, endReason: e.reason, endMode: e.mode, rankWait: 'waiting' };
       break;
     case 'commandRejected':
       next = { ...next, ...withoutRejected(s, e.commandId), toast: { kind: 'rejected', message: e.reason } };
@@ -290,5 +298,6 @@ export function reducer(s: State, a: Action): State {
     case 'startTimeout': return s.session === 'starting' ? startFailed(s) : s;
     case 'telemetryLost': return s.telemetryLost ? s : { ...s, telemetryLost: true };
     case 'reportTimeout': return s.reportWait === 'waiting' ? { ...s, reportWait: 'expired' } : s;
+    case 'rankTimeout': return s.rankWait === 'waiting' ? { ...s, rankWait: 'expired' } : s;
   }
 }

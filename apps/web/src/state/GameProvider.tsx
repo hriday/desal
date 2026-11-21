@@ -22,6 +22,8 @@ export const START_TIMEOUT_MS = 10_000;
 export const WATCHDOG_MS = 5000;
 /** After a shiftEnd, the handover waits this long for Flink's report card before showing the debrief alone. */
 export const REPORT_WAIT_MS = 10_000;
+/** After a gameEnd, the final report shows "Ranking…" this long before leaving the rank out. */
+export const RANK_WAIT_MS = 10_000;
 
 const Ctx = createContext<Game | null>(null);
 
@@ -124,6 +126,14 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
     const t = setTimeout(() => rawDispatch({ type: 'reportTimeout' }), REPORT_WAIT_MS);
     return () => clearTimeout(t);
   }, [reportWaiting]);
+
+  // The rank's wait: a gameEnd sets 'waiting'; this gives up on it, like the report card's.
+  const rankWaiting = state.rankWait === 'waiting';
+  useEffect(() => {
+    if (!rankWaiting) return;
+    const t = setTimeout(() => rawDispatch({ type: 'rankTimeout' }), RANK_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [rankWaiting]);
 
   const send = useCallback((command: Command) => {
     const { msg, commandId } = cmdMsg(command);

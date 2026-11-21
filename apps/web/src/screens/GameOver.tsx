@@ -2,7 +2,7 @@ import type { GameEndReason, GameMode, GameScore } from '@desal/schema';
 import { useId } from 'react';
 import { fmt, usd } from '../equipment/format';
 import { GAME_ID_KEY } from '../net/socket';
-import type { Rank } from '../state/store';
+import type { Rank, RankWait } from '../state/store';
 import { SheetHead } from './Sheet';
 import './screens.css';
 
@@ -24,16 +24,22 @@ export interface GameOverProps {
   callSign?: string | null;
   /** The run's rank within its mode, from Flink via the gateway; null until it comes. */
   rank?: Rank | null;
+  /** While 'waiting' with no rank the line says "Ranking…"; otherwise, with no rank, it is left out. */
+  rankWait?: RankWait;
 }
 
-/** "Rank #57 all time · #3 today", with "(Hard)" for a Hard run (ranks are within the mode). */
-export function rankLine(rank: Rank | null, mode: GameMode): string {
-  if (!rank) return 'Ranking…';
+/**
+ * "Rank #57 all time · #3 today", with "(Hard)" for a Hard run (ranks are within the mode);
+ * "Ranking…" while it is awaited, and null (no line) once the wait is over without one.
+ */
+export function rankLine(rank: Rank | null, mode: GameMode, wait: RankWait = 'waiting'): string | null {
+  if (!rank) return wait === 'waiting' ? 'Ranking…' : null;
   const today = rank.today !== null ? ` · #${rank.today} today` : '';
   return `Rank #${rank.allTime} all time${today}${mode === 'hard' ? ' (Hard)' : ''}`;
 }
 
-export function GameOver({ reason, mode = 'normal', score, onPlayAgain, callSign = null, rank = null }: GameOverProps) {
+export function GameOver({ reason, mode = 'normal', score, onPlayAgain, callSign = null, rank = null, rankWait = 'waiting' }: GameOverProps) {
+  const rankText = rankLine(rank, mode, rankWait);
   const titleId = useId();
   const playAgain = () => {
     try { sessionStorage.removeItem(GAME_ID_KEY); } catch { /* storage unavailable */ }
@@ -46,7 +52,7 @@ export function GameOver({ reason, mode = 'normal', score, onPlayAgain, callSign
         <p className="sheet__reason">{reason ? REASON_TEXT[reason] : REASON_TEXT.error}</p>
         <p className="screen__big" aria-label="Water delivered">{fmt(score?.totalProductM3)}</p>
         <p className="screen__unit">m³ of in-spec water delivered</p>
-        <p className="sheet__rank">{rankLine(rank, mode)}</p>
+        {rankText && <p className="sheet__rank">{rankText}</p>}
         <dl className="sheet__figures">
           <div><dt>Mode</dt><dd>{mode === 'hard' ? 'Hard' : 'Normal'}</dd></div>
           <div><dt>Shifts completed</dt><dd>{fmt(score?.shiftsCompleted)}</dd></div>
