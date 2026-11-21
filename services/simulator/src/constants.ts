@@ -262,6 +262,12 @@ export const CF_SALINITY_KNEE = 1.5;
 export const CF_SALINITY_PPM = 10;
 /** Product salinity limit when no shift target applies (ppm). */
 export const DEFAULT_MAX_SALINITY_PPM = 25;
+/** Time constant for product salinity rising toward its raw value (s). */
+export const SALINITY_RISE_TAU_S = 60;
+/** Time constant for product salinity falling toward its raw value (s). */
+export const SALINITY_FALL_TAU_S = 300;
+/** Auto divert returns to the tank once salinity is below this fraction of the limit. */
+export const DIVERT_RETURN_FRACTION = 0.9;
 
 /** TBT high-high trip (degC). */
 export const TBT_HH_C = 115;

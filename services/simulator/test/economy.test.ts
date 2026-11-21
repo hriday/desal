@@ -100,7 +100,12 @@ describe('water first: in-spec water is what counts', () => {
   it('off-spec water does not count toward progress and is tracked separately; it earns and costs nothing', () => {
     const s0 = running();
     // A 0 ppm limit makes every delivered m3 off spec.
-    const off: PlantState = { ...s0, shift: { ...s0.shift!, target: { ...s0.shift!.target, maxSalinityPpm: 0 } } };
+    // Manual divert (latch off) so Auto does not catch the water; this test is about off-spec accounting.
+    const off: PlantState = {
+      ...s0,
+      product: { ...s0.product, divertMode: 'manual', divertToDrain: false },
+      shift: { ...s0.shift!, target: { ...s0.shift!.target, maxSalinityPpm: 0 } },
+    };
     const s1 = tick(off, []).state;
     const acc = s1.shift!.acc;
     expect(acc.productM3).toBe(0);

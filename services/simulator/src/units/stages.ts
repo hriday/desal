@@ -40,12 +40,10 @@ import {
   VACUUM_TAU_S,
 } from '../constants.js';
 import { NOMINAL, type PlantState, type Stage } from '../state.js';
+import { lag } from './lag.js';
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 const pct = (output: number): number => clamp(output, 0, 100) / 100;
-/** Exact first-order lag of x toward target over dtS with time constant tauS. */
-const lag = (x: number, target: number, dtS: number, tauS: number): number =>
-  x + (target - x) * (1 - Math.exp(-dtS / tauS));
 
 /**
  * How much of a failed ejector's vacuum loss a load leaves: 1 at or above nominal, falling linearly to
