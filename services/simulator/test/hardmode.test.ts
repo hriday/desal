@@ -131,6 +131,37 @@ describe('each disaster forced into shift 2', () => {
   }, 60_000);
 });
 
+// Plan 7 Review Focus 2: a failed or stuck makeup loop (the stage-24 pool) is a loop fault like any other.
+describe('makeup loop faults forced into shift 2', () => {
+  /** Put `kind` with exactly `params` at the head of shift 2's plan (due at minute 60), replacing any of that kind. */
+  const forceExact =
+    (kind: ScenarioKind, params: Record<string, string>) =>
+    (s: PlantState): PlantState => {
+      const plan = s.chaos.pending;
+      if (s.run.shiftNumber !== 1 || !plan) return s;
+      const others = plan.queue.filter((q) => q.kind !== kind).map((q, i) => ({ ...q, eventId: i + 2 }));
+      const head = { eventId: 1, kind, params, earliestMinute: DISASTER_AT_MINUTE, cascade: false, disaster: false };
+      return { ...s, chaos: { ...s.chaos, pending: { ...plan, queue: [head, ...others] } } };
+    };
+  const cases: [ScenarioKind, Record<string, string>][] = [
+    ['sensorFailure', { loop: 'makeup', mode: 'freeze' }],
+    ['sensorFailure', { loop: 'makeup', mode: 'noise' }],
+    ['controllerFault', { loop: 'makeup', kind: 'stuck' }],
+  ];
+  for (const [kind, params] of cases) {
+    it(`${kind} ${JSON.stringify(params)}: the engaged bot ends shift 2 alive`, () => {
+      for (const seed of SEEDS) {
+        const r = playFrom(createInitialState(seed, 0, GAME_ID), 2, {}, forceExact(kind, params));
+        // The forced event is the plan's eventId 1 (the shift summary carries no params).
+        const hit = r.shiftEnds[1]?.events.find((e) => e.eventId === 1 && e.kind === kind);
+        expect(hit, `seed ${seed} fired`).toBeDefined();
+        expect(r.reason, `seed ${seed}`).toBeNull();
+        expect(r.shiftEnds, `seed ${seed}`).toHaveLength(2);
+      }
+    }, 60_000);
+  }
+});
+
 // Ruling R7 (spec §4.2): a drawn disaster lands in plant minutes 90-300 of its shift, whatever the
 // other events are doing, unless the run ends first.
 describe('disaster timing', () => {

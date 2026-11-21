@@ -5,7 +5,7 @@ import {
   EJECTOR_RATE_BASE_PER_MIN,
   EJECTOR_RATE_MAX_PER_MIN,
   POWER_DIP_MAX_MINUTES,
-  STAGE_COUNT,
+  RECOVERY_STAGES,
   TARGET_GROWTH_PER_SHIFT,
 } from '../constants.js';
 import { nextRandom } from '../rng.js';
@@ -13,7 +13,7 @@ import { radioLine } from './orders.js';
 import type { Scenario, ScenarioEvent } from './types.js';
 
 const PUMPS = ['P-101', 'P-102', 'P-103'] as const;
-const FAULT_LOOPS = ['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum'] as const;
+const FAULT_LOOPS = ['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum', 'makeup'] as const;
 const FAULT_KINDS = ['stuck', 'drift', 'oscillate'] as const;
 /**
  * Shift 1's gentle sensor failure only hits loops whose frozen reading visibly misleads the plant
@@ -143,7 +143,8 @@ export function drawEvent(
     }
     case 'tubeLeak': {
       let stage: number;
-      [stage, s] = range(s, 0, STAGE_COUNT - 1);
+      // Recovery stages 1-21 only: a reject-stage leak (seawater in its tubes) would barely show.
+      [stage, s] = range(s, 0, RECOVERY_STAGES - 1);
       params = { stage, ppm: tidy(Math.min(20, 8 * d)) };
       break;
     }

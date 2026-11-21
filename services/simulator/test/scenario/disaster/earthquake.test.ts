@@ -101,8 +101,14 @@ describe('earthquake', () => {
     const frozen = { kind: 'freeze', value: 1 } as const;
     const some = { ...s, faults: { ...s.faults, sensors: { tbt: frozen, intakeFlow: frozen, recirc: frozen } } };
     const [c1] = earthquakeFollowUps(some, 100, 5);
-    expect(c1.filter((c) => c.kind === 'sensorFailure').map((c) => c.params.loop).sort()).toEqual(['blowdown', 'vacuum']);
-    const all = { ...s, faults: { ...s.faults, sensors: { ...some.faults.sensors, blowdown: frozen, vacuum: frozen }, tubeLeak: { stage: 1, ppm: 5 } } };
+    const picked = c1.filter((c) => c.kind === 'sensorFailure').map((c) => String(c.params.loop));
+    expect(picked).toHaveLength(2);
+    expect(new Set(picked).size).toBe(2);
+    for (const loop of picked) expect(['blowdown', 'vacuum', 'makeup']).toContain(loop);
+    const all = {
+      ...s,
+      faults: { ...s.faults, sensors: { ...some.faults.sensors, blowdown: frozen, vacuum: frozen, makeup: frozen }, tubeLeak: { stage: 1, ppm: 5 } },
+    };
     const [c2] = earthquakeFollowUps(all, 100, 5);
     expect(c2.some((c) => c.kind === 'sensorFailure' || c.kind === 'tubeLeak')).toBe(false);
     expect(() => fire({ ...quake(), faults: all.faults })).not.toThrow();

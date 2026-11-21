@@ -227,7 +227,12 @@ const RECIRC_KGS = (RECIRC_NOMINAL_M3H * BRINE_DENSITY) / 3600;
 const HEAT_MW = (RECIRC_KGS * CP_BRINE * HEATER_DT0_C) / 1e6;
 /** Flash distillate over the whole cascade with clean tubes (as units/stages). */
 const PRODUCT_M3H = ((RECIRC_KGS * CP_BRINE * (TBT_C - BOTTOM_C)) / LATENT_J_kg) * (3600 / DISTILLATE_DENSITY);
-/** Blowdown valve opening (percent) that holds the nominal CF. */
+/**
+ * Blowdown valve opening (percent) that holds the nominal CF: 58.33 %. Plan 7 keeps this value (and
+ * so the blowdown loop's integral preset) from the old linear CF model; the salt balance
+ * CF = (D + B) / B gives CF_NOMINAL here because BLOWDOWN_MAX_M3H is sized to it
+ * (PRODUCT_M3H / (CF_NOMINAL - 1) / BLOWDOWN_MAX_M3H is 58.34 %).
+ */
 const BLOWDOWN_PCT = (100 * (CF_MAX - CF_NOMINAL)) / (CF_MAX - CF_MIN);
 
 // Nominal steady state, derived from the unit physics so tick 0 -> 1 starts at equilibrium.

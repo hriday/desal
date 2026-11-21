@@ -205,7 +205,9 @@ describe('restartStep (Manual)', () => {
     const { state, events } = stepRestart(s);
     expect(state.status).toBe('restarting');
     expect(state.heater.burnerCondition).toBeLessThan(s.heater.burnerCondition);
-    expect(state.stages[0]!.hardScaleMm).toBeGreaterThan(s.stages[0]!.hardScaleMm);
+    // Stages 1-6 (TRIP_SCALE_STAGES) take the scale; stage 7 does not.
+    for (let i = 0; i < 6; i++) expect(state.stages[i]!.hardScaleMm).toBeGreaterThan(s.stages[i]!.hardScaleMm);
+    expect(state.stages[6]!.hardScaleMm).toBe(s.stages[6]!.hardScaleMm);
     expect(state.stages[10]!.hardScaleMm).toBe(s.stages[10]!.hardScaleMm);
     expect(damageEvents(events).map((e) => e.type === 'damage' && e.component)).toEqual(['burner', 'stageScale']);
   });

@@ -7,6 +7,7 @@ import {
   POWER_DIP_MAX_MINUTES,
   PUMP_TRIP_WEAR,
   RECIRC_PUMP_MAX_M3H,
+  RECOVERY_STAGES,
   SENSOR_NOISE_AMPLITUDE,
   STORM_FOULING_PER_TICK,
   TICK_PLANT_S,
@@ -164,6 +165,16 @@ describe('tubeLeak', () => {
     const s0 = settle();
     const derated: PlantState = { ...s0, faults: { ...s0.faults, stageDerate: s0.faults.stageDerate.map((d, i) => (i === 1 ? TUBE_PLUG_DERATE : d)) } };
     expect(tick(derated, []).state.product.flowM3h).toBeLessThan(tick(s0, []).state.product.flowM3h);
+  });
+
+  it('the draw lands leaks in the recovery stages only (0-based 0-20), reaching stage 21', () => {
+    const stages = Array.from({ length: 500 }, (_, i) => Number(drawEvent('tubeLeak', 0, i + 1, 3)[0].params.stage));
+    for (const st of stages) {
+      expect(Number.isInteger(st)).toBe(true);
+      expect(st).toBeGreaterThanOrEqual(0);
+      expect(st).toBeLessThanOrEqual(RECOVERY_STAGES - 1);
+    }
+    expect(stages).toContain(RECOVERY_STAGES - 1);
   });
 });
 
@@ -338,5 +349,64 @@ describe('crew jobs', () => {
     const s = dispatchJob(applyEffect(settle(), 'vacuumLoss', { ratePerMin: 0.012 }), 'repairEjector');
     expect(s.crew).not.toBeNull();
     expect(startShift({ ...s, phase: 'handover' }, 'auto').state.crew).toBeNull();
+  });
+});
+
+describe('makeup loop faults (the stage-24 brine pool)', () => {
+  const POOL = 'stages.s24.levelM';
+  const cmd = (s: PlantState, command: Record<string, unknown>) =>
+    applyCommand(s, {
+      commandId: '123e4567-e89b-42d3-a456-426614174000',
+      issuedAt: 0,
+      gameId: GAME_ID,
+      shiftId: s.shift?.id ?? null,
+      command,
+    });
+  const fired = (kind: string, params: Record<string, string>) =>
+    ({ eventId: 1, kind, atMinute: 0, params, cleared: false, how: null }) as unknown as FiredEvent;
+  const poolM = (s: PlantState): number => s.stages[s.stages.length - 1]!.levelM;
+  /** Blowdown wide open in Manual: the pool drains faster than the makeup it is set for. */
+  const openBlowdown = (s: PlantState): PlantState => ({
+    ...s,
+    loops: { ...s.loops, blowdown: { ...s.loops.blowdown, mode: 'manual', output: 100 } },
+  });
+
+  it('a frozen makeup sensor holds the pool reading in telemetry while the true level moves', () => {
+    const s0 = settle();
+    const hit = applyEffect(s0, 'sensorFailure', { loop: 'makeup', mode: 'freeze' });
+    const frozen = hit.faults.sensors.makeup as { kind: string; value: number };
+    expect(frozen).toEqual({ kind: 'freeze', value: poolM(s0) });
+    let s = openBlowdown(hit);
+    for (let i = 0; i < 30; i++) {
+      const r = tick(s, []);
+      s = r.state;
+      expect(r.telemetry.find((t) => t.sensorId === POOL)!.value).toBe(frozen.value);
+    }
+    expect(Math.abs(poolM(s) - frozen.value)).toBeGreaterThan(0.05);
+  });
+
+  it('replaceSensor is accepted for a failed makeup sensor and clears the event as crew', () => {
+    const ev = fired('sensorFailure', { loop: 'makeup', mode: 'noise' });
+    const hit = applyEffect(settle(), 'sensorFailure', { loop: 'makeup', mode: 'noise' });
+    expect(isCleared(hit, ev)).toBeNull();
+    const r = cmd(hit, { type: 'dispatchCrew', job: 'replaceSensor' });
+    expect(r.events.map((e) => e.type)).toEqual(['accountChange']);
+    const done = run(r.state, 46); // 30 min = 45 ticks
+    expect(done.crew).toBeNull();
+    expect(done.faults.sensors.makeup).toBeUndefined();
+    expect(isCleared(done, ev)).toBe('crew');
+    const t = tick(done, []);
+    expect(t.telemetry.find((x) => x.sensorId === POOL)!.value).toBe(poolM(t.state));
+  });
+
+  it('a makeup controller fault clears as player once the loop is put in Manual', () => {
+    const ev = fired('controllerFault', { loop: 'makeup', kind: 'stuck' });
+    const hit = applyEffect(settle(), 'controllerFault', { loop: 'makeup', kind: 'stuck' });
+    expect(hit.loops.makeup.fault).not.toBeNull();
+    expect(isCleared(hit, ev)).toBeNull();
+    const r = cmd(hit, { type: 'setLoopMode', loop: 'makeup', mode: 'manual' });
+    expect(r.events.some((e) => e.type === 'commandRejected')).toBe(false);
+    expect(r.state.loops.makeup.mode).toBe('manual');
+    expect(isCleared(r.state, ev)).toBe('player');
   });
 });

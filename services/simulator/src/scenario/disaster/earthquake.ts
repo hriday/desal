@@ -5,7 +5,7 @@ import type { QueuedEvent } from '../chaosTypes.js';
 import { drawEvent } from '../library.js';
 import { pumpAvailability } from '../sharp.js';
 
-const SENSOR_LOOPS: readonly LoopSensorId[] = ['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum'];
+const SENSOR_LOOPS: readonly LoopSensorId[] = ['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum', 'makeup'];
 const SEVERE_LEAK_P = 0.4;
 const AFTERSHOCK_P = 0.5;
 const AFTERSHOCK_DELAY_MIN = [20, 60] as const;

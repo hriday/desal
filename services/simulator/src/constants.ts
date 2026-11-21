@@ -26,7 +26,9 @@ export const SNAPSHOT_EVERY_TICKS = 30;
  * - tbt: integrating plant (recovered heat recirculates), ~0.008 C/tick per % firing.
  * - intakeFlow: instant plant, ~70 m3/h per % speed with two pumps.
  * - recirc: 60 s lag, 65 m3/h per %.
- * - blowdown: 3600 s lag, -0.006 CF per % (reverse).
+ * - blowdown: 3600 s lag, about -0.0077 CF per % at nominal (reverse). Plan 7: the salt balance
+ *   CF = (D + B) / B gives dCF/d% = -D / B^2 x BLOWDOWN_MAX_M3H / 100, steeper at low blowdown;
+ *   it was a linear -0.006 CF per % ((CF_MAX - CF_MIN) / 100). Gains unchanged.
  * - vacuum: 600 s lag, 0.007 quality per %.
  * - level: integrating plant, -0.0008 m/tick per % valve (reverse).
  * - makeup: integrating plant behind a MAKEUP_TAU_S lag, +0.000126 m/tick per % valve
@@ -201,20 +203,25 @@ export const VACUUM_QUALITY_MIN = 0.3;
 export const VACUUM_QUALITY_NOMINAL = 0.95;
 /** Vacuum quality time constant (s). */
 export const VACUUM_TAU_S = 600;
-/** Concentration factor with blowdown fully closed. */
+/** Highest concentration factor (the salt-balance target's upper clamp; blowdown shut). */
 export const CF_MAX = 1.8;
-/** Concentration factor with blowdown fully open. */
+/** Lowest concentration factor (the salt-balance target's lower clamp). */
 export const CF_MIN = 1.2;
 /** Nominal concentration factor (blowdown loop setpoint). */
 export const CF_NOMINAL = 1.45;
 /** Concentration factor time constant (s). */
 export const CF_TAU_S = 3600;
-/** Blowdown flow at full blowdown valve (m3/h). */
-export const BLOWDOWN_MAX_M3H = 1800;
+/**
+ * Blowdown flow at full blowdown valve (m3/h). Plan 7: 1800 -> 2026, so that under the salt balance
+ * CF = (D + B) / B the nominal distillate (NOMINAL.productM3h, about 532) and the unchanged nominal
+ * blowdown opening (BALANCE.blowdownPct, 58.33 %, B about 1182) give CF_NOMINAL 1.45:
+ * B = D / (CF_NOMINAL - 1), and 1182 / 0.5833 = 2026.
+ */
+export const BLOWDOWN_MAX_M3H = 2026;
 /**
  * Seawater makeup into the stage-24 brine pool at full makeup valve (m3/h). Sized to out-supply the
- * worst draw on the pool, distillate at PLANT_MAX_PRODUCT_M3H plus blowdown wide open (857 + 1800),
- * with about 13 % to spare, so the Auto makeup loop holds the pool at maximum load (test/layout.test.ts).
+ * worst draw on the pool, distillate at PLANT_MAX_PRODUCT_M3H plus blowdown wide open (857 + 2026),
+ * with about 4 % to spare, so the Auto makeup loop holds the pool at maximum load (test/layout.test.ts).
  */
 export const MAKEUP_MAX_M3H = 3000;
 /** Makeup flow time constant (s): the makeup valve and line, like the recirc pump's. */
@@ -222,7 +229,8 @@ export const MAKEUP_TAU_S = 60;
 /**
  * Brine pool level change per unit of inventory imbalance (m per m3/h of makeup - distillate -
  * blowdown, per second). About NOMINAL.levelM / (1800 s x NOMINAL.makeupM3h): with the makeup shut,
- * the pool empties in about 30 plant minutes from nominal.
+ * the pool empties in about 30 plant minutes from nominal (28 since BLOWDOWN_MAX_M3H became 2026 and
+ * nominal makeup about 1714 m3/h).
  */
 export const POOL_LEVEL_PER_M3H_S = 1.05e-7;
 /**
@@ -261,8 +269,11 @@ export const VACUUM_TRIP = 0.6;
 export const INTAKE_TRIP_FRACTION = 0.2;
 /** Hard scale added to each of the hottest stages by a trip's thermal cycle (mm). */
 export const TRIP_SCALE_MM = 0.02;
-/** Number of hottest stages (1..N) that take thermal-cycling scale on a trip. */
-export const TRIP_SCALE_STAGES = 5;
+/**
+ * Number of hottest stages (1..N) that take thermal-cycling scale on a trip or an over-fast manual
+ * ramp. Plan 7: 5 -> 6, so it stays a quarter of the plant (5 of 20 stages, now 6 of 24).
+ */
+export const TRIP_SCALE_STAGES = 6;
 /** Burner condition lost to a trip's thermal cycle. */
 export const TRIP_BURNER_DAMAGE = 0.01;
 
@@ -367,8 +378,11 @@ export const CREW_JOBS = {
   cleanScreens: { costUsd: 300, minutes: 30 },
   flushFuel: { costUsd: 1500, minutes: 60 },
 } as const;
-/** Capacity multiplier of a stage whose tubes the crew has plugged. */
-export const TUBE_PLUG_DERATE = 0.6;
+/**
+ * Capacity multiplier of a stage whose tubes the crew has plugged. Plan 7: 0.6 -> 0.52, so one
+ * plugged stage still costs 2 % of the distillate: (1 - 0.52) / 24 = (1 - 0.6) / 20.
+ */
+export const TUBE_PLUG_DERATE = 0.52;
 /** TBT drop below nominal (degC) that halves the failed ejector's vacuum loss. */
 export const EJECTOR_HALVE_TBT_C = 5;
 /** Firing drop below nominal (fraction of nominal) that halves the failed ejector's vacuum loss. */

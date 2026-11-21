@@ -30,6 +30,7 @@ import {
   RECIRC_PUMP_MAX_M3H,
   RECIRC_SUCTION_MIN_M,
   RECIRC_TAU_S,
+  RECOVERY_STAGES,
   SCALE_E_FOLD_C,
   SCALE_K,
   SCALE_REF_C,
@@ -63,25 +64,45 @@ export function stageEffectiveness(stage: Stage): number {
   return 1 / (1 + (stage.softScaleMm + stage.hardScaleMm) / SCALE_REF_MM);
 }
 
+/** Mean tube effectiveness of a run of stages (1 for an empty run). */
+function meanEffectiveness(stages: readonly Stage[]): number {
+  if (stages.length === 0) return 1;
+  return stages.reduce((sum, st) => sum + stageEffectiveness(st), 0) / stages.length;
+}
+
 /**
- * Brine temperature entering the heater after heat recovery. Scaled tubes recover less, so the
- * heater must do more. Never below the bottom-stage temperature, so with no firing TBT decays
- * toward it instead of falling without limit.
+ * Brine temperature entering the heater after heat recovery. The recycled brine runs through the
+ * tubes of the heat-recovery stages (1-21) only, so only their scale matters: scaled tubes recover
+ * less, and the heater must do more. Never below the bottom-stage temperature, so with no firing TBT
+ * decays toward it instead of falling without limit.
  */
 export function recoveredTempC(s: PlantState): number {
-  const meanEff = s.stages.reduce((sum, st) => sum + stageEffectiveness(st), 0) / s.stages.length;
+  const meanEff = meanEffectiveness(s.stages.slice(0, RECOVERY_STAGES));
   return Math.max(bottomTempC(s), s.heater.tbtC - HEATER_DT0_C / meanEff);
 }
 
-/** Last-stage temperature: seawater plus an approach that widens with poor vacuum and short cooling flow. */
+/**
+ * Last-stage temperature: seawater plus an approach that widens with poor vacuum and short cooling
+ * flow. The cooling seawater runs through the tubes of the heat-rejection stages (22-24), so the whole
+ * approach above seawater is divided by their mean effectiveness: clean tubes give the plain approach.
+ */
 export function bottomTempC(s: PlantState): number {
   const flowShort = Math.max(0, 1 - s.intake.flowM3h / s.intake.requiredM3h);
-  return (
-    s.seawater.tempC +
-    BOTTOM_APPROACH_C +
-    (1 - s.vacuum.quality) * BOTTOM_VACUUM_PENALTY_C +
-    flowShort * BOTTOM_FLOW_PENALTY_C
-  );
+  const approachC = BOTTOM_APPROACH_C + (1 - s.vacuum.quality) * BOTTOM_VACUUM_PENALTY_C + flowShort * BOTTOM_FLOW_PENALTY_C;
+  return s.seawater.tempC + approachC / meanEffectiveness(s.stages.slice(RECOVERY_STAGES));
+}
+
+/**
+ * The concentration factor the brine settles to. Online, salt in equals salt out at steady state, so
+ * CF = (D + B) / B, with D the last tick's raw distillate (brine.distillateM3h) and B the blowdown
+ * (m3/h), clamped to [CF_MIN, CF_MAX]; no blowdown gives CF_MAX. While the plant is not online
+ * (tripped, restarting, acid cleaning) the target is held at its last online value (brine.cfTargetHeld),
+ * so a trip does not swing the chemistry.
+ */
+export function cfTarget(s: PlantState, blowdownM3h: number): number {
+  if (s.status !== 'online') return s.brine.cfTargetHeld;
+  if (blowdownM3h <= 0) return CF_MAX;
+  return clamp((s.brine.distillateM3h + blowdownM3h) / blowdownM3h, CF_MIN, CF_MAX);
 }
 
 /**
@@ -114,8 +135,8 @@ function recircCapM3h(s: PlantState): number {
  * and level loop outputs as actuator positions; does not step any PID. Stages 1-23 hold their level
  * against their interstage valve; stage 24 is the brine pool, whose level follows its inventory:
  * seawater makeup in, this tick's distillate and the blowdown out. Makeup never exceeds the intake
- * flow. Returns the raw distillate (before plant-status gating, also stored as brine.distillateM3h)
- * and the brine carryover from flooded stages.
+ * flow. CF lags toward cfTarget (stored as brine.cfTargetHeld). Returns the raw distillate (before
+ * plant-status gating, also stored as brine.distillateM3h) and the brine carryover from flooded stages.
  */
 export function stepStages(
   s: PlantState,
@@ -136,20 +157,17 @@ export function stepStages(
         dtS,
         VACUUM_TAU_S,
       );
-  const blowdownPct = pct(s.loops.blowdown.output);
-  const concentrationFactor = lag(
-    s.brine.concentrationFactor,
-    CF_MAX - (CF_MAX - CF_MIN) * blowdownPct,
-    dtS,
-    CF_TAU_S,
-  );
+  const blowdownM3h = BLOWDOWN_MAX_M3H * pct(s.loops.blowdown.output);
+  // Stored as the held target: online it is this tick's salt balance, otherwise cfTarget already
+  // returns the held value, so storing it leaves it unchanged.
+  const cfTargetHeld = cfTarget(s, blowdownM3h);
+  const concentrationFactor = lag(s.brine.concentrationFactor, cfTargetHeld, dtS, CF_TAU_S);
   // Makeup is a share of the seawater the intake delivers: never more than the intake flow.
   const intakeM3h = Math.max(0, s.intake.flowM3h);
   const makeupM3h = Math.min(
     intakeM3h,
     lag(s.brine.makeupM3h, Math.min(MAKEUP_MAX_M3H * pct(s.loops.makeup.output), intakeM3h), dtS, MAKEUP_TAU_S),
   );
-  const blowdownM3h = BLOWDOWN_MAX_M3H * blowdownPct;
   const vacuum = { quality };
 
   // Temperature cascade.
@@ -194,6 +212,6 @@ export function stepStages(
   }
   const carryover = stages.reduce((sum, st) => sum + Math.max(0, st.levelM - CARRYOVER_LEVEL_M), 0);
 
-  const brine = { ...s.brine, recircM3h, concentrationFactor, blowdownM3h, makeupM3h, distillateM3h };
+  const brine = { ...s.brine, recircM3h, concentrationFactor, blowdownM3h, makeupM3h, distillateM3h, cfTargetHeld };
   return { state: { ...s, stages, brine, vacuum }, distillateM3h, carryover };
 }

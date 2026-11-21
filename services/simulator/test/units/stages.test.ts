@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { SOFT_TO_HARD_PER_S, STAGE_COUNT } from '../../src/constants.js';
+import {
+  BLOWDOWN_MAX_M3H,
+  BOTTOM_APPROACH_C,
+  BOTTOM_VACUUM_PENALTY_C,
+  CF_MAX,
+  CF_MIN,
+  HEATER_DT0_C,
+  RECOVERY_STAGES,
+  SOFT_TO_HARD_PER_S,
+  STAGE_COUNT,
+  TUBE_PLUG_DERATE,
+} from '../../src/constants.js';
+import { applyTrip } from '../../src/safety/interlocks.js';
 import { createInitialState, NOMINAL, type PlantState, type Stage } from '../../src/state.js';
-import { bottomTempC, recoveredTempC, scalingRates, stageEffectiveness, stepStages } from '../../src/units/stages.js';
+import { bottomTempC, cfTarget, recoveredTempC, scalingRates, stageEffectiveness, stepStages } from '../../src/units/stages.js';
 import { allFinite } from '../helpers.js';
+import { runUntil } from '../safety/harness.js';
 import { GAME_ID } from '../envelope.js';
 
 const DT = 40;
@@ -217,5 +230,82 @@ describe('vacuum and brine', () => {
     );
     expect(allFinite(r.state)).toBe(true);
     expect(r.distillateM3h).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('heat-transfer sections (recovery 1-21, reject 22-24)', () => {
+  /** 0.5 mm of hard scale on the stages i where pick(i). */
+  const scaleWhere = (s: PlantState, pick: (i: number) => boolean): PlantState => ({
+    ...s,
+    stages: s.stages.map((st, i) => (pick(i) ? { ...st, hardScaleMm: 0.5 } : st)),
+  });
+  const reject = (i: number): boolean => i >= RECOVERY_STAGES;
+  const recovery = (i: number): boolean => i < RECOVERY_STAGES;
+
+  it('a clean plant gives the pre-sectioning bottom and recovered temperatures exactly', () => {
+    const s = nominal();
+    const bottom = s.seawater.tempC + BOTTOM_APPROACH_C + (1 - s.vacuum.quality) * BOTTOM_VACUUM_PENALTY_C;
+    expect(bottomTempC(s)).toBe(bottom);
+    expect(recoveredTempC(s)).toBe(Math.max(bottom, s.heater.tbtC - HEATER_DT0_C));
+  });
+
+  it('scale on stages 22-24 only leaves heat recovery alone and widens the bottom approach by approach x (1/eff - 1)', () => {
+    const clean = nominal();
+    const scaled = scaleWhere(clean, reject);
+    const eff = stageEffectiveness(stage(scaled, STAGE_COUNT - 1));
+    const approach = bottomTempC(clean) - clean.seawater.tempC;
+    expect(recoveredTempC(scaled)).toBe(recoveredTempC(clean));
+    expect(bottomTempC(scaled) - bottomTempC(clean)).toBeCloseTo(approach * (1 / eff - 1), 9);
+  });
+
+  it('scale on stages 1-21 only cuts heat recovery and leaves the bottom temperature alone', () => {
+    const clean = nominal();
+    const scaled = scaleWhere(clean, recovery);
+    expect(recoveredTempC(scaled)).toBeLessThan(recoveredTempC(clean));
+    expect(bottomTempC(scaled)).toBe(bottomTempC(clean));
+  });
+});
+
+describe('a plugged stage', () => {
+  it('plugging one stage of a clean nominal plant cuts raw distillate by 2 %', () => {
+    const s = nominal();
+    const plugged = { ...s, faults: { ...s.faults, stageDerate: s.faults.stageDerate.map((d, i) => (i === 3 ? TUBE_PLUG_DERATE : d)) } };
+    const cut = 1 - stepStages(plugged, DT).distillateM3h / stepStages(s, DT).distillateM3h;
+    expect(Math.abs(cut - 0.02)).toBeLessThanOrEqual(0.0005);
+  });
+});
+
+describe('concentration factor from the salt balance', () => {
+  const B = (s: PlantState): number => (BLOWDOWN_MAX_M3H * s.loops.blowdown.output) / 100;
+
+  it('the nominal state targets CF 1.45', () => {
+    const s = nominal();
+    expect(Math.abs(cfTarget(s, B(s)) - 1.45)).toBeLessThanOrEqual(0.002);
+  });
+
+  it('closed blowdown targets CF_MAX', () => {
+    expect(cfTarget(nominal(), 0)).toBe(CF_MAX);
+  });
+
+  it('halving the blowdown raises CF toward (D + B) / B', () => {
+    const s0 = nominal();
+    const half = { ...s0, loops: { ...s0.loops, blowdown: { ...s0.loops.blowdown, output: s0.loops.blowdown.output / 2 } } };
+    const b = B(half);
+    const d = s0.brine.distillateM3h;
+    const want = Math.min(CF_MAX, Math.max(CF_MIN, (d + b) / b));
+    expect(cfTarget(half, b)).toBeCloseTo(want, 9);
+    expect(want).toBeGreaterThan(1.6);
+    const r = run(half, 720); // 8 plant hours, 8 x CF_TAU_S
+    expect(Math.abs(r.state.brine.concentrationFactor - want)).toBeLessThan(0.01);
+    expect(r.state.brine.cfTargetHeld).toBeCloseTo(want, 3);
+  });
+
+  it('holds CF while the plant is tripped: 90 ticks later it is within 0.005 of its value at the trip', () => {
+    const trippedAt = applyTrip(createInitialState(1, 0, GAME_ID), 'manual').state;
+    expect(cfTarget(trippedAt, 0)).toBe(trippedAt.brine.cfTargetHeld);
+    const after = runUntil(trippedAt, 90).state;
+    expect(after.status).toBe('tripped');
+    expect(after.brine.distillateM3h).toBeLessThan(0.5 * NOMINAL.productM3h);
+    expect(Math.abs(after.brine.concentrationFactor - trippedAt.brine.concentrationFactor)).toBeLessThan(0.005);
   });
 });
