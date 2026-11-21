@@ -84,8 +84,11 @@ first deploy):
 
 | Container | Cap | Used, idle | Used, with games running |
 | --- | --- | --- | --- |
-| `desal-flink-jobmanager` | 700 MB | _(Task 11)_ | _(Task 11)_ |
-| `desal-flink-taskmanager` | 1100 MB | _(Task 11)_ | _(Task 11)_ |
+| `desal-flink-jobmanager` | 700 MB | 332 MB | 336 MB |
+| `desal-flink-taskmanager` | 1100 MB | 389 MB | 433 MB |
+
+(Measured 2026-11-21 just after the first Flink deploy, with one game running; the host then had 1.55 GB available
+and 22 MB of swap in use. Re-measure with several games if the server ever feels tight.)
 
 (On the laptop, both jobs running and no games: jobmanager 409 MB, taskmanager 546 MB.)
 
