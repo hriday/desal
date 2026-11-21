@@ -231,6 +231,7 @@ describe('chaos plan lifecycle', () => {
         stormCleanedByCrew: true,
         fuelContamination: null,
         tsunami: null,
+        lowSteam: { floorBar: 10.5 },
         sensors: { tbt: { kind: 'freeze', value: 100 } },
         stageDerate: s0.faults.stageDerate.map(() => 0.5),
       },

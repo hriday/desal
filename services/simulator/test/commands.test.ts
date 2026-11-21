@@ -197,6 +197,47 @@ describe('applyCommand', () => {
     expect(applyCommand(s, env({ type: 'divertToDrain', on: true })).state.product.divertToDrain).toBe(true);
   });
 
+  it('a new game diverts in Auto', () => {
+    expect(createInitialState(1, 0, GAME_ID).product.divertMode).toBe('auto');
+    expect(createInitialState(1, 0, GAME_ID).steam).toEqual({ motiveBar: 14.5, standby: false });
+  });
+
+  it('setDivertMode sets the mode and leaves the valve where it was', () => {
+    const s = running();
+    const toManual = applyCommand(s, env({ type: 'setDivertMode', mode: 'manual' })).state;
+    expect(toManual.product.divertMode).toBe('manual');
+    const drained = applyCommand(toManual, env({ type: 'divertToDrain', on: true })).state;
+    const back = applyCommand(drained, env({ type: 'setDivertMode', mode: 'auto' })).state;
+    expect(back.product.divertMode).toBe('auto');
+    expect(back.product.divertToDrain).toBe(true);
+  });
+
+  it('divertToDrain from Auto switches to Manual and sets the valve', () => {
+    const s = running();
+    expect(s.product.divertMode).toBe('auto');
+    const r = applyCommand(s, env({ type: 'divertToDrain', on: true })).state;
+    expect(r.product.divertMode).toBe('manual');
+    expect(r.product.divertToDrain).toBe(true);
+  });
+
+  it('standbySteam sets the standby line', () => {
+    const s = running();
+    expect(applyCommand(s, env({ type: 'standbySteam', on: true })).state.steam.standby).toBe(true);
+    const on = applyCommand(s, env({ type: 'standbySteam', on: true })).state;
+    expect(applyCommand(on, env({ type: 'standbySteam', on: false })).state.steam.standby).toBe(false);
+  });
+
+  it('the divert and standby commands are refused in handover', () => {
+    const h = { ...running(), phase: 'handover' as const };
+    for (const command of [
+      { type: 'setDivertMode', mode: 'auto' },
+      { type: 'divertToDrain', on: true },
+      { type: 'standbySteam', on: true },
+    ]) {
+      expect(rejection(applyCommand(h, env(command, h.shift?.id ?? null)).events)).toBe('not allowed during handover');
+    }
+  });
+
   it('manualTrip, restart delegation, acidClean', () => {
     const s = running();
     const t = applyCommand(s, env({ type: 'manualTrip' }));

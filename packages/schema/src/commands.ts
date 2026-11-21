@@ -35,6 +35,9 @@ export type GameMode = z.infer<typeof GameModeSchema>;
 export const CrewJobSchema = z.enum(['plugTubes', 'repairEjector', 'replaceSensor', 'cleanScreens', 'flushFuel']);
 export type CrewJob = z.infer<typeof CrewJobSchema>;
 
+export const DivertModeSchema = z.enum(['auto', 'manual']);
+export type DivertMode = z.infer<typeof DivertModeSchema>;
+
 export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('startShift'), mode: LoopModeSchema }),
   z.object({ type: z.literal('setSetpoint'), loop: LoopIdSchema, value: num }),
@@ -44,6 +47,8 @@ export const CommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('setDose'), chemical: z.enum(['chlorine', 'antiscalant']), mgL: num }),
   z.object({ type: z.literal('ballCleaning'), on: z.boolean() }),
   z.object({ type: z.literal('divertToDrain'), on: z.boolean() }),
+  z.object({ type: z.literal('setDivertMode'), mode: DivertModeSchema }),
+  z.object({ type: z.literal('standbySteam'), on: z.boolean() }),
   z.object({ type: z.literal('selectFuel'), fuel: FuelKindSchema }),
   z.object({ type: z.literal('orderFuel'), tonnes: num }),
   z.object({ type: z.literal('manualTrip') }),

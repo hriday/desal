@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CrewJobSchema, FuelGradeSchema, GameModeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
+import { CrewJobSchema, DivertModeSchema, FuelGradeSchema, GameModeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
 
 const num = z.number().finite();
 
@@ -75,7 +75,12 @@ export const PlantStatusSchema = z.object({
   /** The live shift target (reflects a mid-shift demandChange); null outside a shift. */
   shiftTarget: z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num }).nullable(),
   ballCleaning: z.boolean(),
+  /** The product valve's direction (true: to the drain). */
   divertToDrain: z.boolean(),
+  /** Who moves the valve: Auto (the plant) or Manual (the operator). Older simulators send neither: Manual. */
+  divertMode: DivertModeSchema.default('manual'),
+  /** The standby motive steam line is on. */
+  standbySteam: z.boolean().default(false),
   shiftTicksRemaining: num,
   deliveries: z.array(z.object({ arrivesInTicks: num, tonnes: num, grade: FuelGradeSchema })),
   acidCleanRemainingTicks: num,

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   CrewJobSchema,
+  DivertModeSchema,
   FuelGradeSchema,
   GameEndReasonSchema,
   GameModeSchema,
@@ -15,7 +16,7 @@ import {
 } from '@desal/schema';
 import { z } from 'zod';
 import { callSignFor } from './callsign.js';
-import { LEVEL_LOOP_COUNT, LOOP_GAINS, RECOVERY_STAGES, STAGE_COUNT } from './constants.js';
+import { LEVEL_LOOP_COUNT, LOOP_GAINS, MOTIVE_STEAM_NOMINAL_BAR, RECOVERY_STAGES, STAGE_COUNT } from './constants.js';
 import { BALANCE, NOMINAL, type PlantState } from './state.js';
 
 const num = z.number().finite();
@@ -137,7 +138,8 @@ export const PlantStateSchema = z.object({
     cfTargetHeld: num,
   }),
   vacuum: z.object({ quality: num }),
-  product: z.object({ flowM3h: num, salinityPpm: num, divertToDrain: z.boolean() }),
+  steam: z.object({ motiveBar: num, standby: z.boolean() }),
+  product: z.object({ flowM3h: num, salinityPpm: num, divertToDrain: z.boolean(), divertMode: DivertModeSchema }),
   fuel: z.object({
     active: FuelKindSchema,
     changeover: z.object({ to: FuelKindSchema, remainingTicks: num }).nullable(),
@@ -207,6 +209,7 @@ export const PlantStateSchema = z.object({
     tsunami: z
       .object({ warnRemainingTicks: num, surgeRemainingTicks: num, surgeDone: z.boolean(), cleanedAfterSurge: z.boolean(), coolC: num })
       .nullable(),
+    lowSteam: z.object({ floorBar: num }).nullable(),
     sensors: z.object({
       tbt: SensorFaultSchema.optional(),
       intakeFlow: SensorFaultSchema.optional(),
@@ -326,6 +329,23 @@ function migrateV5(state: unknown, newRunId: () => string): unknown {
   return { ...s, run: { ...s.run, callSign: callSignFor(s.seed), runId: newRunId() } };
 }
 
+/**
+ * Bring a version 6 state to version 7: the valve is Manual (a saved game keeps the behaviour it was
+ * played with), the motive steam is nominal with the standby line off, and there is no low-steam fault.
+ * Anything malformed is left for the schema to reject.
+ */
+function migrateV6(state: unknown): unknown {
+  if (state === null || typeof state !== 'object') return state;
+  const s = state as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const obj = (v: unknown): v is Record<string, any> => v !== null && typeof v === 'object' && !Array.isArray(v); // eslint-disable-line @typescript-eslint/no-explicit-any
+  return {
+    ...s,
+    product: obj(s.product) ? { ...s.product, divertMode: 'manual' } : s.product,
+    steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false },
+    faults: obj(s.faults) ? { ...s.faults, lowSteam: null } : s.faults,
+  };
+}
+
 const FORMAT = 'desal-snapshot';
 /**
  * 2 = the multi-game era (economy and game-over state, one save per gameId). Version 1 saves are
@@ -336,8 +356,10 @@ const FORMAT = 'desal-snapshot';
  * 5 = the 24-stage layout (Plan 7): 24 stages, 23 level loops, the makeup loop and the brine pool's
  * flows. Version 3 and 4 saves are migrated (v3 -> v4 -> v5).
  * 6 = callSign and runId on the run. Version 3, 4 and 5 saves are migrated (v3 -> v4 -> v5 -> v6).
+ * 7 = divert mode, motive steam, standby line, lowSteam fault. Version 3 to 6 saves are migrated
+ * (v3 -> v4 -> v5 -> v6 -> v7).
  */
-const VERSION = 6;
+const VERSION = 7;
 
 export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });
@@ -373,14 +395,15 @@ export function restore(json: string, newRunId: () => string = randomUUID): Rest
   }
   const d = doc as Record<string, unknown>;
   if (d.format !== FORMAT) return { ok: false, reason: `wrong format: ${JSON.stringify(d.format)}` };
-  if (d.version !== VERSION && d.version !== 5 && d.version !== 4 && d.version !== 3) {
+  if (d.version !== VERSION && d.version !== 6 && d.version !== 5 && d.version !== 4 && d.version !== 3) {
     return { ok: false, reason: `unknown version: ${JSON.stringify(d.version)}` };
   }
-  // Each step brings the state up one version: v3 -> v4 -> v5 -> v6.
+  // Each step brings the state up one version: v3 -> v4 -> v5 -> v6 -> v7.
   const v4 = d.version === 3 ? migrateV3(d.state) : d.state;
   const v5 = d.version === 3 || d.version === 4 ? migrateV4(v4) : v4;
-  const v6 = d.version === VERSION ? v5 : migrateV5(v5, newRunId);
-  const parsed = PlantStateSchema.safeParse(v6);
+  const v6 = d.version === VERSION || d.version === 6 ? v5 : migrateV5(v5, newRunId);
+  const v7 = d.version === VERSION ? v6 : migrateV6(v6);
+  const parsed = PlantStateSchema.safeParse(v7);
   if (!parsed.success) return { ok: false, reason: issueText(parsed.error) };
   return { ok: true, state: parsed.data };
 }

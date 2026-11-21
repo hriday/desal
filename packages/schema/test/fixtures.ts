@@ -40,6 +40,8 @@ export const status: PlantStatus = {
   shiftTarget: { productM3: 1000, maxSalinityPpm: 25, fuelBudgetUsd: 5000 },
   ballCleaning: false,
   divertToDrain: false,
+  divertMode: 'auto',
+  standbySteam: false,
   shiftTicksRemaining: 100,
   deliveries: [{ arrivesInTicks: 30, tonnes: 50, grade: 'standard' }],
   acidCleanRemainingTicks: 0,

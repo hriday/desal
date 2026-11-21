@@ -31,3 +31,13 @@ test('dispatchCrew takes a crew job', () => {
   expect(CommandSchema.safeParse({ type: 'dispatchCrew', job: 'plugTubes' }).success).toBe(true);
   expect(CommandSchema.safeParse({ type: 'dispatchCrew', job: 'nope' }).success).toBe(false);
 });
+test('setDivertMode takes auto or manual only', () => {
+  expect(CommandSchema.safeParse({ type: 'setDivertMode', mode: 'auto' }).success).toBe(true);
+  expect(CommandSchema.safeParse({ type: 'setDivertMode', mode: 'manual' }).success).toBe(true);
+  expect(CommandSchema.safeParse({ type: 'setDivertMode', mode: 'off' }).success).toBe(false);
+});
+test('standbySteam needs a boolean on', () => {
+  expect(CommandSchema.safeParse({ type: 'standbySteam', on: true }).success).toBe(true);
+  expect(CommandSchema.safeParse({ type: 'standbySteam' }).success).toBe(false);
+  expect(CommandSchema.safeParse({ type: 'standbySteam', on: 'yes' }).success).toBe(false);
+});

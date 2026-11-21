@@ -56,6 +56,7 @@ const SENSORS: readonly Sensor[] = [
   // Cooling seawater returned to sea after the reject-stage tubes: what the makeup does not take.
   { id: 'brine.coolingRejectM3h', unitId: 'brine', read: (s) => s.intake.flowM3h - s.brine.makeupM3h },
   { id: 'vacuum.quality', unitId: 'vacuum', read: (s) => s.vacuum.quality, loop: 'vacuum' },
+  { id: 'vacuum.motiveSteamBar', unitId: 'vacuum', read: (s) => s.steam.motiveBar },
   { id: 'product.flowM3h', unitId: 'product', read: (s) => s.product.flowM3h },
   { id: 'product.salinityPpm', unitId: 'product', read: (s) => s.product.salinityPpm },
   { id: 'product.shiftProductM3', unitId: 'product', read: (s) => s.shift?.acc.productM3 ?? 0 },
@@ -136,6 +137,8 @@ export function toStatus(s: PlantState): PlantStatus {
     shiftTarget: inShift ? { ...s.shift!.target } : null,
     ballCleaning: s.ballCleaning,
     divertToDrain: s.product.divertToDrain,
+    divertMode: s.product.divertMode,
+    standbySteam: s.steam.standby,
     shiftTicksRemaining: inShift ? Math.max(0, SHIFT_TICKS - (s.tick - s.shift!.startTick)) : 0,
     deliveries: deliveryView(s),
     acidCleanRemainingTicks: s.acidCleanRemainingTicks,

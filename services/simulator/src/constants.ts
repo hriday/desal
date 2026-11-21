@@ -203,6 +203,8 @@ export const RECIRC_TAU_S = 60;
 export const VACUUM_QUALITY_MIN = 0.3;
 /** Nominal vacuum quality. */
 export const VACUUM_QUALITY_NOMINAL = 0.95;
+/** Nominal ejector motive steam pressure (bar). */
+export const MOTIVE_STEAM_NOMINAL_BAR = 14.5;
 /** Vacuum quality time constant (s). */
 export const VACUUM_TAU_S = 600;
 /** Highest concentration factor (the salt-balance target's upper clamp; blowdown shut). */
