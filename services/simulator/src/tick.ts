@@ -9,7 +9,7 @@ import {
 } from './constants.js';
 import { autoOutputRange } from './control/loops.js';
 import { pidStep } from './control/pid.js';
-import { chargeStandbySteam, chargeStanding, spendPerTick } from './economy.js';
+import { chargeStandby, chargeStanding, spendPerTick } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
 import { nextRandom } from './rng.js';
 import { checkGameOver, endGame } from './gameover.js';
@@ -27,6 +27,7 @@ import { heaterDemandMW, stepHeater } from './units/heater.js';
 import { stepIntake, stepOverhauls } from './units/intake.js';
 import { stepProduct } from './units/product.js';
 import { recoveredTempC, stepStages } from './units/stages.js';
+import { stepEjectors } from './units/ejectors.js';
 import { stepSteam } from './units/steam.js';
 
 export interface TickResult {
@@ -109,6 +110,7 @@ export function stepPlant(s0: PlantState): PlantStep {
 
   s = stepHeater(s, fuel.deliveredMW, recoveredTempC(s), dt);
   s = stepSteam(s, dt);
+  s = stepEjectors(s, dt);
   const st = stepStages(s, dt);
   const online = st.state.status === 'online';
   const product = stepProduct(st.state, online ? st.distillateM3h : 0, st.carryover, dt);
@@ -221,10 +223,12 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   const standing = chargeStanding(s);
   s = standing.state;
   events.push(...standing.events);
-  // So does the standby steam line, while it is on (also reported hourly).
-  const standby = chargeStandbySteam(s);
-  s = standby.state;
-  events.push(...standby.events);
+  // So do the standby steam line and the standby ejectors, while they are on (also reported hourly).
+  for (const which of ['steam', 'ejectors'] as const) {
+    const standby = chargeStandby(s, which);
+    s = standby.state;
+    events.push(...standby.events);
+  }
   const telemetry = toTelemetry(s);
 
   let ended = false;

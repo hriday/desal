@@ -257,8 +257,15 @@ describe('emission', () => {
 
   it('emits TELEMETRY_SENSOR_COUNT readings per tick (the gateway assembles frames of that size)', () => {
     expect(SENSOR_IDS.length).toBe(TELEMETRY_SENSOR_COUNT);
-    expect(TELEMETRY_SENSOR_COUNT).toBe(128);
+    expect(TELEMETRY_SENSOR_COUNT).toBe(132);
     expect(SENSOR_IDS[SENSOR_IDS.indexOf('vacuum.quality') + 1]).toBe('vacuum.motiveSteamBar');
+    const m = SENSOR_IDS.indexOf('vacuum.motiveSteamBar');
+    expect(SENSOR_IDS.slice(m + 1, m + 5)).toEqual([
+      'vacuum.lastStageMbar',
+      'vacuum.intercondenserMbar',
+      'vacuum.coolingOutC',
+      'vacuum.ventAirKgH',
+    ]);
     expect(SENSOR_IDS).toContain('stages.s24.levelM');
     expect(SENSOR_IDS).not.toContain('stages.s25.levelM');
     expect(SENSOR_IDS).toContain('brine.makeupM3h');

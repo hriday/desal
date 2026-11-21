@@ -3,6 +3,7 @@ import { PUMP_WEAR_FLOW_LOSS, SHIFT_TICKS, STAGE_COUNT } from './constants.js';
 import { paceOf } from './pace.js';
 import { measured } from './sensors.js';
 import type { Loop, LoopSensorId, PlantState } from './state.js';
+import { ejectorReadings } from './units/ejectors.js';
 
 type Sensor = { id: string; unitId: UnitId; read: (s: PlantState) => number; loop?: LoopSensorId };
 
@@ -57,6 +58,11 @@ const SENSORS: readonly Sensor[] = [
   { id: 'brine.coolingRejectM3h', unitId: 'brine', read: (s) => s.intake.flowM3h - s.brine.makeupM3h },
   { id: 'vacuum.quality', unitId: 'vacuum', read: (s) => s.vacuum.quality, loop: 'vacuum' },
   { id: 'vacuum.motiveSteamBar', unitId: 'vacuum', read: (s) => s.steam.motiveBar },
+  // The ejector train's diagnosis readings (each fault moves its own pattern).
+  { id: 'vacuum.lastStageMbar', unitId: 'vacuum', read: (s) => ejectorReadings(s).lastStageMbar },
+  { id: 'vacuum.intercondenserMbar', unitId: 'vacuum', read: (s) => ejectorReadings(s).intercondenserMbar },
+  { id: 'vacuum.coolingOutC', unitId: 'vacuum', read: (s) => ejectorReadings(s).coolingOutC },
+  { id: 'vacuum.ventAirKgH', unitId: 'vacuum', read: (s) => ejectorReadings(s).ventAirKgH },
   { id: 'product.flowM3h', unitId: 'product', read: (s) => s.product.flowM3h },
   { id: 'product.salinityPpm', unitId: 'product', read: (s) => s.product.salinityPpm },
   { id: 'product.shiftProductM3', unitId: 'product', read: (s) => s.shift?.acc.productM3 ?? 0 },
