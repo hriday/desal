@@ -11,11 +11,13 @@ export interface ToggleProps {
   offText?: string;
   pending?: boolean;
   disabled?: boolean;
+  /** A short caption beside the button (e.g. a running cost). */
+  note?: string;
   onChange: (next: boolean) => void;
 }
 
 /** An on/off control showing the plant's reported state; pressing asks for the other state. */
-export function Toggle({ label, on, onText = 'On', offText = 'Off', pending, disabled, onChange }: ToggleProps) {
+export function Toggle({ label, on, onText = 'On', offText = 'Off', pending, disabled, note, onChange }: ToggleProps) {
   return (
     <div className="ctl" data-control={label}>
       <span className="ctl__label">{label}</span>
@@ -30,6 +32,7 @@ export function Toggle({ label, on, onText = 'On', offText = 'Off', pending, dis
         >
           {on === undefined ? DASH : on ? onText : offText}
         </button>
+        {note && <span className="ctl__meta">{note}</span>}
         {pending && <span className="ctl__pending">sending…</span>}
       </span>
     </div>

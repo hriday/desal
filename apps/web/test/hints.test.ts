@@ -43,6 +43,10 @@ describe('FIX', () => {
     expect(FIX.lowSteam.hint).toBe('delay');
     expect(FIX.lowSteam.underway!(status({ standbySteam: true }))).toBe(true);
     expect(FIX.lowSteam.underway!(status({ standbySteam: false }))).toBe(false);
+    expect(FIX.lowSteam.delayMin).toBe(8);
+  });
+  it('tells a tube leak to put Divert on Auto', () => {
+    expect(FIX.tubeLeak.text).toBe('Put Divert on Auto so off-spec water goes to drain, and send the crew to plug tubes.');
   });
   it('gives informational kinds no hint and the earthquake one at once', () => {
     for (const k of ['seawaterTemp', 'gasCurtailNotice', 'gasPriceSpike', 'offgradeOnly', 'deliveryDelay', 'demandChange', 'pumpBearing'] as const) {
@@ -61,6 +65,17 @@ describe('dueHints', () => {
     const due = dueHints(leak, at(20), none);
     expect(due).toEqual([{ key: '1:1:hint', eventId: 1, kind: 'tubeLeak', text: `Hint: ${FIX.tubeLeak.text}` }]);
     expect(dueHints(leak, at(21), new Set([due[0]!.key]))).toEqual([]);
+  });
+  it('hints lowSteam after its own 8-minute delay, well before the earliest 20.7-minute trip', () => {
+    const ev = [fired('lowSteam')];
+    expect(dueHints(ev, at(7.9), none)).toEqual([]);
+    expect(dueHints(ev, at(8), none)).toEqual([{ key: '1:1:hint', eventId: 1, kind: 'lowSteam', text: `Hint: ${FIX.lowSteam.text}` }]);
+    expect(FIX.lowSteam.delayMin!).toBeLessThan(20.7);
+    expect(dueHints(ev, at(8, { standbySteam: true }), none)).toEqual([]);
+  });
+  it('kinds without their own delay keep HINT_DELAY_MIN', () => {
+    expect(FIX.tubeLeak.delayMin).toBeUndefined();
+    expect(dueHints([fired('vacuumLoss')], at(19.9), none)).toEqual([]);
   });
   it('gives no hints on Hard', () => {
     expect(dueHints(leak, at(20, { mode: 'hard' }), none)).toEqual([]);
@@ -106,7 +121,7 @@ describe('dueHints', () => {
 });
 
 describe('divertHint', () => {
-  const TEXT = "Hint: Product's back in spec — send it to the tank.";
+  const TEXT = "Hint: Product's back in spec — put Divert back on Auto.";
   const manualDrain = (over: Partial<PlantStatus> = {}) => at(0, { divertMode: 'manual', divertToDrain: true, ...over });
   /** Salinity points one minute apart from minute `from` to `to`, every one at `v`. */
   const run = (from: number, to: number, v: number): TrendPoint[] =>

@@ -8,8 +8,8 @@ import { LoopSetpoint, Setpoint } from '../controls/Setpoint';
 import { LoopModeToggle, Toggle } from '../controls/Toggle';
 import { Trend } from '../controls/Trend';
 import { FlashStages, scaleTint } from '../equipment/FlashStages';
-import { DASH, fmt, get, num, stageKey } from '../equipment/format';
-import { ACID_CLEAN_COST_USD, loopRange } from '../limits';
+import { DASH, fmt, get, num, stageKey, usd } from '../equipment/format';
+import { ACID_CLEAN_COST_USD, loopRange, STANDBY_STEAM_COST_USD_PER_H } from '../limits';
 import { POOL_LOW_BAD_M, POOL_LOW_WARN_M } from '../alarms/rules';
 import { EJECTOR_FULL_REACH_BAR, LEVEL_LOOP_COUNT, RECOVERY_STAGES, STAGE_COUNT, STEAM_BAD_BAR, TICK_PLANT_S } from '../plantConstants';
 import { Detail, Row, ViewLayout, type Tone } from './Layout';
@@ -170,6 +170,7 @@ export function StagesView(props: ExpandedProps) {
             on={typeof status?.standbySteam === 'boolean' ? status.standbySteam : undefined}
             pending={pendingCommand(ctl, 'standbySteam') !== undefined}
             disabled={!ok}
+            note={`${usd(STANDBY_STEAM_COST_USD_PER_H)}/h while on`}
             onChange={(on) => props.send?.(standbySteam(on))}
           />
           <CrewButton job="repairEjector" {...ctl} />

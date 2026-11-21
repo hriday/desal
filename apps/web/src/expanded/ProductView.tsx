@@ -46,12 +46,12 @@ export function ProductView(props: ExpandedProps) {
         <>
           <Toggle
             label="Divert mode"
-            on={mode === 'auto' ? true : mode === 'manual' ? false : undefined}
-            onText="Auto"
-            offText="Manual"
+            on={mode === 'manual' ? true : mode === 'auto' ? false : undefined}
+            onText="Manual"
+            offText="Auto"
             pending={props.pending?.has('setDivertMode') === true}
             disabled={!canSend({ status, send: props.send })}
-            onChange={(auto) => props.send?.(divertModeCmd(auto ? 'auto' : 'manual'))}
+            onChange={(manual) => props.send?.(divertModeCmd(manual ? 'manual' : 'auto'))}
           />
           <Toggle
             label="Divert to drain"

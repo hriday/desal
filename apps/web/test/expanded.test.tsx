@@ -44,7 +44,8 @@ describe('expanded views', () => {
     expect(container.querySelector('.xv__drawing svg')).not.toBeNull();
     const trends = container.querySelectorAll('[data-trend]').length;
     expect(trends).toBeGreaterThanOrEqual(2);
-    expect(trends).toBeLessThanOrEqual(4);
+    // StagesView adds the motive steam trend to its three.
+    expect(trends).toBeLessThanOrEqual(View === StagesView ? 4 : 3);
     expect(container.querySelector('[data-controls]')).not.toBeNull();
   });
 
@@ -211,13 +212,18 @@ describe('divert and steam controls', () => {
     expect(text('manual', true)).toBe('Manual — diverting');
   });
 
-  it('ProductView: Divert mode toggle (on = Auto) sends setDivertMode; Divert to drain sends divertToDrain', () => {
+  it('ProductView: Divert mode toggle (on = Manual, like the loop mode toggles) sends setDivertMode; Divert to drain sends divertToDrain', () => {
     const { container, sent } = withSend(ProductView, sample({ divertMode: 'auto' }));
+    const modeBtn = within(container).getByRole('button', { name: 'Divert mode' });
+    expect(modeBtn.getAttribute('aria-pressed')).toBe('false');
+    expect(modeBtn.textContent).toBe('Auto');
     fireEvent.click(within(container).getByRole('button', { name: 'Divert mode' }));
     fireEvent.click(within(container).getByRole('button', { name: 'Divert to drain' }));
     expect(sent).toEqual([{ type: 'setDivertMode', mode: 'manual' }, { type: 'divertToDrain', on: true }]);
     cleanup();
     const manual = withSend(ProductView, sample({ divertMode: 'manual' }));
+    expect(within(manual.container).getByRole('button', { name: 'Divert mode' }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(manual.container).getByRole('button', { name: 'Divert mode' }).textContent).toBe('Manual');
     fireEvent.click(within(manual.container).getByRole('button', { name: 'Divert mode' }));
     expect(manual.sent).toEqual([{ type: 'setDivertMode', mode: 'auto' }]);
   });
@@ -249,6 +255,7 @@ describe('divert and steam controls', () => {
     expect(container.querySelector('[data-control="Vacuum output"]')).toBeNull();
     fireEvent.click(within(container).getByRole('button', { name: 'Standby steam line' }));
     expect(sent).toEqual([{ type: 'standbySteam', on: true }]);
+    expect(container.querySelector('[data-control="Standby steam line"]')!.textContent).toContain('$150/h while on');
   });
 });
 
@@ -304,6 +311,17 @@ describe('eventText', () => {
     expect(PlantEventSchema.parse(standing)).toEqual(standing);
     const shiftId = standing.shiftId!;
     expect(shiftAccount([standing, standing, SAMPLES.accountChange], shiftId)).toMatchObject({ standingUsd: 180, repairsUsd: 8000 });
+  });
+  it('the standby steam line cost reads as such and counts toward the shift spend, on its own line', () => {
+    const steam = { ...SAMPLES.accountChange, deltaUsd: -150, cause: 'standbySteam' as const };
+    expect(eventText(steam)).toBe('Paid $150 for the standby steam line; balance $4,450');
+    expect(PlantEventSchema.parse(steam)).toEqual(steam);
+    const shiftId = steam.shiftId!;
+    expect(shiftAccount([steam, steam, SAMPLES.accountChange], shiftId)).toMatchObject({ standbySteamUsd: 300, standingUsd: 0, repairsUsd: 8000 });
+    const status = { ...demoStatus(), shiftId } as PlantStatus;
+    const { getByText } = render(<ShiftView {...empty} status={status} readings={{ 'fuel.shiftCostUsd': 1000 }} events={[steam]} />);
+    expect(getByText('of which standby steam').nextSibling?.textContent).toBe('$150');
+    expect(getByText('Spent this shift').nextSibling?.textContent).toBe('$1,150');
   });
   it('crew charges count toward the shift spend, on their own line', () => {
     const crew = { ...SAMPLES.accountChange, deltaUsd: -800, cause: 'crew' as const };
