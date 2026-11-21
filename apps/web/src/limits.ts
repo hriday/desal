@@ -2,7 +2,7 @@ import type { FuelGrade, LoopId } from '@desal/schema';
 
 // Command limits and prices the client mirrors so controls show ranges and costs before sending.
 // Sources (keep in sync): services/simulator/src/constants.ts (LOOP_RANGES, PUMP_OVERHAUL_COST_USD,
-// ACID_CLEAN_COST_USD, LHV_*), services/simulator/src/commands.ts (DOSE_MAX_MGL, ORDER_MIN_T/ORDER_MAX_T).
+// ACID_CLEAN_COST_USD, STANDBY_STEAM_COST_USD_PER_H, LHV_*), services/simulator/src/commands.ts (DOSE_MAX_MGL, ORDER_MIN_T/ORDER_MAX_T).
 // Prices that change at run time (backup fuel) come from status, not from here. The plant still
 // validates every command; these only shape the UI.
 
@@ -28,6 +28,8 @@ export const ORDER_MAX_T = 500;
 export const PUMP_OVERHAUL_COST_USD = 8000;
 /** ACID_CLEAN_COST_USD: charged when an acid clean starts. */
 export const ACID_CLEAN_COST_USD = 6000;
+/** STANDBY_STEAM_COST_USD_PER_H: the standby steam line's running cost per plant hour while it is on. */
+export const STANDBY_STEAM_COST_USD_PER_H = 150;
 /** LHV_STANDARD_MJkg / LHV_OFFGRADE_MJkg, numerically GJ/t. */
 export const LHV_GJ_PER_T: Record<FuelGrade, number> = { standard: 42.5, offgrade: 38 };
 

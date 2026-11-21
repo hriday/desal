@@ -52,6 +52,14 @@ describe('LeaderboardCard', () => {
     expect(getByRole('region', { name: 'Hard' }).textContent).toContain('20 % of operators handled their first storm well');
   });
 
+  it('names a low-steam fault in full in the stats line', async () => {
+    const b = board();
+    const lb = { ...b, hard: { ...b.hard, stats: [{ kind: 'lowSteam' as const, operators: 4, firstHandledWellPct: 75 }] } };
+    const { getByRole } = render(<LeaderboardCard load={() => Promise.resolve(lb)} />);
+    await settle();
+    expect(getByRole('region', { name: 'Hard' }).textContent).toContain('75 % of operators handled their first low-steam fault well');
+  });
+
   it('rotates the stats lines every 6 s', async () => {
     vi.useFakeTimers();
     const { getByRole } = render(<LeaderboardCard load={() => Promise.resolve(board())} />);

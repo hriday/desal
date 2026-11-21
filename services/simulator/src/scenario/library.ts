@@ -4,6 +4,7 @@ import {
   BASE_TARGET_M3,
   EJECTOR_RATE_BASE_PER_MIN,
   EJECTOR_RATE_MAX_PER_MIN,
+  LOW_STEAM_FLOOR_BAR,
   POWER_DIP_MAX_MINUTES,
   RECOVERY_STAGES,
   TARGET_GROWTH_PER_SHIFT,
@@ -52,6 +53,8 @@ export function eventMessage(kind: ScenarioKind, p: Record<string, number | stri
     case 'earthquake':
     case 'tsunami':
       return radioLine(kind, p);
+    case 'lowSteam':
+      return `Motive steam pressure falling toward ${p.floorBar} bar.`;
   }
 }
 
@@ -174,6 +177,12 @@ export function drawEvent(
     case 'fuelContamination':
       params = { fuel: activeFuel };
       break;
+    case 'lowSteam': {
+      let floorBar: number;
+      [floorBar, s] = range(s, LOW_STEAM_FLOOR_BAR[0], LOW_STEAM_FLOOR_BAR[1], 0.1);
+      params = { floorBar };
+      break;
+    }
     case 'sensorFailure': {
       let loop: string, mode: string;
       if (n === 1) {

@@ -141,7 +141,11 @@ function apply(s: PlantState, id: string, c: Command): Out {
     case 'ballCleaning':
       return ok({ ...s, ballCleaning: c.on });
     case 'divertToDrain':
-      return ok({ ...s, product: { ...s.product, divertToDrain: c.on } });
+      return ok({ ...s, product: { ...s.product, divertToDrain: c.on, divertMode: 'manual' } });
+    case 'setDivertMode':
+      return ok({ ...s, product: { ...s.product, divertMode: c.mode } });
+    case 'standbySteam':
+      return ok({ ...s, steam: { ...s.steam, standby: c.on } });
     case 'selectFuel':
       if (s.fuel.changeover) return no('fuel changeover in progress');
       if (c.fuel === s.fuel.active) return no(`${c.fuel} is already the active fuel`);

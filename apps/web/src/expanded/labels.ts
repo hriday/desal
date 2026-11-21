@@ -40,7 +40,7 @@ export const END_TEXT: Record<string, string> = {
 
 export const CAUSE_TEXT: Record<string, string> = {
   allocation: 'the shift allocation', fuel: 'gas', delivery: 'a backup fuel delivery', acidClean: 'an acid clean', overhaul: 'a pump overhaul', crew: 'a crew job',
-  standing: 'staff and standby',
+  standing: 'staff and standby', standbySteam: 'the standby steam line',
 };
 
 export const KIND_TEXT: Record<string, string> = {
@@ -48,16 +48,16 @@ export const KIND_TEXT: Record<string, string> = {
   gasPriceSpike: 'Gas price spike', offgradeOnly: 'Off-grade fuel only', deliveryDelay: 'Fuel delivery delay', demandChange: 'Demand change',
   controllerFault: 'Controller fault', pumpTrip: 'Pump trip', tubeLeak: 'Tube leak', vacuumLoss: 'Vacuum loss', powerDip: 'Power dip',
   storm: 'Storm', sensorFailure: 'Instrument failure',
-  fuelContamination: 'Contaminated fuel', earthquake: 'Earthquake', tsunami: 'Tsunami',
+  fuelContamination: 'Contaminated fuel', earthquake: 'Earthquake', tsunami: 'Tsunami', lowSteam: 'Low motive steam',
 };
 
 /**
  * What to do about each scenario kind: one imperative line naming on-screen controls and crew jobs.
  * `hint` says when the radio hints it on Normal (state/hints.ts): 'delay' once the event has been open
- * HINT_DELAY_MIN, 'atOnce' when it fires, 'none' never (informational kinds). `underway` holds a
- * 'delay' hint back while the fix shows as in progress in the status.
+ * `delayMin` plant minutes (default HINT_DELAY_MIN), 'atOnce' when it fires, 'none' never (informational
+ * kinds). `underway` holds a 'delay' hint back while the fix shows as in progress in the status.
  */
-export interface FixEntry { text: string; hint: 'delay' | 'atOnce' | 'none'; underway?: (st: PlantStatus) => boolean }
+export interface FixEntry { text: string; hint: 'delay' | 'atOnce' | 'none'; delayMin?: number; underway?: (st: PlantStatus) => boolean }
 
 const crewOn = (job: CrewJob) => (st: PlantStatus) => st.crew?.job === job;
 const sendCrew = (job: CrewJob) => `send the crew to ${CREW_JOBS[job].plain}`;
@@ -74,7 +74,7 @@ export const FIX: Record<ScenarioKind, FixEntry> = {
   controllerFault: { text: 'Put the faulty loop in Manual and set its output by hand.', hint: 'delay' },
   pumpTrip: { text: 'Start a standby intake pump so two are Running.', hint: 'delay' },
   powerDip: { text: 'Start a standby intake pump so two are Running; recirculation comes back when the dip passes.', hint: 'delay' },
-  tubeLeak: { text: `Turn on Divert to drain if the product is off-spec, and ${sendCrew('plugTubes')}.`, hint: 'delay', underway: crewOn('plugTubes') },
+  tubeLeak: { text: `Put Divert on Auto so off-spec water goes to drain, and ${sendCrew('plugTubes')}.`, hint: 'delay', underway: crewOn('plugTubes') },
   vacuumLoss: { text: `Watch the vacuum and ${sendCrew('repairEjector')}.`, hint: 'delay', underway: crewOn('repairEjector') },
   storm: { text: `Keep two intake pumps Running and ${sendCrew('cleanScreens')}.`, hint: 'delay', underway: crewOn('cleanScreens') },
   sensorFailure: { text: `Find the reading that makes no sense (its loop is safer in Manual), and ${sendCrew('replaceSensor')}.`, hint: 'delay', underway: crewOn('replaceSensor') },
@@ -90,6 +90,8 @@ export const FIX: Record<ScenarioKind, FixEntry> = {
     text: 'When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens and run two pumps again.',
     hint: 'delay',
   },
+  // 8 min: before the vacuum alarm (~14.7 min) and the earliest trip (~20.7 min, 10.0-bar floor) of an unanswered fault.
+  lowSteam: { text: 'Switch on the standby steam line on the Stages screen.', hint: 'delay', delayMin: 8, underway: (st) => st.standbySteam === true },
 };
 
 /** How an event ended, as the debrief and the event log say it. */

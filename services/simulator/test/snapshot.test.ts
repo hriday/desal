@@ -30,7 +30,7 @@ function midShift2(): PlantState {
 const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0, GAME_ID)));
 
 function wrap(state: unknown, over: Record<string, unknown> = {}): string {
-  return JSON.stringify({ format: 'desal-snapshot', version: 6, savedAt: 0, state, ...over });
+  return JSON.stringify({ format: 'desal-snapshot', version: 7, savedAt: 0, state, ...over });
 }
 
 /**
@@ -75,15 +75,46 @@ describe('snapshots', () => {
 
   it('rejects garbage, wrong format and unknown version', () => {
     const s = createInitialState(1, T0, GAME_ID);
-    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 7 })]) {
+    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 8 })]) {
       const r = restore(bad);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason.length).toBeGreaterThan(0);
     }
   });
 
-  it('serializes version 6', () => {
-    expect(JSON.parse(serialize(createInitialState(1, T0, GAME_ID))).version).toBe(6);
+  it('serializes version 7', () => {
+    expect(JSON.parse(serialize(createInitialState(1, T0, GAME_ID))).version).toBe(7);
+  });
+
+  describe('a live v6 save restores as v7 (Manual divert, nominal steam, no low-steam fault)', () => {
+    const json = readFileSync(new URL('./fixtures/snapshot-v6.json', import.meta.url), 'utf8');
+    const r = restore(json);
+    const s = r.ok ? r.state : (null as unknown as PlantState);
+
+    it('restores with the defaults', () => {
+      expect(JSON.parse(json).version).toBe(6);
+      expect(r.ok).toBe(true);
+      expect(s.product.divertMode).toBe('manual');
+      expect(s.product.divertToDrain).toBe(true);
+      expect(s.steam).toEqual({ motiveBar: 14.5, standby: false, unbilledTicks: 0 });
+      expect(s.faults.lowSteam).toBeNull();
+    });
+
+    it('keeps running: 90 ticks, no trip, the valve stays on the drain', () => {
+      let x = s;
+      for (let i = 0; i < 90; i++) {
+        const t = tick(x, []);
+        expect(t.events.filter((e) => e.type === 'trip')).toEqual([]);
+        x = t.state;
+        expect(x.product.divertToDrain).toBe(true);
+      }
+    });
+
+    it('serialize then restore round-trips equal', () => {
+      const again = restore(serialize(s));
+      expect(again.ok).toBe(true);
+      if (again.ok) expect(again.state).toEqual(s);
+    });
   });
 
   it('a v6 round-trip keeps the call sign, runId and mode', () => {
@@ -109,7 +140,11 @@ describe('snapshots', () => {
     expect(r.state.run.mode).toBe('hard');
     expect(r.state.stages).toEqual(s.stages);
     expect(r.state.loops).toEqual(s.loops);
-    expect(r.state).toEqual({ ...s, run: { ...s.run, mode: 'hard', callSign: callSignFor(s.seed), runId: FRESH_RUN_ID } });
+    expect(r.state).toEqual({
+      ...s,
+      run: { ...s.run, mode: 'hard', callSign: callSignFor(s.seed), runId: FRESH_RUN_ID },
+      product: { ...s.product, divertMode: 'manual' }, // a pre-v7 save keeps the behaviour it was played with
+    });
   });
 
   it('a v5 save without an injected id generator gets a random uuid', () => {
@@ -137,13 +172,16 @@ describe('snapshots', () => {
     const s = r.ok ? r.state : (null as unknown as PlantState);
     const from = (j: number): number => Math.floor((j * 20) / 24);
 
-    it('restores', () => {
+    it('restores, with the v7 defaults', () => {
       expect(r.ok).toBe(true);
+      expect(s.product.divertMode).toBe('manual');
+      expect(s.steam).toEqual({ motiveBar: 14.5, standby: false, unbilledTicks: 0 });
+      expect(s.faults.lowSteam).toBeNull();
       expect(old.stages).toHaveLength(20);
       expect(s.stages).toHaveLength(STAGE_COUNT);
     });
 
-    it('migrates on to v6: call sign from the seed, a fresh runId, its mode kept', () => {
+    it('migrates on to v7: call sign from the seed, a fresh runId, its mode kept', () => {
       expect(s.run).toMatchObject({ callSign: callSignFor(old.seed), runId: FRESH_RUN_ID, mode: old.run.mode });
     });
 
@@ -191,14 +229,14 @@ describe('snapshots', () => {
       expect(x.shift?.id).toBe(2);
     });
 
-    it('re-serializes as a version 6 save that round-trips', () => {
+    it('re-serializes as a version 7 save that round-trips', () => {
       const again = restore(serialize(s));
       expect(again.ok).toBe(true);
       if (again.ok) expect(again.state).toEqual(s);
     });
   });
 
-  it('migrates a version 3 save through v4 and v5 to v6: Normal, new fields defaulted, 24 stages, a call sign and runId', () => {
+  it('migrates a version 3 save through v4, v5 and v6 to v7: Normal, new fields defaulted, 24 stages, a call sign and runId', () => {
     const doc = toV3(fixture());
     const st = doc.state;
     expect(st.chaos.active.plan.queue.length + st.chaos.active.fired.length).toBeGreaterThan(0);
@@ -211,6 +249,9 @@ describe('snapshots', () => {
     expect(r.state.loops.levels).toHaveLength(23);
     expect(r.state.loops.makeup.mode).toBe('auto');
     expect(r.state.run.mode).toBe('normal');
+    expect(r.state.product.divertMode).toBe('manual');
+    expect(r.state.steam).toEqual({ motiveBar: 14.5, standby: false, unbilledTicks: 0 });
+    expect(r.state.faults.lowSteam).toBeNull();
     expect(r.state.chaos.lastHadDisaster).toBe(false);
     expect(r.state.faults.fuelContamination).toBeNull();
     expect(r.state.faults.tsunami).toBeNull();

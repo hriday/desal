@@ -42,6 +42,8 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
     shiftTarget: null,
     ballCleaning: false,
     divertToDrain: false,
+    divertMode: 'auto',
+    standbySteam: false,
     shiftTicksRemaining: 720 - tick,
     deliveries: [],
     acidCleanRemainingTicks: 0,

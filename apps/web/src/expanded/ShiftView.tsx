@@ -135,23 +135,26 @@ function ShiftControls(ctl: ControlCtx) {
 }
 
 /**
- * This shift's allocation, repair charges, crew charges and standing cost, from its accountChange events. The
- * standing cost is reported once per plant hour, so it lags by up to an hour.
+ * This shift's allocation, repair charges, crew charges, standing cost and standby steam line cost, from its
+ * accountChange events. The standing and standby steam costs are reported once per plant hour, so they lag by up
+ * to an hour.
  */
 export function shiftAccount(events: readonly PlantEvent[], shiftId: number | null | undefined) {
   let allocationUsd: number | undefined;
   let repairsUsd = 0;
   let crewUsd = 0;
   let standingUsd = 0;
-  if (!num(shiftId)) return { allocationUsd, repairsUsd, crewUsd, standingUsd };
+  let standbySteamUsd = 0;
+  if (!num(shiftId)) return { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd };
   for (const e of events) {
     if (e?.type !== 'accountChange' || e.shiftId !== shiftId || !num(e.deltaUsd)) continue;
     if (e.cause === 'allocation') allocationUsd = (allocationUsd ?? 0) + e.deltaUsd;
     else if (e.cause === 'acidClean' || e.cause === 'overhaul') repairsUsd -= e.deltaUsd;
     else if (e.cause === 'crew') crewUsd -= e.deltaUsd;
     else if (e.cause === 'standing') standingUsd -= e.deltaUsd;
+    else if (e.cause === 'standbySteam') standbySteamUsd -= e.deltaUsd;
   }
-  return { allocationUsd, repairsUsd, crewUsd, standingUsd };
+  return { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd };
 }
 
 /** The last EVENT_LOG_SIZE known events, newest first, as plain sentences. */
@@ -181,8 +184,8 @@ export function ShiftView(props: ExpandedProps) {
   const goal = num(target?.productM3) ? target.productM3 : undefined;
   const frac = made !== undefined && goal !== undefined && goal > 0 ? clamp01(made / goal) : undefined;
   const fuelUsd = get(readings, 'fuel.shiftCostUsd');
-  const { allocationUsd, repairsUsd, crewUsd, standingUsd } = shiftAccount(events, status?.shiftId);
-  const spent = fuelUsd === undefined ? undefined : fuelUsd + repairsUsd + crewUsd + standingUsd;
+  const { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd } = shiftAccount(events, status?.shiftId);
+  const spent = fuelUsd === undefined ? undefined : fuelUsd + repairsUsd + crewUsd + standingUsd + standbySteamUsd;
   const bal = num(status?.balanceUsd) ? status.balanceUsd : undefined;
   const plant = label(PLANT_TEXT, status?.status);
   const trip = label(TRIP_TEXT, status?.tripCause);
@@ -202,6 +205,7 @@ export function ShiftView(props: ExpandedProps) {
           <Row k="of which repairs" v={usd(repairsUsd)} />
           <Row k="of which crew" v={usd(crewUsd)} />
           <Row k="of which staff and standby" v={usd(standingUsd)} />
+          <Row k="of which standby steam" v={usd(standbySteamUsd)} />
           <Row k="Mode" v={label(MODE_TEXT, status?.controlMode) ?? DASH} />
           <Row k="Plant" v={plant ?? DASH} tone={status?.status === 'tripped' ? 'bad' : plant && status?.status !== 'online' ? 'warn' : undefined} />
           <Row k="Restart step" v={step ?? (status?.status === 'restarting' ? DASH : 'None')} />

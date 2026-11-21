@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render } from '@testing-library/react';
-import { PlantEventSchema, type PlantEvent, type PlantStatus } from '@desal/schema';
+import { cleanup, fireEvent, render, within } from '@testing-library/react';
+import { PlantEventSchema, type Command, type PlantEvent, type PlantStatus } from '@desal/schema';
 import type { ComponentType } from 'react';
 import { App } from '../src/App';
 import { Trend } from '../src/controls/Trend';
@@ -27,7 +27,7 @@ const VIEWS: [string, ComponentType<ExpandedProps>, string[]][] = [
   ['IntakeView', IntakeView, ['P-101', 'P-103', 'Running', 'Stopped', '5,800 m³/h', '5,500 m³/h', '0.18', '4.1 µg/L', '28.0 °C', '31 %', '5 %']],
   ['HeaterView', HeaterView, ['93.5 °C', '72 %', '43.2 MW', '93 %', 'Gas']],
   ['StagesView', StagesView, ['92.1 °C', '0.80 mm', '1.45', '512 m³/h', 'Off']],
-  ['ProductView', ProductView, ['512 m³/h', '18.0 ppm', '25 ppm', '2,380 / 3,900 m³', '61 %', 'To tank']],
+  ['ProductView', ProductView, ['512 m³/h', '18.0 ppm', '25 ppm', '2,380 / 3,900 m³', '61 %', 'Auto — to tank']],
   ['FuelView', FuelView, ['60 MW', '$8.00/GJ', '128 t', 'Standard', '$2.15/m³', '$5,120']],
   ['ShiftView', ShiftView, ['Shift 3', '3h 40m', '2,380 / 3,900 m³', '$12,450', 'Online', 'Auto', '$13,120', '$20,000']],
 ];
@@ -44,7 +44,8 @@ describe('expanded views', () => {
     expect(container.querySelector('.xv__drawing svg')).not.toBeNull();
     const trends = container.querySelectorAll('[data-trend]').length;
     expect(trends).toBeGreaterThanOrEqual(2);
-    expect(trends).toBeLessThanOrEqual(3);
+    // StagesView adds the motive steam trend to its three.
+    expect(trends).toBeLessThanOrEqual(View === StagesView ? 4 : 3);
     expect(container.querySelector('[data-controls]')).not.toBeNull();
   });
 
@@ -189,6 +190,75 @@ describe('expanded views', () => {
   });
 });
 
+describe('divert and steam controls', () => {
+  const withSend = (View: ComponentType<ExpandedProps>, props: ExpandedProps) => {
+    const sent: Command[] = [];
+    const utils = render(<View {...props} send={(c) => { sent.push(c); return true; }} pending={new Map()} />);
+    return { ...utils, sent };
+  };
+  const rowValue = (root: HTMLElement, k: string) =>
+    [...root.querySelectorAll('.detail__row')].find((r) => r.querySelector('dt')?.textContent === k)?.querySelector('dd');
+
+  it('ProductView routing reads mode and direction for the four combinations', () => {
+    const text = (divertMode: 'auto' | 'manual', divertToDrain: boolean) => {
+      const { container } = render(<ProductView {...sample({ divertMode, divertToDrain })} />);
+      const v = rowValue(container, 'Routing')!.textContent;
+      cleanup();
+      return v;
+    };
+    expect(text('auto', false)).toBe('Auto — to tank');
+    expect(text('auto', true)).toBe('Auto — diverting');
+    expect(text('manual', false)).toBe('Manual — to tank');
+    expect(text('manual', true)).toBe('Manual — diverting');
+  });
+
+  it('ProductView: Divert mode toggle (on = Manual, like the loop mode toggles) sends setDivertMode; Divert to drain sends divertToDrain', () => {
+    const { container, sent } = withSend(ProductView, sample({ divertMode: 'auto' }));
+    const modeBtn = within(container).getByRole('button', { name: 'Divert mode' });
+    expect(modeBtn.getAttribute('aria-pressed')).toBe('false');
+    expect(modeBtn.textContent).toBe('Auto');
+    fireEvent.click(within(container).getByRole('button', { name: 'Divert mode' }));
+    fireEvent.click(within(container).getByRole('button', { name: 'Divert to drain' }));
+    expect(sent).toEqual([{ type: 'setDivertMode', mode: 'manual' }, { type: 'divertToDrain', on: true }]);
+    cleanup();
+    const manual = withSend(ProductView, sample({ divertMode: 'manual' }));
+    expect(within(manual.container).getByRole('button', { name: 'Divert mode' }).getAttribute('aria-pressed')).toBe('true');
+    expect(within(manual.container).getByRole('button', { name: 'Divert mode' }).textContent).toBe('Manual');
+    fireEvent.click(within(manual.container).getByRole('button', { name: 'Divert mode' }));
+    expect(manual.sent).toEqual([{ type: 'setDivertMode', mode: 'auto' }]);
+  });
+
+  it('StagesView shows Motive steam in bar with warn below 13 and bad below 11, and the ejector valve output', () => {
+    const steam = (v: number) => {
+      const { container } = render(<StagesView {...sample()} readings={demoReadings({ 'vacuum.motiveSteamBar': v })} />);
+      const d = rowValue(container, 'Motive steam')!;
+      cleanup();
+      return [d.textContent, d.className];
+    };
+    expect(steam(14.5)).toEqual(['14.5 bar', '']);
+    expect(steam(12.9)[1]).toBe('tone--warn');
+    expect(steam(10.9)[1]).toBe('tone--bad');
+    const { container } = render(<StagesView {...sample()} />);
+    expect(rowValue(container, 'Ejector steam valve')!.textContent).toBe(`${Math.round(sample().status!.loops.vacuum!.output)} %`);
+  });
+
+  it('StagesView draws a Motive steam trend', () => {
+    const { container } = render(<StagesView {...sample()} />);
+    expect(container.querySelector('[data-trend="Motive steam"]')).not.toBeNull();
+  });
+
+  it('StagesView labels the manual vacuum control "Ejector steam valve", and the Standby steam line toggle sends standbySteam', () => {
+    const st = sample();
+    const vac = { ...st.status!.loops.vacuum!, mode: 'manual' as const };
+    const { container, sent } = withSend(StagesView, { ...st, status: { ...st.status!, controlMode: 'manual', loops: { ...st.status!.loops, vacuum: vac } } });
+    expect(container.querySelector('[data-control="Ejector steam valve"]')).not.toBeNull();
+    expect(container.querySelector('[data-control="Vacuum output"]')).toBeNull();
+    fireEvent.click(within(container).getByRole('button', { name: 'Standby steam line' }));
+    expect(sent).toEqual([{ type: 'standbySteam', on: true }]);
+    expect(container.querySelector('[data-control="Standby steam line"]')!.textContent).toContain('$150/h while on');
+  });
+});
+
 describe('eventText', () => {
   const base = { gameId: DEMO_GAME_ID, epoch: 0, seq: 1, tick: 1, plantTime: 3600, shiftId: 3 };
   const SAMPLES: { [K in PlantEvent['type']]: Extract<PlantEvent, { type: K }> } = {
@@ -241,6 +311,17 @@ describe('eventText', () => {
     expect(PlantEventSchema.parse(standing)).toEqual(standing);
     const shiftId = standing.shiftId!;
     expect(shiftAccount([standing, standing, SAMPLES.accountChange], shiftId)).toMatchObject({ standingUsd: 180, repairsUsd: 8000 });
+  });
+  it('the standby steam line cost reads as such and counts toward the shift spend, on its own line', () => {
+    const steam = { ...SAMPLES.accountChange, deltaUsd: -150, cause: 'standbySteam' as const };
+    expect(eventText(steam)).toBe('Paid $150 for the standby steam line; balance $4,450');
+    expect(PlantEventSchema.parse(steam)).toEqual(steam);
+    const shiftId = steam.shiftId!;
+    expect(shiftAccount([steam, steam, SAMPLES.accountChange], shiftId)).toMatchObject({ standbySteamUsd: 300, standingUsd: 0, repairsUsd: 8000 });
+    const status = { ...demoStatus(), shiftId } as PlantStatus;
+    const { getByText } = render(<ShiftView {...empty} status={status} readings={{ 'fuel.shiftCostUsd': 1000 }} events={[steam]} />);
+    expect(getByText('of which standby steam').nextSibling?.textContent).toBe('$150');
+    expect(getByText('Spent this shift').nextSibling?.textContent).toBe('$1,150');
   });
   it('crew charges count toward the shift spend, on their own line', () => {
     const crew = { ...SAMPLES.accountChange, deltaUsd: -800, cause: 'crew' as const };

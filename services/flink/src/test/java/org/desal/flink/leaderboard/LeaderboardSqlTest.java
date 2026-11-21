@@ -114,20 +114,21 @@ class LeaderboardSqlTest {
     add("a", "normal", 100, 1, T0, kind("vacuumLoss", true), kind("earthquake", false), kind("controllerFault", true));
     add("b", "normal", 100, 1, T0, kind("vacuumLoss", true), kind("bloom", true), kind("fuelContamination", false));
     add("c", "normal", 100, 1, T0, kind("vacuumLoss", false), kind("pumpTrip", true));
-    add("d", "normal", 100, 1, T0, kind("vacuumLoss", true));
+    add("d", "normal", 100, 1, T0, kind("vacuumLoss", true), kind("lowSteam", true));
     add("h", "hard", 100, 1, T0, kind("vacuumLoss", false), kind("tsunami", true), kind("earthquake", true));
 
     Map<String, Row> stats = new HashMap<>();
     for (Row r : stats()) {
       stats.put(r.getField("mode") + "|" + r.getField("kind"), r);
     }
-    assertEquals(Set.of("normal|vacuumLoss", "normal|fuelContamination", "normal|pumpTrip", "hard|vacuumLoss", "hard|tsunami"),
+    assertEquals(Set.of("normal|vacuumLoss", "normal|fuelContamination", "normal|pumpTrip", "normal|lowSteam", "hard|vacuumLoss", "hard|tsunami"),
         stats.keySet());
     assertCounts(stats.get("normal|vacuumLoss"), 4, 3);
     assertCounts(stats.get("hard|vacuumLoss"), 1, 0);
     assertCounts(stats.get("normal|fuelContamination"), 1, 0);
     assertCounts(stats.get("hard|tsunami"), 1, 1);
     assertCounts(stats.get("normal|pumpTrip"), 1, 1);
+    assertCounts(stats.get("normal|lowSteam"), 1, 1);
   }
 
   @Test

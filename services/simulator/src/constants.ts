@@ -203,6 +203,16 @@ export const RECIRC_TAU_S = 60;
 export const VACUUM_QUALITY_MIN = 0.3;
 /** Nominal vacuum quality. */
 export const VACUUM_QUALITY_NOMINAL = 0.95;
+/** Nominal ejector motive steam pressure (bar). */
+export const MOTIVE_STEAM_NOMINAL_BAR = 14.5;
+/** Motive steam at and above which the ejectors reach full vacuum (bar). */
+export const EJECTOR_FULL_REACH_BAR = 13;
+/** Motive steam at and below which the ejectors pull no vacuum at all (bar; ruling R1). */
+export const EJECTOR_NO_REACH_BAR = 10;
+/** How fast motive steam sags under the lowSteam fault, with the standby line off (bar per plant minute). */
+export const LOW_STEAM_SAG_BAR_PER_MIN = 0.25;
+/** The lowSteam floor is drawn from this range (bar), in 0.1 bar steps. */
+export const LOW_STEAM_FLOOR_BAR = [10, 11] as const;
 /** Vacuum quality time constant (s). */
 export const VACUUM_TAU_S = 600;
 /** Highest concentration factor (the salt-balance target's upper clamp; blowdown shut). */
@@ -260,6 +270,12 @@ export const CF_SALINITY_KNEE = 1.5;
 export const CF_SALINITY_PPM = 10;
 /** Product salinity limit when no shift target applies (ppm). */
 export const DEFAULT_MAX_SALINITY_PPM = 25;
+/** Time constant for product salinity rising toward its raw value (s). */
+export const SALINITY_RISE_TAU_S = 60;
+/** Time constant for product salinity falling toward its raw value (s). */
+export const SALINITY_FALL_TAU_S = 300;
+/** Auto divert returns to the tank once salinity is below this fraction of the limit. */
+export const DIVERT_RETURN_FRACTION = 0.9;
 
 /** TBT high-high trip (degC). */
 export const TBT_HH_C = 115;
@@ -332,6 +348,11 @@ export const ALLOC_DECAY_PER_SHIFT = 0.03;
  * within 40 shifts (R14/R15). $720 a shift, 6.5 % of shift 1's allocation.
  */
 export const STANDING_COST_USD_PER_HOUR = 90;
+/**
+ * Running cost of the standby steam line per plant hour while it is on (user decision 2026-11-21):
+ * $1,200 for a whole shift, about one ejector repair, so leaving it on all shift is a choice.
+ */
+export const STANDBY_STEAM_COST_USD_PER_H = 150;
 /** Cost of an acid clean, charged when it starts (USD). */
 export const ACID_CLEAN_COST_USD = 6000;
 /** Cost of a pump overhaul, charged when it starts (USD). */

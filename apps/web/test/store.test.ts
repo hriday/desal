@@ -18,7 +18,7 @@ function status(over: Partial<PlantStatus> = {}): PlantStatus {
       gasPriceUsdPerGJ: 8, gasCapMW: 60, backupPriceUsdPerGJ: 14,
     },
     doses: { chlorineMgL: 1, antiscalantMgL: 2 }, shiftTarget: null,
-    ballCleaning: false, divertToDrain: false, shiftTicksRemaining: 100, deliveries: [],
+    ballCleaning: false, divertToDrain: false, divertMode: 'auto', standbySteam: false, shiftTicksRemaining: 100, deliveries: [],
     acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard', shiftProductM3: 0, shiftOffSpecM3: 0, productFlowM3h: 0, crew: null, orders: null, hell: null, ...over,
   };
 }
@@ -383,5 +383,38 @@ describe('report cards and rank', () => {
     expect(s.reports).toEqual({});
     expect(s.rank).toBeNull();
     expect(s.reportWait).toBeNull();
+  });
+
+  it('a pending divertToDrain is confirmed only once Manual is reported', () => {
+    const cmd = { type: 'divertToDrain', on: true } as const;
+    let s = reducer(server(initialState(), statusMsg()), { type: 'sent', command: cmd });
+    s = server(s, statusMsg({ divertMode: 'auto', divertToDrain: true }));
+    expect(s.pending.has('divertToDrain')).toBe(true);
+    s = server(s, statusMsg({ divertMode: 'manual', divertToDrain: true }));
+    expect(s.pending.has('divertToDrain')).toBe(false);
+  });
+
+  it('setDivertMode and standbySteam are confirmed by their status fields', () => {
+    let s = reducer(server(initialState(), statusMsg()), { type: 'sent', command: { type: 'setDivertMode', mode: 'manual' } });
+    s = reducer(s, { type: 'sent', command: { type: 'standbySteam', on: true } });
+    s = server(s, statusMsg({ divertMode: 'manual', standbySteam: false }));
+    expect([...s.pending.keys()]).toEqual(['standbySteam']);
+    s = server(s, statusMsg({ divertMode: 'manual', standbySteam: true }));
+    expect(s.pending.size).toBe(0);
+  });
+
+  it('a status stream meeting the divert-hint condition puts the hint on the radio once', () => {
+    const MIN = 60_000;
+    const drain = { divertMode: 'manual', divertToDrain: true } as const;
+    let s = server(initialState(), statusMsg({ plantTime: 0, ...drain }));
+    for (let m = 0; m <= 5; m++) s = server(s, { t: 'frame', tick: m, plantTime: m * MIN, readings: { 'product.salinityPpm': 10 } });
+    s = server(s, statusMsg({ plantTime: 5 * MIN, ...drain }));
+    expect(s.radio.current).toMatchObject({ text: "Hint: Product's back in spec — put Divert back on Auto.", monitor: 'product', kind: null, eventId: 0 });
+    expect(s.hinted.has('1:divert:start')).toBe(true);
+    s = reducer(s, { type: 'radioExpire' });
+    s = server(s, statusMsg({ plantTime: 6 * MIN, ...drain }));
+    s = server(s, statusMsg({ plantTime: 7 * MIN, ...drain }));
+    expect(s.radio.current).toBeNull();
+    expect(s.radio.queue).toHaveLength(0);
   });
 });

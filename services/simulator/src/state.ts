@@ -1,5 +1,6 @@
 import type {
   CrewJob,
+  DivertMode,
   FuelGrade,
   GameEndReason,
   GameMode,
@@ -35,6 +36,7 @@ import {
   LEVEL_LOOP_COUNT,
   LOOP_GAINS,
   MAKEUP_MAX_M3H,
+  MOTIVE_STEAM_NOMINAL_BAR,
   PUMP_RATED_M3H,
   RECIRC_NOMINAL_M3H,
   RECIRC_PUMP_MAX_M3H,
@@ -181,7 +183,13 @@ export interface PlantState {
     cfTargetHeld: number;
   };
   vacuum: { quality: number };
-  product: { flowM3h: number; salinityPpm: number; divertToDrain: boolean };
+  /**
+   * Motive steam to the ejectors (bar), and the standby steam line that restores it. unbilledTicks
+   * counts the running ticks the line has been on since its cost was last reported (hourly).
+   */
+  steam: { motiveBar: number; standby: boolean; unbilledTicks: number };
+  /** divertToDrain is the valve's position; divertMode says who moves it (Auto: the plant, Manual: the operator). */
+  product: { flowM3h: number; salinityPpm: number; divertToDrain: boolean; divertMode: DivertMode };
   fuel: {
     active: FuelKind;
     changeover: { to: FuelKind; remainingTicks: number } | null;
@@ -211,6 +219,8 @@ export interface PlantState {
     /** Fuel contaminated by a bad delivery; set while the contaminated fuel is the active one. */
     fuelContamination: { fuel: FuelKind } | null;
     tsunami: TsunamiFault | null;
+    /** The motive steam supply is sagging toward `floorBar`; the standby steam line clears it. */
+    lowSteam: { floorBar: number } | null;
     sensors: Partial<Record<LoopSensorId, SensorFault>>;
     /** Per-stage capacity multiplier, 1 = healthy. */
     stageDerate: number[];
@@ -290,6 +300,7 @@ export function noFaults(): PlantState['faults'] {
     stormCleanedByCrew: false,
     fuelContamination: null,
     tsunami: null,
+    lowSteam: null,
     sensors: {},
     stageDerate: Array.from({ length: STAGE_COUNT }, () => 1),
   };
@@ -350,7 +361,8 @@ export function createInitialState(
       cfTargetHeld: NOMINAL.concentrationFactor,
     },
     vacuum: { quality: NOMINAL.vacuumQuality },
-    product: { flowM3h: NOMINAL.productM3h, salinityPpm: BASE_SALINITY_PPM, divertToDrain: false },
+    steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false, unbilledTicks: 0 },
+    product: { flowM3h: NOMINAL.productM3h, salinityPpm: BASE_SALINITY_PPM, divertToDrain: false, divertMode: 'auto' },
     fuel: {
       active: 'gas',
       changeover: null,

@@ -29,6 +29,8 @@ export function radioLine(kind: ScenarioKind, p: Record<string, number | string>
       return 'Earthquake! Everyone is OK. Check the plant: power, tubes and instruments.';
     case 'tsunami':
       return `Tsunami warning! The surge hits the intake in about ${p.warnMinutes} minutes. Protect the pumps.`;
+    case 'lowSteam':
+      return "Control, motive steam's sagging — the reducing valve looks stuck!";
     default:
       return `Control, event on the plant: ${kind}.`;
   }

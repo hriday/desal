@@ -155,8 +155,11 @@ describe('tubeLeak', () => {
     const hit = applyEffect(s0, 'tubeLeak', { stage: 2, ppm: 15 });
     expect(hit.faults.tubeLeak).toEqual({ stage: 2, ppm: 15 });
     const next = run(hit, 1);
-    expect(next.product.salinityPpm).toBeGreaterThanOrEqual(s0.product.salinityPpm + 15);
+    // Salinity lags toward the raw value: it starts rising at once but does not snap.
+    expect(next.product.salinityPpm).toBeGreaterThan(s0.product.salinityPpm);
+    expect(next.product.salinityPpm).toBeLessThan(s0.product.salinityPpm + 15);
     const later = run(hit, 30);
+    expect(later.product.salinityPpm).toBeGreaterThanOrEqual(s0.product.salinityPpm + 15);
     expect(later.faults.tubeLeak!.ppm).toBeCloseTo(15 + 30 * TUBE_LEAK_GROWTH_PPM_PER_MIN * (TICK_PLANT_S / 60));
     expect(later.product.salinityPpm).toBeGreaterThan(next.product.salinityPpm);
   });

@@ -6,6 +6,10 @@ export const DEFAULT_MAX_SALINITY_PPM = 25;
 export const INTAKE_REQUIRED_BASE_M3H = 5500;
 /** INTAKE_REQUIRED_PER_C: fractional extra required flow per degC of seawater above 30 C. */
 export const INTAKE_REQUIRED_PER_C = 0.03;
+/** EJECTOR_FULL_REACH_BAR: motive steam at or above which the ejector reaches full vacuum (bar). Source: services/simulator/src/constants.ts; the Motive steam row is `warn` below it. */
+export const EJECTOR_FULL_REACH_BAR = 13;
+/** STEAM_BAD_BAR: motive steam below which the Motive steam row turns `bad` (bar). */
+export const STEAM_BAD_BAR = 11;
 /** TICK_PLANT_S: plant seconds advanced per simulation tick. */
 export const TICK_PLANT_S = 40;
 /** STAGE_COUNT: number of evaporator stages: heat recovery 1-21, then heat rejection 22-24. Source: services/simulator/src/constants.ts. */

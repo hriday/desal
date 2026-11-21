@@ -96,5 +96,7 @@ export function applyEffect(s: PlantState, kind: ScenarioKind, p: Record<string,
       return applyTsunami(s, { warnMinutes: Number(p.warnMinutes), coolC: Number(p.coolC) });
     case 'earthquake':
       return s;
+    case 'lowSteam':
+      return { ...s, faults: { ...s.faults, lowSteam: { floorBar: Number(p.floorBar) } } };
   }
 }

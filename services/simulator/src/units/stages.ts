@@ -40,12 +40,11 @@ import {
   VACUUM_TAU_S,
 } from '../constants.js';
 import { NOMINAL, type PlantState, type Stage } from '../state.js';
+import { lag } from './lag.js';
+import { ejectorReach } from './steam.js';
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 const pct = (output: number): number => clamp(output, 0, 100) / 100;
-/** Exact first-order lag of x toward target over dtS with time constant tauS. */
-const lag = (x: number, target: number, dtS: number, tauS: number): number =>
-  x + (target - x) * (1 - Math.exp(-dtS / tauS));
 
 /**
  * How much of a failed ejector's vacuum loss a load leaves: 1 at or above nominal, falling linearly to
@@ -146,6 +145,7 @@ export function stepStages(
   const prevRecirc = s.brine.recircM3h;
   const recircM3h = lag(prevRecirc, Math.min(RECIRC_PUMP_MAX_M3H * pct(s.loops.recirc.output), recircCapM3h(s)), dtS, RECIRC_TAU_S);
   // A failed ejector gives no steam to pull vacuum, so the vacuum loop cannot recover it: it only falls, more slowly at low load.
+  // A working one reaches only as far as its motive steam lets it (full reach at nominal pressure).
   const quality = s.faults.ejectorFailed
     ? Math.max(
         0,
@@ -153,7 +153,7 @@ export function stepStages(
       )
     : lag(
         s.vacuum.quality,
-        VACUUM_QUALITY_MIN + (1 - VACUUM_QUALITY_MIN) * pct(s.loops.vacuum.output),
+        VACUUM_QUALITY_MIN + (1 - VACUUM_QUALITY_MIN) * pct(s.loops.vacuum.output) * ejectorReach(s.steam.motiveBar),
         dtS,
         VACUUM_TAU_S,
       );

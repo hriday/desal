@@ -13,11 +13,12 @@ public final class LeaderboardSql {
   public static final int MAX_RANKED_RUNS = 100_000;
 
   /**
-   * The kinds the board has stats for: the six sharp kinds and the two disasters graded on
-   * time-to-clear. earthquake is only noted (no verdict), and the other kinds are not sharp.
+   * The kinds the board has stats for: the six sharp kinds, the two disasters graded on
+   * time-to-clear, and lowSteam (answered by the standby steam line). earthquake is only noted (no
+   * verdict), and the other kinds are not sharp.
    */
   public static final String GRADED_KINDS = "'pumpTrip', 'tubeLeak', 'vacuumLoss', 'powerDip', 'storm', "
-      + "'sensorFailure', 'fuelContamination', 'tsunami'";
+      + "'sensorFailure', 'fuelContamination', 'tsunami', 'lowSteam'";
 
   private LeaderboardSql() {}
 

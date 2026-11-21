@@ -59,13 +59,15 @@ export interface LoopSetpointProps extends ControlCtx {
   loop: LoopId;
   /** Human name, e.g. "TBT"; the control is labelled "<name> setpoint" or "<name> output". */
   name: string;
+  /** Replaces "<name> output" as the label in output (Manual) mode. */
+  outputName?: string;
   unit: string;
   step: number;
   digits: number;
 }
 
 /** A loop's control: a setpoint in Auto, the output (percent) in Manual, via controlFor. */
-export function LoopSetpoint({ loop, name, unit, step, digits, ...ctl }: LoopSetpointProps) {
+export function LoopSetpoint({ loop, name, outputName, unit, step, digits, ...ctl }: LoopSetpointProps) {
   const mode = effectiveMode(ctl.status, loop);
   const probe = controlFor(mode, loop, 0);
   const isOut = probe.type === 'setOutput';
@@ -76,7 +78,7 @@ export function LoopSetpoint({ loop, name, unit, step, digits, ...ctl }: LoopSet
   return (
     <Setpoint
       key={probe.type}
-      label={`${name} ${isOut ? 'output' : 'setpoint'}`}
+      label={isOut ? (outputName ?? `${name} output`) : `${name} setpoint`}
       reported={num(reported) ? reported : undefined}
       pending={pending}
       min={min}

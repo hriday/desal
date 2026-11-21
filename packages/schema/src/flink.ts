@@ -102,7 +102,7 @@ export type LeaderboardRow = z.infer<typeof LeaderboardRowSchema>;
 export const PublicLeaderboardRowSchema = LeaderboardRowSchema.omit({ runId: true }).strict();
 export type PublicLeaderboardRow = z.infer<typeof PublicLeaderboardRowSchema>;
 
-// Stats are only for the graded sharp kinds.
+// Stats are for the graded kinds: the sharp kinds, the two disasters graded on time-to-clear, and lowSteam.
 export const KindBoardStatSchema = z.object({
   kind: ScenarioKindSchema,
   operators: int,

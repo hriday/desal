@@ -12,7 +12,7 @@ describe('cmdMsg', () => {
 describe('command builders', () => {
   const all = [
     c.setpoint('tbt', 100), c.output('tbt', 70), c.loopMode('vacuum', 'manual'),
-    c.pump('P-101', 'start'), c.dose('chlorine', 1.5), c.ballCleaning(true), c.divert(false),
+    c.pump('P-101', 'start'), c.dose('chlorine', 1.5), c.ballCleaning(true), c.divert(false), c.divertMode('auto'), c.standbySteam(true),
     c.selectFuel('backup'), c.orderFuel(50), c.restart(), c.restartStep('ramp'), c.acidClean(),
     c.overhaul('P-102'), c.dispatchCrew('plugTubes'), c.manualTrip(), c.pause(), c.resume(), c.startShift('auto'), c.quit(),
   ];

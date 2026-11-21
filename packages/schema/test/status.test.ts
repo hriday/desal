@@ -34,3 +34,10 @@ test('pace defaults to calm when missing; only calm and busy parse', () => {
   expect(PlantStatusSchema.parse({ ...status, pace: 'busy' }).pace).toBe('busy');
   expect(PlantStatusSchema.safeParse({ ...status, pace: 'fast' }).success).toBe(false);
 });
+
+test('a status without divertMode and standbySteam (an older simulator) parses to manual and off', () => {
+  const { divertMode: _m, standbySteam: _s, ...old } = status;
+  const parsed = PlantStatusSchema.parse(old);
+  expect(parsed.divertMode).toBe('manual');
+  expect(parsed.standbySteam).toBe(false);
+});
