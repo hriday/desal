@@ -62,6 +62,19 @@ describe('ControlRoom', () => {
     expect(bar.querySelector('[data-conn="open"]')).not.toBeNull();
   });
 
+  it('shows the pace in the top bar while running: ▶▶ when calm, ▶ when busy, neither when paused', () => {
+    const { getByRole, ws } = mount(running({ pace: 'calm' }));
+    const pace = () => getByRole('banner').querySelector('.topbar__pace');
+    expect(pace()!.textContent).toBe('▶▶');
+    expect(pace()!.getAttribute('title')).toBe('Fast: all quiet');
+    ws.push({ t: 'status', status: running({ pace: 'busy' }) });
+    expect(pace()!.textContent).toBe('▶');
+    expect(pace()!.getAttribute('title')).toBe('Normal speed: something needs you');
+    ws.push({ t: 'status', status: demoStatus({ phase: 'paused', pace: 'busy' }) });
+    expect(pace()).toBeNull();
+    expect(getByRole('banner').textContent).not.toContain('▶');
+  });
+
   it('formats the plant clock as HH:MM', () => {
     expect(plantClock(new Date(2026, 0, 1, 7, 4).getTime())).toBe('07:04');
     expect(plantClock(undefined)).toBe('—');

@@ -1,6 +1,8 @@
 import type { Command, GameEndReason, GameMode, GameScore, PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
 import { commandKey } from '../commands';
 import type { ConnState } from '../net/socket';
+import { FIX } from '../expanded/labels';
+import { dueHints } from './hints';
 import { initialRadio, radioReducer, type RadioState } from './radio';
 import { pushFrame, type Trends } from './trends';
 
@@ -45,6 +47,8 @@ export interface State {
   sessionStartPlantTime: number | null;
   /** Alarms the player has seen by opening their monitor (alarms/rules seenKey); a seen high alarm stops pulsing. */
   seenAlarms: ReadonlySet<string>;
+  /** Keys (`shift:eventId:hint`) of the hints already put on the radio, so each shows once. */
+  hinted: ReadonlySet<string>;
 }
 
 export type Action =
@@ -82,6 +86,7 @@ export function initialState(resuming = false): State {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
     pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, endMode: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
     epoch: 0, telemetryLost: false, radio: initialRadio, sessionStartPlantTime: null, seenAlarms: new Set(),
+    hinted: new Set(),
   };
 }
 
@@ -158,6 +163,24 @@ function addEvent(s: State, e: PlantEvent): State {
   return next;
 }
 
+/**
+ * Puts each hint now due (state/hints.ts) on the radio, on its event's monitor, and records it in
+ * `hinted`. An at-once hint for an event from before this session (a resume's replay) is recorded
+ * but not shown, like the event's own radio call.
+ */
+function withHints(s: State, st: PlantStatus): State {
+  const due = dueHints(s.events, st, s.hinted);
+  if (due.length === 0) return s;
+  let radio = s.radio;
+  for (const h of due) {
+    const e = s.events.find((x) => x.type === 'scenario' && x.shiftId === st.shiftId && x.eventId === h.eventId);
+    if (e?.type !== 'scenario') continue;
+    if (FIX[h.kind].hint === 'atOnce' && s.sessionStartPlantTime !== null && e.plantTime < s.sessionStartPlantTime) continue;
+    radio = radioReducer(radio, { type: 'push', key: h.key, eventId: h.eventId, shiftId: e.shiftId, kind: h.kind, text: h.text, message: e.message });
+  }
+  return { ...s, radio, hinted: new Set([...s.hinted, ...due.map((h) => h.key)]) };
+}
+
 function onServer(s: State, msg: ServerMsg): State {
   switch (msg.t) {
     case 'game':
@@ -172,8 +195,9 @@ function onServer(s: State, msg: ServerMsg): State {
       // Once over, only reset or startClicked leave it: a late status (of any phase) never revives the run.
       const session = s.session === 'over' ? 'over' : sessionFor(msg.status);
       const epoch = Math.max(s.epoch, msg.status.epoch);
-      return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch, telemetryLost: false,
+      const next: State = { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch, telemetryLost: false,
         sessionStartPlantTime: s.sessionStartPlantTime ?? msg.status.plantTime };
+      return withHints(next, msg.status);
     }
     case 'frame':
       return { ...s, readings: { ...s.readings, ...msg.readings }, trends: pushFrame(s.trends, msg.plantTime, msg.readings) };

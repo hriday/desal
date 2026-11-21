@@ -1,5 +1,8 @@
 // Plain-language labels for the schema's enum values. Look them up with format.ts `label` (prototype-safe).
 
+import type { CrewJob, PlantStatus, ScenarioKind } from '@desal/schema';
+import { CREW_JOBS } from '../plantConstants';
+
 export const TRIP_TEXT: Record<string, string> = {
   tbtHighHigh: 'TBT high-high', stageFlood: 'stage flood', lossOfVacuum: 'loss of vacuum', noIntakeFlow: 'no intake flow',
   noFuel: 'no fuel', flameOut: 'burner flame-out', manual: 'manual trip',
@@ -42,6 +45,46 @@ export const KIND_TEXT: Record<string, string> = {
   controllerFault: 'Controller fault', pumpTrip: 'Pump trip', tubeLeak: 'Tube leak', vacuumLoss: 'Vacuum loss', powerDip: 'Power dip',
   storm: 'Storm', sensorFailure: 'Instrument failure',
   fuelContamination: 'Contaminated fuel', earthquake: 'Earthquake', tsunami: 'Tsunami',
+};
+
+/**
+ * What to do about each scenario kind: one imperative line naming on-screen controls and crew jobs.
+ * `hint` says when the radio hints it on Normal (state/hints.ts): 'delay' once the event has been open
+ * HINT_DELAY_MIN, 'atOnce' when it fires, 'none' never (informational kinds). `underway` holds a
+ * 'delay' hint back while the fix shows as in progress in the status.
+ */
+export interface FixEntry { text: string; hint: 'delay' | 'atOnce' | 'none'; underway?: (st: PlantStatus) => boolean }
+
+const crewOn = (job: CrewJob) => (st: PlantStatus) => st.crew?.job === job;
+const sendCrew = (job: CrewJob) => `send the crew to ${CREW_JOBS[job].plain}`;
+
+export const FIX: Record<ScenarioKind, FixEntry> = {
+  bloom: { text: 'Raise the Chlorine dose to keep the bloom out of the plant.', hint: 'delay' },
+  seawaterTemp: { text: 'Watch the TBT and intake flow while the sea temperature settles.', hint: 'none' },
+  pumpBearing: { text: 'Plan an Overhaul for the worn intake pump before it fails.', hint: 'none' },
+  gasCurtailNotice: { text: 'Get ready to switch the Burner fuel to Backup before the gas cap starts.', hint: 'none' },
+  gasPriceSpike: { text: 'Think about switching the Burner fuel to Backup while gas is dear.', hint: 'none' },
+  offgradeOnly: { text: 'Order only the backup fuel you need: off-grade is all that is on offer.', hint: 'none' },
+  deliveryDelay: { text: 'Watch the Backup tank and order fuel early.', hint: 'none' },
+  demandChange: { text: 'Check the new Water target and set the TBT setpoint to meet it.', hint: 'none' },
+  controllerFault: { text: 'Put the faulty loop in Manual and set its output by hand.', hint: 'delay' },
+  pumpTrip: { text: 'Start a standby intake pump so two are Running.', hint: 'delay' },
+  powerDip: { text: 'Start a standby intake pump so two are Running; recirculation comes back when the dip passes.', hint: 'delay' },
+  tubeLeak: { text: `Turn on Divert to drain if the product is off-spec, and ${sendCrew('plugTubes')}.`, hint: 'delay', underway: crewOn('plugTubes') },
+  vacuumLoss: { text: `Watch the vacuum and ${sendCrew('repairEjector')}.`, hint: 'delay', underway: crewOn('repairEjector') },
+  storm: { text: `Keep two intake pumps Running and ${sendCrew('cleanScreens')}.`, hint: 'delay', underway: crewOn('cleanScreens') },
+  sensorFailure: { text: `Find the reading that makes no sense (its loop is safer in Manual), and ${sendCrew('replaceSensor')}.`, hint: 'delay', underway: crewOn('replaceSensor') },
+  fuelContamination: {
+    text: 'Switch to the other fuel, then send the crew to flush it.',
+    hint: 'delay',
+    underway: (st) => st.fuel.changeoverTo !== null || st.crew?.job === 'flushFuel',
+  },
+  earthquake: { text: 'Everything breaks at once; fix what hurts most first.', hint: 'atOnce' },
+  tsunami: {
+    text: 'When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens.',
+    hint: 'delay',
+    underway: crewOn('cleanScreens'),
+  },
 };
 
 /** How an event ended, as the debrief and the event log say it. */

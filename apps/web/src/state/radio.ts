@@ -4,12 +4,13 @@ import { faultMonitor, type MonitorId } from '../alarms/rules';
 /** How long a radio message stays up (ms). */
 export const RADIO_MS = 6000;
 
-/** `key` is shift + eventId: the simulator numbers each shift's events from 1 again. */
+/** `key` is shift + eventId (the simulator numbers each shift's events from 1 again), or the push's own key (a hint's). */
 export interface RadioMsg { key: string; eventId: number; kind: ScenarioKind; text: string; monitor: MonitorId }
 /** `seen` holds RadioMsg keys. */
 export interface RadioState { current: RadioMsg | null; queue: RadioMsg[]; seen: string[] }
 export type RadioAction =
-  | { type: 'push'; eventId: number; shiftId?: number | null; kind: ScenarioKind; text: string; message?: string }
+  // `key` overrides the default shift:eventId key, so a hint does not collide with its event's call.
+  | { type: 'push'; eventId: number; shiftId?: number | null; kind: ScenarioKind; text: string; message?: string; key?: string }
   | { type: 'expire' }
   | { type: 'dismiss' };
 
@@ -31,7 +32,7 @@ export function monitorFor(kind: ScenarioKind, message = ''): MonitorId {
 export function radioReducer(s: RadioState, a: RadioAction): RadioState {
   switch (a.type) {
     case 'push': {
-      const key = `${a.shiftId ?? '-'}:${a.eventId}`;
+      const key = a.key ?? `${a.shiftId ?? '-'}:${a.eventId}`;
       if (s.seen.includes(key)) return s;
       const msg: RadioMsg = { key, eventId: a.eventId, kind: a.kind, text: a.text, monitor: monitorFor(a.kind, a.message) };
       const seen = [...s.seen, key];

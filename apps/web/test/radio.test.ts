@@ -31,6 +31,13 @@ describe('radioReducer', () => {
     s = radioReducer(s, p(1));
     expect(s.current).toBeNull();
   });
+  it("a push with its own key does not collide with the event's own call", () => {
+    let s = radioReducer(initialRadio, p(1, 'call', 1));
+    s = radioReducer(s, { type: 'push', eventId: 1, shiftId: 1, kind: 'storm', text: 'Hint: x', key: '1:1:hint' });
+    expect(s.queue.map((m) => [m.key, m.text])).toEqual([['1:1:hint', 'Hint: x']]);
+    s = radioReducer(s, { type: 'push', eventId: 1, shiftId: 1, kind: 'storm', text: 'Hint: x', key: '1:1:hint' });
+    expect(s.queue).toHaveLength(1);
+  });
 });
 
 describe('monitorFor', () => {

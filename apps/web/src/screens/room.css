@@ -25,6 +25,9 @@
 .topbar__k { color: var(--muted); margin-right: 4px; font-family: var(--font-display); font-weight: 600; letter-spacing: 0.04em; }
 .topbar__hard { color: var(--bad); font-family: var(--font-display); font-weight: 700; letter-spacing: 0.08em; }
 .topbar__conn { color: var(--muted); }
+/* Pace: ▶▶ calm (3x), ▶ busy (1x). Fixed width so the bar does not shift when it changes. */
+.topbar__pace { min-width: 2.5ch; color: var(--ok); letter-spacing: -0.1em; cursor: default; }
+.topbar__pace--busy { color: var(--warn); }
 .topbar__quit { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
 .room__narrow { display: none; margin: 0; color: var(--warn); font-size: 13px; }

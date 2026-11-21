@@ -15,7 +15,7 @@ export interface TopBarProps {
   onQuit: () => void;
 }
 
-/** Shift, plant clock, time left, balance, mode, connection light, and Quit run (with a confirm step). */
+/** Shift, plant clock, time left, pace (while running), balance, mode, connection light, and Quit run (with a confirm step). */
 export function TopBar({ status, conn, quitting, onQuit }: TopBarProps) {
   const [confirming, setConfirming] = useState(false);
   const bal = status?.balanceUsd;
@@ -28,6 +28,11 @@ export function TopBar({ status, conn, quitting, onQuit }: TopBarProps) {
         <span className="topbar__k">Plant</span> {plantClock(status?.plantTime)}
       </span>
       <span className="topbar__item">{ticksToHm(status?.shiftTicksRemaining)} left</span>
+      {status?.phase === 'running' && (
+        status.pace === 'calm'
+          ? <span className="topbar__item topbar__pace" title="Fast: all quiet">▶▶</span>
+          : <span className="topbar__item topbar__pace topbar__pace--busy" title="Normal speed: something needs you">▶</span>
+      )}
       <span className={`topbar__item${balTone ? ` tone--${balTone}` : ''}`}>
         <span className="topbar__k">Balance</span> {usd(bal)}
       </span>

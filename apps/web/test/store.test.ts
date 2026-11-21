@@ -1,5 +1,6 @@
 import type { PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
 import { commandKey, setpoint } from '../src/commands';
+import { FIX } from '../src/expanded/labels';
 import { initialState, reducer, type State } from '../src/state/store';
 import { MAX_POINTS } from '../src/state/trends';
 
@@ -294,5 +295,36 @@ describe('store reducer', () => {
     s = reducer(s, { type: 'alarmsActive', ids: ['a'] });
     expect([...s.seenAlarms]).toEqual(['a']);
     expect(reducer(s, { type: 'startClicked' }).seenAlarms.size).toBe(0);
+  });
+
+  it('a status 20 plant minutes after an open event fired puts its hint on the radio once', () => {
+    const MIN = 60_000;
+    let s = server(initialState(), statusMsg({ plantTime: 0 }));
+    s = server(s, eventMsg({ type: 'scenario', seq: 1, eventId: 1, kind: 'tubeLeak', message: 'm', radio: 'leak!', plantTime: 0 }));
+    s = reducer(s, { type: 'radioExpire' });
+    s = server(s, statusMsg({ plantTime: 19 * MIN }));
+    expect(s.radio.current).toBeNull();
+    s = server(s, statusMsg({ plantTime: 20 * MIN }));
+    expect(s.radio.current).toMatchObject({ key: '1:1:hint', text: `Hint: ${FIX.tubeLeak.text}`, monitor: 'product' });
+    expect(s.hinted.has('1:1:hint')).toBe(true);
+    s = reducer(s, { type: 'radioExpire' });
+    s = server(s, statusMsg({ plantTime: 21 * MIN }));
+    expect(s.radio.current).toBeNull();
+    expect(s.radio.queue).toHaveLength(0);
+  });
+
+  it('a hint opens the monitor the event names (a makeup controller fault opens Stages)', () => {
+    let s = server(initialState(), statusMsg({ plantTime: 0 }));
+    s = server(s, eventMsg({ type: 'scenario', seq: 1, eventId: 1, kind: 'controllerFault', message: 'Controller fault on loop makeup: stuck.', radio: 'r', plantTime: 0 }));
+    s = reducer(s, { type: 'radioExpire' });
+    s = server(s, statusMsg({ plantTime: 20 * 60_000 }));
+    expect(s.radio.current).toMatchObject({ key: '1:1:hint', monitor: 'stages' });
+  });
+
+  it('a replayed earthquake from before the session start does not hint again on resume', () => {
+    let s = server(initialState(true), statusMsg({ plantTime: 10 * 60_000 }));
+    s = server(s, eventMsg({ type: 'scenario', seq: 1, eventId: 1, kind: 'earthquake', message: 'm', radio: 'quake', plantTime: 0 }));
+    s = server(s, statusMsg({ plantTime: 11 * 60_000 }));
+    expect(s.radio.current).toBeNull();
   });
 });
