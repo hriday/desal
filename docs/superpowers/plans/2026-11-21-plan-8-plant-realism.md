@@ -79,7 +79,7 @@
 
 1. **A live v6 save restored mid-shift with Divert on and an open tube leak.** It keeps behaving as before: Manual latch on, steam 14.5, standby off, no lowSteam. It ticks 90 times without a trip and re-serializes as v7. Test in Task 1.
 2. **Standby switched off again while lowSteam is still active.** The pressure sags again from 14.5. The event, already cleared, stays cleared with no second `eventCleared`, and the vacuum falls again. Switching it back on restores 14.5 at once. Test in Task 3.
-3. **A trip during lowSteam.** The restart's vacuum step cannot reach `RESTART_VACUUM_MIN` (0.85 needs about 11.9 bar) until standby is on. Once it is on, the Auto restart completes. Test in Task 3.
+3. **A trip during lowSteam.** The restart's vacuum step cannot reach `RESTART_VACUUM_MIN` (0.85 needs about 12.4 bar with ruling R1) until standby is on. Once it is on, the Auto restart completes. Test in Task 3.
 4. **Toggling divert by hand while Auto is diverting, then going back to Auto while salinity sits between 0.9 × limit and the limit.** The press selects Manual with the asked position. Back on Auto, the valve holds its position until salinity crosses a threshold. It never flips back and forth in the band. Test in Task 2.
 5. **The divert hint after a reload, on Hard, in Auto, or with a short or empty salinity trend.** It shows at most once per in-spec stretch. It never shows on Hard, in Auto or with the valve to the tank. It needs 5 plant minutes of points under the limit. Test in Task 4.
 
