@@ -2,7 +2,7 @@ import { LOOP_RANGES } from './constants.js';
 import { nextRandom } from './rng.js';
 import type { LoopSensorId, PlantState } from './state.js';
 
-const LOOP_SALT: Record<LoopSensorId, number> = { tbt: 1, intakeFlow: 2, recirc: 3, blowdown: 4, vacuum: 5 };
+const LOOP_SALT: Record<LoopSensorId, number> = { tbt: 1, intakeFlow: 2, recirc: 3, blowdown: 4, vacuum: 5, makeup: 6 };
 
 /** True for the loop ids that have a loop-feeding sensor (own keys only). */
 export const isLoopSensor = (x: string): x is LoopSensorId => Object.hasOwn(LOOP_SALT, x);
@@ -20,6 +20,8 @@ export function trueLoopValue(s: PlantState, loop: LoopSensorId): number {
       return s.brine.concentrationFactor;
     case 'vacuum':
       return s.vacuum.quality;
+    case 'makeup':
+      return s.stages[s.stages.length - 1]!.levelM;
   }
 }
 

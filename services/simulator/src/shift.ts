@@ -18,6 +18,8 @@ function withModes(loops: PlantState['loops'], mode: 'auto' | 'manual'): PlantSt
     recirc: { ...loops.recirc, mode: nonLevel },
     blowdown: { ...loops.blowdown, mode: nonLevel },
     vacuum: { ...loops.vacuum, mode: nonLevel },
+    // The makeup loop holds the brine pool like a level loop: Auto in both control modes.
+    makeup: { ...loops.makeup, mode: 'auto' },
     levels: loops.levels.map((l) => ({ ...l, mode: 'auto' as const })),
   };
 }

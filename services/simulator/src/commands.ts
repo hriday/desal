@@ -63,6 +63,8 @@ function withFuelSpend(s: PlantState, usd: number): PlantState {
 }
 
 const isLevel = (id: LoopId): boolean => loopKind(id) === 'level';
+/** The level loops and the makeup loop (the brine pool's level) stay operable in both control modes. */
+const isInventoryLoop = (id: LoopId): boolean => isLevel(id) || id === 'makeup';
 const levelIndex = (id: LoopId): number => Number(id.slice(5)) - 1;
 
 function getLoop(s: PlantState, id: LoopId): Loop {
@@ -109,7 +111,7 @@ function apply(s: PlantState, id: string, c: Command): Out {
     case 'setSetpoint': {
       const r = LOOP_RANGES[loopKind(c.loop)];
       if (c.value < r.spMin || c.value > r.spMax) return no(`setpoint ${c.value} out of range ${r.spMin}..${r.spMax}`);
-      if (!isLevel(c.loop) && s.controlMode !== 'auto') return no('setpoint changes are Auto-mode only');
+      if (!isInventoryLoop(c.loop) && s.controlMode !== 'auto') return no('setpoint changes are Auto-mode only');
       return ok(withLoop(s, c.loop, { setpoint: c.value }));
     }
     case 'setOutput': {
@@ -119,7 +121,7 @@ function apply(s: PlantState, id: string, c: Command): Out {
       return ok(withLoop(s, c.loop, { output: c.value }));
     }
     case 'setLoopMode':
-      if (s.controlMode === 'manual' && !isLevel(c.loop)) return no('only level loops can change mode in Manual');
+      if (s.controlMode === 'manual' && !isInventoryLoop(c.loop)) return no('only level and makeup loops can change mode in Manual');
       return ok(withLoop(s, c.loop, { mode: c.mode }));
     case 'pump':
       if (c.action === 'start' && s.intake.pumps[c.pumpId].overhaulRemainingTicks > 0) return no('under overhaul');

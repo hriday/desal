@@ -2,8 +2,14 @@
 export const TICK_PLANT_S = 40;
 /** Ticks in one operating shift. */
 export const SHIFT_TICKS = 720;
-/** Number of evaporator stages. */
-export const STAGE_COUNT = 20;
+/** Number of evaporator stages: heat recovery 1-21, then heat rejection 22-24 (spec Plan 7 §2.1). */
+export const STAGE_COUNT = 24;
+/** Heat-recovery stages (1-21): the recycled brine runs through their tubes on its way to the heater. */
+export const RECOVERY_STAGES = 21;
+/** Heat-rejection stages (22-24): the cooling seawater runs through their tubes. Stage 24 holds the brine pool. */
+export const REJECT_STAGES = 3;
+/** Interstage level loops (level1..level23, valves 1->2 ... 23->24). Stage 24's level is the makeup loop's. */
+export const LEVEL_LOOP_COUNT = STAGE_COUNT - 1;
 /**
  * Best product flow the plant can make (m3/h): a clean plant flat out at the hottest TBT setpoint
  * (112 C) and the most recirculation (6500 m3/h). The nominal 93.5 C point makes NOMINAL.productM3h
@@ -23,6 +29,8 @@ export const SNAPSHOT_EVERY_TICKS = 30;
  * - blowdown: 3600 s lag, -0.006 CF per % (reverse).
  * - vacuum: 600 s lag, 0.007 quality per %.
  * - level: integrating plant, -0.0008 m/tick per % valve (reverse).
+ * - makeup: integrating plant behind a MAKEUP_TAU_S lag, +0.000126 m/tick per % valve
+ *   (MAKEUP_MAX_M3H / 100 x POOL_LEVEL_PER_M3H_S x TICK_PLANT_S).
  */
 export const LOOP_GAINS = {
   tbt: { kp: 18, ki: 0.02, kd: 0 },
@@ -31,9 +39,13 @@ export const LOOP_GAINS = {
   blowdown: { kp: 500, ki: 0.14, kd: 0 },
   vacuum: { kp: 200, ki: 0.35, kd: 0 },
   level: { kp: 375, ki: 0.7, kd: 0 },
+  makeup: { kp: 2000, ki: 3, kd: 0 },
 } as const;
 
-/** Setpoint and output ranges per loop kind. 'level' applies to level1..level20. Outputs are percent. */
+/**
+ * Setpoint and output ranges per loop kind. 'level' applies to level1..level23; 'makeup' steers the
+ * stage-24 brine pool level. Outputs are percent.
+ */
 export const LOOP_RANGES = {
   tbt: { spMin: 85, spMax: 112, outMin: 0, outMax: 100 },
   intakeFlow: { spMin: 0, spMax: 7000, outMin: 0, outMax: 100 },
@@ -41,6 +53,7 @@ export const LOOP_RANGES = {
   blowdown: { spMin: 1.2, spMax: 1.8, outMin: 0, outMax: 100 },
   vacuum: { spMin: 0.5, spMax: 1.0, outMin: 0, outMax: 100 },
   level: { spMin: 0.15, spMax: 0.6, outMin: 0, outMax: 100 },
+  makeup: { spMin: 0.15, spMax: 0.6, outMin: 0, outMax: 100 },
 } as const;
 
 /**
@@ -55,6 +68,7 @@ export const LOOP_ACTION: Record<keyof typeof LOOP_GAINS, 'direct' | 'reverse'> 
   blowdown: 'reverse',
   vacuum: 'direct',
   level: 'reverse',
+  makeup: 'direct',
 };
 
 /** Measurement bias added per tick to a drifting loop sensor. */
@@ -197,6 +211,25 @@ export const CF_NOMINAL = 1.45;
 export const CF_TAU_S = 3600;
 /** Blowdown flow at full blowdown valve (m3/h). */
 export const BLOWDOWN_MAX_M3H = 1800;
+/**
+ * Seawater makeup into the stage-24 brine pool at full makeup valve (m3/h). Sized to out-supply the
+ * worst draw on the pool, distillate at PLANT_MAX_PRODUCT_M3H plus blowdown wide open (857 + 1800),
+ * with about 13 % to spare, so the Auto makeup loop holds the pool at maximum load (test/layout.test.ts).
+ */
+export const MAKEUP_MAX_M3H = 3000;
+/** Makeup flow time constant (s): the makeup valve and line, like the recirc pump's. */
+export const MAKEUP_TAU_S = 60;
+/**
+ * Brine pool level change per unit of inventory imbalance (m per m3/h of makeup - distillate -
+ * blowdown, per second). About NOMINAL.levelM / (1800 s x NOMINAL.makeupM3h): with the makeup shut,
+ * the pool empties in about 30 plant minutes from nominal.
+ */
+export const POOL_LEVEL_PER_M3H_S = 1.05e-7;
+/**
+ * Brine pool level below which the recirculation pump loses suction (m): its deliverable maximum
+ * falls linearly to zero at an empty pool.
+ */
+export const RECIRC_SUCTION_MIN_M = 0.1;
 /** Interstage valve opening (percent) that holds the level at nominal recirc. */
 export const LEVEL_BALANCE_VALVE_PCT = 50;
 /** Level rate per unit of inflow/outflow imbalance (m/s). */

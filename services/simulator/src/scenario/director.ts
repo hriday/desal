@@ -58,7 +58,7 @@ const runningPumps = (s: PlantState): number => Object.values(s.intake.pumps).fi
 function loopMode(s: PlantState, loopId: string): 'auto' | 'manual' | null {
   const level = /^level(\d+)$/.exec(loopId);
   if (level) return s.loops.levels[Number(level[1]) - 1]?.mode ?? null;
-  if (loopId === 'tbt' || loopId === 'intakeFlow' || loopId === 'recirc' || loopId === 'blowdown' || loopId === 'vacuum') {
+  if (loopId === 'tbt' || loopId === 'intakeFlow' || loopId === 'recirc' || loopId === 'blowdown' || loopId === 'vacuum' || loopId === 'makeup') {
     return s.loops[loopId].mode;
   }
   return null;

@@ -37,7 +37,7 @@ describe('applyCommand rejections never throw or change state', () => {
     ['unknown type', env({ type: 'selfDestruct' })],
     ['NaN value', env({ type: 'setSetpoint', loop: 'tbt', value: NaN })],
     ['Infinity value', env({ type: 'setOutput', loop: 'tbt', value: Infinity })],
-    ['bad loop id', env({ type: 'setSetpoint', loop: 'level21', value: 0.3 })],
+    ['bad loop id', env({ type: 'setSetpoint', loop: 'level24', value: 0.3 })],
     ['bad uuid', { ...env({ type: 'pause' }), commandId: 'x' }],
   ];
   it.each(bad)('%s', (_n, input) => {

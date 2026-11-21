@@ -20,6 +20,7 @@ export const status: PlantStatus = {
     recirc: { mode: 'auto', setpoint: 1, output: 2 },
     blowdown: { mode: 'auto', setpoint: 1, output: 2 },
     vacuum: { mode: 'auto', setpoint: 1, output: 2 },
+    makeup: { mode: 'auto', setpoint: 0.3, output: 53 },
     level3: { mode: 'manual', setpoint: 1, output: 2 },
   },
   pumps: { 'P-101': { running: true, overhaulRemainingTicks: 0 }, 'P-102': { running: false, overhaulRemainingTicks: 5 }, 'P-103': { running: true, overhaulRemainingTicks: 0 } },

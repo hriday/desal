@@ -13,8 +13,8 @@ import {
   TripCauseSchema,
 } from '@desal/schema';
 import { z } from 'zod';
-import { STAGE_COUNT } from './constants.js';
-import type { PlantState } from './state.js';
+import { LEVEL_LOOP_COUNT, LOOP_GAINS, RECOVERY_STAGES, STAGE_COUNT } from './constants.js';
+import { BALANCE, NOMINAL, type PlantState } from './state.js';
 
 const num = z.number().finite();
 
@@ -113,7 +113,8 @@ export const PlantStateSchema = z.object({
     recirc: LoopSchema,
     blowdown: LoopSchema,
     vacuum: LoopSchema,
-    levels: z.array(LoopSchema).length(STAGE_COUNT),
+    makeup: LoopSchema,
+    levels: z.array(LoopSchema).length(LEVEL_LOOP_COUNT),
   }),
   seawater: z.object({ tempC: num, salinityGL: num, chlorophyllUgL: num }),
   intake: z.object({
@@ -125,7 +126,14 @@ export const PlantStateSchema = z.object({
   pretreat: z.object({ chlorineMgL: num, antiscalantMgL: num, biofouling: num }),
   heater: z.object({ tbtC: num, firingPct: num, burnerCondition: num, heatMW: num }),
   stages: z.array(StageSchema).length(STAGE_COUNT),
-  brine: z.object({ recircM3h: num, concentrationFactor: num, blowdownM3h: num }),
+  brine: z.object({
+    recircM3h: num,
+    concentrationFactor: num,
+    blowdownM3h: num,
+    makeupM3h: num,
+    distillateM3h: num,
+    cfTargetHeld: num,
+  }),
   vacuum: z.object({ quality: num }),
   product: z.object({ flowM3h: num, salinityPpm: num, divertToDrain: z.boolean() }),
   fuel: z.object({
@@ -201,6 +209,7 @@ export const PlantStateSchema = z.object({
       recirc: SensorFaultSchema.optional(),
       blowdown: SensorFaultSchema.optional(),
       vacuum: SensorFaultSchema.optional(),
+      makeup: SensorFaultSchema.optional(),
     }),
     stageDerate: z.array(num).length(STAGE_COUNT),
   }),
@@ -242,6 +251,65 @@ function migrateV3(state: unknown): unknown {
   };
 }
 
+/** Stages in a version 3 or 4 save (the plant before the Plan 7 layout). */
+const V4_STAGE_COUNT = 20;
+
+/**
+ * Bring a version 4 state (20 stages) to version 5 (24 stages, spec Plan 7 §2.5). New stage j copies
+ * old stage floor(j x 20 / 24), its level and scale (temperatures are recomputed on the next tick), and
+ * the stage derates are resampled the same way. A tube leak moves to the new stage at the same
+ * relative position, kept within the recovery stages. The 20 level loops are kept and the last one is
+ * cloned into level21-23. The new makeup loop starts in Auto at its balanced output, with the makeup
+ * flow balanced and the last distillate taken as nominal; the CF target is held at the save's CF.
+ * Anything malformed (not 20 stages, say) is left for the schema to reject.
+ */
+function migrateV4(state: unknown): unknown {
+  if (state === null || typeof state !== 'object') return state;
+  const s = state as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const obj = (v: unknown): v is Record<string, any> => v !== null && typeof v === 'object' && !Array.isArray(v); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const twenty = (v: unknown): v is unknown[] => Array.isArray(v) && v.length === V4_STAGE_COUNT;
+  const resample = <T>(old: T[]): T[] =>
+    Array.from({ length: STAGE_COUNT }, (_, j) => old[Math.floor((j * V4_STAGE_COUNT) / STAGE_COUNT)]!);
+  const mapStage = (old: number): number =>
+    Math.min(RECOVERY_STAGES - 1, Math.floor(((old + 0.5) * STAGE_COUNT) / V4_STAGE_COUNT));
+
+  const loops = obj(s.loops)
+    ? {
+        ...s.loops,
+        makeup: {
+          mode: 'auto',
+          setpoint: NOMINAL.levelM,
+          output: BALANCE.makeupPct,
+          integral: BALANCE.makeupPct / LOOP_GAINS.makeup.ki,
+          prevError: 0,
+          fault: null,
+        },
+        levels: twenty(s.loops.levels)
+          ? Array.from({ length: LEVEL_LOOP_COUNT }, (_, i) => s.loops.levels[Math.min(i, V4_STAGE_COUNT - 1)])
+          : s.loops.levels,
+      }
+    : s.loops;
+  const faults = obj(s.faults)
+    ? {
+        ...s.faults,
+        stageDerate: twenty(s.faults.stageDerate) ? resample(s.faults.stageDerate) : s.faults.stageDerate,
+        tubeLeak:
+          obj(s.faults.tubeLeak) && typeof s.faults.tubeLeak.stage === 'number'
+            ? { ...s.faults.tubeLeak, stage: mapStage(s.faults.tubeLeak.stage) }
+            : s.faults.tubeLeak,
+      }
+    : s.faults;
+  const brine = obj(s.brine)
+    ? {
+        ...s.brine,
+        makeupM3h: NOMINAL.makeupM3h,
+        distillateM3h: NOMINAL.productM3h,
+        cfTargetHeld: s.brine.concentrationFactor,
+      }
+    : s.brine;
+  return { ...s, stages: twenty(s.stages) ? resample(s.stages) : s.stages, loops, faults, brine };
+}
+
 const FORMAT = 'desal-snapshot';
 /**
  * 2 = the multi-game era (economy and game-over state, one save per gameId). Version 1 saves are
@@ -249,8 +317,10 @@ const FORMAT = 'desal-snapshot';
  * 3 = chaos plan, crew and fault fields.
  * 4 = game mode, disaster flags on events, fuel contamination and tsunami faults. Version 3 saves
  * (in-progress games on a live server) are migrated to Normal with the new fields defaulted.
+ * 5 = the 24-stage layout (Plan 7): 24 stages, 23 level loops, the makeup loop and the brine pool's
+ * flows. Version 3 and 4 saves are migrated (v3 -> v4 -> v5).
  */
-const VERSION = 4;
+const VERSION = 5;
 
 export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });
@@ -283,8 +353,11 @@ export function restore(json: string): RestoreResult {
   }
   const d = doc as Record<string, unknown>;
   if (d.format !== FORMAT) return { ok: false, reason: `wrong format: ${JSON.stringify(d.format)}` };
-  if (d.version !== VERSION && d.version !== 3) return { ok: false, reason: `unknown version: ${JSON.stringify(d.version)}` };
-  const parsed = PlantStateSchema.safeParse(d.version === 3 ? migrateV3(d.state) : d.state);
+  if (d.version !== VERSION && d.version !== 4 && d.version !== 3) {
+    return { ok: false, reason: `unknown version: ${JSON.stringify(d.version)}` };
+  }
+  const v4 = d.version === 3 ? migrateV3(d.state) : d.state;
+  const parsed = PlantStateSchema.safeParse(d.version === VERSION ? d.state : migrateV4(v4));
   if (!parsed.success) return { ok: false, reason: issueText(parsed.error) };
   return { ok: true, state: parsed.data };
 }

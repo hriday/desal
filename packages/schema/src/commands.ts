@@ -2,14 +2,15 @@ import { z } from 'zod';
 
 const num = z.number().finite();
 
-const LEVEL_RE = /^level([1-9]|1[0-9]|20)$/;
+/** The interstage level loops level1..level23 (stage 24, the brine pool, is the makeup loop's). */
+const LEVEL_RE = /^level([1-9]|1[0-9]|2[0-3])$/;
 
-export type LoopId = 'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum' | `level${number}`;
+export type LoopId = 'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum' | 'makeup' | `level${number}`;
 
 export const LoopIdSchema: z.ZodType<LoopId> = z.custom<LoopId>(
   (v) =>
     typeof v === 'string' &&
-    (['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum'].includes(v) || LEVEL_RE.test(v)),
+    (['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum', 'makeup'].includes(v) || LEVEL_RE.test(v)),
   { message: 'Invalid loop id' },
 );
 

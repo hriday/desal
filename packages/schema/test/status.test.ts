@@ -8,7 +8,7 @@ test('a valid status round-trips through JSON', () => {
 test('rejects an invalid phase, status and loop key', () => {
   expect(PlantStatusSchema.safeParse({ ...status, phase: 'napping' }).success).toBe(false);
   expect(PlantStatusSchema.safeParse({ ...status, status: 'exploded' }).success).toBe(false);
-  expect(PlantStatusSchema.safeParse({ ...status, loops: { level21: status.loops.tbt } }).success).toBe(false);
+  expect(PlantStatusSchema.safeParse({ ...status, loops: { level24: status.loops.tbt } }).success).toBe(false);
 });
 
 test('accepts the over phase', () => {

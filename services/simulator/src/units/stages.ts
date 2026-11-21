@@ -23,8 +23,12 @@ import {
   LEVEL_BALANCE_VALVE_PCT,
   LEVEL_MAX_M,
   LEVEL_RECIRC_DISTURB_M,
+  MAKEUP_MAX_M3H,
+  MAKEUP_TAU_S,
+  POOL_LEVEL_PER_M3H_S,
   RECIRC_NOMINAL_M3H,
   RECIRC_PUMP_MAX_M3H,
+  RECIRC_SUCTION_MIN_M,
   RECIRC_TAU_S,
   SCALE_E_FOLD_C,
   SCALE_K,
@@ -93,16 +97,25 @@ export function scalingRates(tempC: number, antiscalantMgL: number, cf: number):
   return { softMmPerS, hardMmPerS };
 }
 
-/** The recirculation pump's deliverable maximum: reduced to a fraction of normal during a power dip. */
+/**
+ * The recirculation pump's deliverable maximum: reduced to a fraction of normal during a power dip,
+ * and falling linearly to zero as the stage-24 brine pool it draws from drops below
+ * RECIRC_SUCTION_MIN_M (the pump loses suction).
+ */
 function recircCapM3h(s: PlantState): number {
   const dipping = s.faults.powerDipRemainingTicks > 0;
-  return RECIRC_PUMP_MAX_M3H * (dipping ? s.faults.powerDipRecircFactor : 1);
+  const poolM = s.stages[s.stages.length - 1]?.levelM ?? 0;
+  const suction = Math.min(1, Math.max(0, poolM) / RECIRC_SUCTION_MIN_M);
+  return RECIRC_PUMP_MAX_M3H * (dipping ? s.faults.powerDipRecircFactor : 1) * suction;
 }
 
 /**
- * Advance the flash stages, vacuum and brine circuit one step. Reads recirc, vacuum, blowdown and
- * level loop outputs as actuator positions; does not step any PID. Returns the raw distillate
- * (before plant-status gating) and the brine carryover from flooded stages.
+ * Advance the flash stages, vacuum and brine circuit one step. Reads recirc, vacuum, blowdown, makeup
+ * and level loop outputs as actuator positions; does not step any PID. Stages 1-23 hold their level
+ * against their interstage valve; stage 24 is the brine pool, whose level follows its inventory:
+ * seawater makeup in, this tick's distillate and the blowdown out. Makeup never exceeds the intake
+ * flow. Returns the raw distillate (before plant-status gating, also stored as brine.distillateM3h)
+ * and the brine carryover from flooded stages.
  */
 export function stepStages(
   s: PlantState,
@@ -130,7 +143,13 @@ export function stepStages(
     dtS,
     CF_TAU_S,
   );
-  const brine = { recircM3h, concentrationFactor, blowdownM3h: BLOWDOWN_MAX_M3H * blowdownPct };
+  // Makeup is a share of the seawater the intake delivers: never more than the intake flow.
+  const intakeM3h = Math.max(0, s.intake.flowM3h);
+  const makeupM3h = Math.min(
+    intakeM3h,
+    lag(s.brine.makeupM3h, Math.min(MAKEUP_MAX_M3H * pct(s.loops.makeup.output), intakeM3h), dtS, MAKEUP_TAU_S),
+  );
+  const blowdownM3h = BLOWDOWN_MAX_M3H * blowdownPct;
   const vacuum = { quality };
 
   // Temperature cascade.
@@ -147,7 +166,6 @@ export function stepStages(
   const { antiscalantMgL } = s.pretreat;
   const ballClean = s.ballCleaning;
   let distillateKgS = 0;
-  let carryover = 0;
   const stages: Stage[] = s.stages.map((st, i) => {
     const tempC = tbt - (tbt - bottom) * ((i + 0.5) / n);
     distillateKgS += ((massKgS * CP_BRINE * stageDtC) / LATENT_J_kg) * stageEffectiveness(st) * (s.faults.stageDerate[i] ?? 1);
@@ -158,15 +176,24 @@ export function stepStages(
     const cleaned = ballClean ? (grown - hardened) * Math.exp(-BALL_CLEAN_RATE * dtS) : grown - hardened;
     const hardScaleMm = st.hardScaleMm + hardened + rates.hardMmPerS * dtS;
 
+    // The pool (the last stage) has no interstage valve: its level is set below, once the distillate is known.
     const levelLoop = s.loops.levels[i];
     const valve = levelLoop ? pct(levelLoop.output) : 0;
-    const levelM = clamp(st.levelM + K_LEVEL * (inflowFraction - valve) * dtS + disturbanceM, 0, LEVEL_MAX_M);
-    carryover += Math.max(0, levelM - CARRYOVER_LEVEL_M);
+    const levelM = i === n - 1 ? st.levelM : clamp(st.levelM + K_LEVEL * (inflowFraction - valve) * dtS + disturbanceM, 0, LEVEL_MAX_M);
 
     return { tempC, levelM, softScaleMm: cleaned, hardScaleMm };
   });
 
   const factor = ballClean ? BALL_CLEAN_DISTILLATE_FACTOR : 1;
   const distillateM3h = ((distillateKgS * 3600) / DISTILLATE_DENSITY) * factor;
+
+  const pool = stages[n - 1];
+  if (pool) {
+    const netM3h = makeupM3h - distillateM3h - blowdownM3h;
+    stages[n - 1] = { ...pool, levelM: clamp(pool.levelM + POOL_LEVEL_PER_M3H_S * netM3h * dtS, 0, LEVEL_MAX_M) };
+  }
+  const carryover = stages.reduce((sum, st) => sum + Math.max(0, st.levelM - CARRYOVER_LEVEL_M), 0);
+
+  const brine = { ...s.brine, recircM3h, concentrationFactor, blowdownM3h, makeupM3h, distillateM3h };
   return { state: { ...s, stages, brine, vacuum }, distillateM3h, carryover };
 }

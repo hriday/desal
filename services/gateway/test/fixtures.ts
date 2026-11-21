@@ -21,7 +21,7 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
     controlMode: 'auto',
     tripCause: null,
     restartStep: null,
-    loops: { tbt: loop, intakeFlow: loop, recirc: loop, blowdown: loop, vacuum: loop },
+    loops: { tbt: loop, intakeFlow: loop, recirc: loop, blowdown: loop, vacuum: loop, makeup: loop },
     pumps: { 'P-101': pump, 'P-102': pump, 'P-103': { running: false, overhaulRemainingTicks: 0 } },
     fuel: {
       active: 'gas',

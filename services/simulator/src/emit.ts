@@ -20,12 +20,14 @@ function pumpFlowM3h(s: PlantState, id: PumpId): number {
 
 const stageKey = (i: number): string => `s${String(i + 1).padStart(2, '0')}`;
 
+/** Four readings per stage. The last stage's level is the brine pool, the makeup loop's process value. */
 function stageSensors(i: number): Sensor[] {
   const k = stageKey(i);
   const st = (s: PlantState) => s.stages[i]!;
+  const pool = i === STAGE_COUNT - 1;
   return [
     { id: `stages.${k}.tempC`, unitId: 'stages', read: (s) => st(s).tempC },
-    { id: `stages.${k}.levelM`, unitId: 'stages', read: (s) => st(s).levelM },
+    { id: `stages.${k}.levelM`, unitId: 'stages', read: (s) => st(s).levelM, ...(pool ? { loop: 'makeup' as const } : {}) },
     { id: `stages.${k}.softScaleMm`, unitId: 'stages', read: (s) => st(s).softScaleMm },
     { id: `stages.${k}.hardScaleMm`, unitId: 'stages', read: (s) => st(s).hardScaleMm },
   ];
@@ -49,6 +51,9 @@ const SENSORS: readonly Sensor[] = [
   { id: 'brine.recircM3h', unitId: 'brine', read: (s) => s.brine.recircM3h, loop: 'recirc' },
   { id: 'brine.concentrationFactor', unitId: 'brine', read: (s) => s.brine.concentrationFactor, loop: 'blowdown' },
   { id: 'brine.blowdownM3h', unitId: 'brine', read: (s) => s.brine.blowdownM3h },
+  { id: 'brine.makeupM3h', unitId: 'brine', read: (s) => s.brine.makeupM3h },
+  // Cooling seawater returned to sea after the reject-stage tubes: what the makeup does not take.
+  { id: 'brine.coolingRejectM3h', unitId: 'brine', read: (s) => s.intake.flowM3h - s.brine.makeupM3h },
   { id: 'vacuum.quality', unitId: 'vacuum', read: (s) => s.vacuum.quality, loop: 'vacuum' },
   { id: 'product.flowM3h', unitId: 'product', read: (s) => s.product.flowM3h },
   { id: 'product.salinityPpm', unitId: 'product', read: (s) => s.product.salinityPpm },
@@ -91,6 +96,7 @@ export function toStatus(s: PlantState): PlantStatus {
     recirc: loopView(s.loops.recirc),
     blowdown: loopView(s.loops.blowdown),
     vacuum: loopView(s.loops.vacuum),
+    makeup: loopView(s.loops.makeup),
   };
   s.loops.levels.forEach((l, i) => {
     loops[`level${i + 1}`] = loopView(l);

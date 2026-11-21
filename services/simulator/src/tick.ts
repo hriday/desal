@@ -56,7 +56,8 @@ function stepLoop(loop: Loop, kind: Kind, measured: number): Loop {
 
 /**
  * Step every PID on its measured value. While restarting, the restart sequence owns tbt, vacuum
- * and recirc; while tripped or acid cleaning, the burner is locked out (tbt is not stepped).
+ * and recirc; while tripped or acid cleaning, the burner is locked out (tbt is not stepped). The
+ * level and makeup loops run in every status; makeup holds the stage-24 brine pool.
  */
 function stepLoops(s: PlantState): PlantState {
   const m = (loop: LoopSensorId, trueValue: number): number => measured(s, loop, trueValue);
@@ -71,6 +72,7 @@ function stepLoops(s: PlantState): PlantState {
       recirc: restarting ? l.recirc : stepLoop(l.recirc, 'recirc', m('recirc', s.brine.recircM3h)),
       blowdown: stepLoop(l.blowdown, 'blowdown', m('blowdown', s.brine.concentrationFactor)),
       vacuum: restarting ? l.vacuum : stepLoop(l.vacuum, 'vacuum', m('vacuum', s.vacuum.quality)),
+      makeup: stepLoop(l.makeup, 'makeup', m('makeup', s.stages[s.stages.length - 1]!.levelM)),
       levels: l.levels.map((loop, i) => stepLoop(loop, 'level', s.stages[i]?.levelM ?? loop.setpoint)),
     },
   };

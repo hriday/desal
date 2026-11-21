@@ -30,6 +30,7 @@ export function loadScenario(s: PlantState, scenario: Scenario): PlantState {
       recirc: clearFault(l.recirc),
       blowdown: clearFault(l.blowdown),
       vacuum: clearFault(l.vacuum),
+      makeup: clearFault(l.makeup),
       levels: l.levels.map(clearFault),
     },
     seawater: {

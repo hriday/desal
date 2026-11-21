@@ -31,7 +31,9 @@ import {
   INTAKE_REQUIRED_BASE_M3H,
   LATENT_J_kg,
   LEVEL_BALANCE_VALVE_PCT,
+  LEVEL_LOOP_COUNT,
   LOOP_GAINS,
+  MAKEUP_MAX_M3H,
   PUMP_RATED_M3H,
   RECIRC_NOMINAL_M3H,
   RECIRC_PUMP_MAX_M3H,
@@ -43,8 +45,11 @@ import {
 import type { ActiveChaos, ChaosPlan, SensorFault } from './scenario/chaosTypes.js';
 import type { Scenario } from './scenario/types.js';
 
-/** The loops' process values, which a sensor fault can corrupt (the names match the LoopId of the same loops). */
-export type LoopSensorId = 'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum';
+/**
+ * The loops' process values, which a sensor fault can corrupt (the names match the LoopId of the same
+ * loops). 'makeup' is the stage-24 brine pool level.
+ */
+export type LoopSensorId = 'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum' | 'makeup';
 
 export type LoopFault = { kind: 'stuck' | 'drift' | 'oscillate'; bias: number };
 export interface Loop {
@@ -150,13 +155,26 @@ export interface PlantState {
     bestTbtC: number;
   } | null;
   acidCleanRemainingTicks: number;
-  loops: Record<'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum', Loop> & { levels: Loop[] };
+  /** levels: the LEVEL_LOOP_COUNT interstage level loops (level1..level23). makeup: the stage-24 pool's seawater makeup. */
+  loops: Record<'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum' | 'makeup', Loop> & { levels: Loop[] };
   seawater: { tempC: number; salinityGL: number; chlorophyllUgL: number };
   intake: { pumps: Record<PumpId, Pump>; screenFouling: number; flowM3h: number; requiredM3h: number };
   pretreat: { chlorineMgL: number; antiscalantMgL: number; biofouling: number };
   heater: { tbtC: number; firingPct: number; burnerCondition: number; heatMW: number };
   stages: Stage[];
-  brine: { recircM3h: number; concentrationFactor: number; blowdownM3h: number };
+  /**
+   * makeupM3h: the lagged actual seawater makeup into the stage-24 pool (never above the intake flow).
+   * distillateM3h: the last tick's raw distillate (before status gating), set by stepStages.
+   * cfTargetHeld: the CF target kept while the plant is not online (the last online value).
+   */
+  brine: {
+    recircM3h: number;
+    concentrationFactor: number;
+    blowdownM3h: number;
+    makeupM3h: number;
+    distillateM3h: number;
+    cfTargetHeld: number;
+  };
   vacuum: { quality: number };
   product: { flowM3h: number; salinityPpm: number; divertToDrain: boolean };
   fuel: {
@@ -207,6 +225,10 @@ const BOTTOM_C = SEAWATER_C + BOTTOM_APPROACH_C + (1 - VACUUM_QUALITY_NOMINAL) *
 const RECIRC_KGS = (RECIRC_NOMINAL_M3H * BRINE_DENSITY) / 3600;
 /** Heater duty that holds TBT with clean tubes: recovered = TBT - HEATER_DT0_C (as units/heater). */
 const HEAT_MW = (RECIRC_KGS * CP_BRINE * HEATER_DT0_C) / 1e6;
+/** Flash distillate over the whole cascade with clean tubes (as units/stages). */
+const PRODUCT_M3H = ((RECIRC_KGS * CP_BRINE * (TBT_C - BOTTOM_C)) / LATENT_J_kg) * (3600 / DISTILLATE_DENSITY);
+/** Blowdown valve opening (percent) that holds the nominal CF. */
+const BLOWDOWN_PCT = (100 * (CF_MAX - CF_NOMINAL)) / (CF_MAX - CF_MIN);
 
 // Nominal steady state, derived from the unit physics so tick 0 -> 1 starts at equilibrium.
 export const NOMINAL = {
@@ -220,16 +242,19 @@ export const NOMINAL = {
   levelM: 0.3,
   firingPct: (100 * HEAT_MW) / BURNER_MAX_MW,
   heatMW: HEAT_MW,
-  /** Flash distillate over the whole cascade with clean tubes (as units/stages). */
-  productM3h: ((RECIRC_KGS * CP_BRINE * (TBT_C - BOTTOM_C)) / LATENT_J_kg) * (3600 / DISTILLATE_DENSITY),
+  productM3h: PRODUCT_M3H,
+  blowdownM3h: (BLOWDOWN_MAX_M3H * BLOWDOWN_PCT) / 100,
+  /** Seawater makeup that holds the stage-24 pool: it replaces the distillate and the blowdown drawn from it. */
+  makeupM3h: PRODUCT_M3H + (BLOWDOWN_MAX_M3H * BLOWDOWN_PCT) / 100,
 };
 
 // Actuator outputs (percent) that hold the nominal plant at equilibrium with no PID action.
 export const BALANCE = {
   recircPct: (100 * NOMINAL.recircM3h) / RECIRC_PUMP_MAX_M3H,
   vacuumPct: (100 * (NOMINAL.vacuumQuality - VACUUM_QUALITY_MIN)) / (1 - VACUUM_QUALITY_MIN),
-  blowdownPct: (100 * (CF_MAX - NOMINAL.concentrationFactor)) / (CF_MAX - CF_MIN),
+  blowdownPct: BLOWDOWN_PCT,
   levelPct: LEVEL_BALANCE_VALVE_PCT,
+  makeupPct: (100 * NOMINAL.makeupM3h) / MAKEUP_MAX_M3H,
 };
 
 /** A loop at rest: the integral is preset so that at zero error the PI output equals `output`. */
@@ -284,7 +309,8 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
       recirc: loop('recirc', NOMINAL.recircM3h, BALANCE.recircPct),
       blowdown: loop('blowdown', NOMINAL.concentrationFactor, BALANCE.blowdownPct),
       vacuum: loop('vacuum', NOMINAL.vacuumQuality, BALANCE.vacuumPct),
-      levels: Array.from({ length: STAGE_COUNT }, () => loop('level', NOMINAL.levelM, BALANCE.levelPct)),
+      makeup: loop('makeup', NOMINAL.levelM, BALANCE.makeupPct),
+      levels: Array.from({ length: LEVEL_LOOP_COUNT }, () => loop('level', NOMINAL.levelM, BALANCE.levelPct)),
     },
     seawater: { tempC: SEAWATER_C, salinityGL: 45, chlorophyllUgL: CHLOROPHYLL_UGL },
     intake: {
@@ -299,7 +325,10 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
     brine: {
       recircM3h: NOMINAL.recircM3h,
       concentrationFactor: NOMINAL.concentrationFactor,
-      blowdownM3h: (BLOWDOWN_MAX_M3H * BALANCE.blowdownPct) / 100,
+      blowdownM3h: NOMINAL.blowdownM3h,
+      makeupM3h: NOMINAL.makeupM3h,
+      distillateM3h: NOMINAL.productM3h,
+      cfTargetHeld: NOMINAL.concentrationFactor,
     },
     vacuum: { quality: NOMINAL.vacuumQuality },
     product: { flowM3h: NOMINAL.productM3h, salinityPpm: BASE_SALINITY_PPM, divertToDrain: false },

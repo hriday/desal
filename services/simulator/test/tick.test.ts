@@ -257,6 +257,11 @@ describe('emission', () => {
 
   it('emits TELEMETRY_SENSOR_COUNT readings per tick (the gateway assembles frames of that size)', () => {
     expect(SENSOR_IDS.length).toBe(TELEMETRY_SENSOR_COUNT);
+    expect(TELEMETRY_SENSOR_COUNT).toBe(127);
+    expect(SENSOR_IDS).toContain('stages.s24.levelM');
+    expect(SENSOR_IDS).not.toContain('stages.s25.levelM');
+    expect(SENSOR_IDS).toContain('brine.makeupM3h');
+    expect(SENSOR_IDS).toContain('brine.coolingRejectM3h');
   });
 
   it('reports each loop\'s controller fault in the status (null when healthy), so the UI alarm clears with it', () => {
@@ -306,7 +311,7 @@ describe('emission', () => {
   it('produces a status that matches PlantStatusSchema', () => {
     const r = tick(running(), []);
     expect(PlantStatusSchema.parse(r.status)).toEqual(r.status);
-    expect(Object.keys(r.status.loops)).toHaveLength(25);
+    expect(Object.keys(r.status.loops)).toHaveLength(29); // five plant loops, makeup and level1..level23
     expect(r.status.shiftTicksRemaining).toBe(SHIFT_TICKS - 1);
     expect(allFinite(r.status)).toBe(true);
   });

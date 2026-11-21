@@ -45,28 +45,30 @@ describe('drawChaosPlan', () => {
 
   // Rule R2: Normal shifts 2+ are byte-identical to the draw before Hard mode and the two-event
   // shift 1 (pinned from the pre-change drawChaosPlan for seeds 1-50, whole output and next seed).
+  // Re-pinned for the 24-stage plant (Plan 7 Task 1): against the 20-stage draw, the only
+  // differences (262 over these cases) are tubeLeak params.stage values; nothing else moved.
   it('Normal shifts 2+ match the pre-change draw exactly', () => {
     const PINNED: Record<string, string> = {
-      'nominal/2/false': '488b5ac7c5f669cb',
-      'nominal/2/true': '302a9f5f7cf995bd',
-      'nominal/3/false': '27f737197922e606',
-      'nominal/3/true': 'fbcbc272061bcb30',
-      'nominal/6/false': '2b2ff84decc64acb',
-      'nominal/6/true': '2334ea8d382a4674',
-      'nominal/20/false': '501fba8460cba224',
-      'nominal/20/true': '909f63881727d956',
-      'nominal/50/false': 'dba46ab6259eaa16',
-      'nominal/50/true': '8523170bae71344b',
-      'overhaul/2/false': '2dda12a3a6345df9',
-      'overhaul/2/true': '57a2f7516b4ab330',
-      'overhaul/3/false': '25e4ad2d49d1907d',
-      'overhaul/3/true': 'c6e38f8622dee23a',
-      'overhaul/6/false': '596928ef0d87f2d5',
-      'overhaul/6/true': '23fbf0721e058024',
-      'overhaul/20/false': 'cf113ff0cc714a77',
-      'overhaul/20/true': '126c9a540c3a69ec',
-      'overhaul/50/false': 'dfe1f04e90838109',
-      'overhaul/50/true': 'e89891e9ff39e83b',
+      'nominal/2/false': '922a342d6bea1b17',
+      'nominal/2/true': '40a35f198ffad682',
+      'nominal/3/false': '2636585e2ed50038',
+      'nominal/3/true': '3b6e2a6d5b4259e7',
+      'nominal/6/false': 'ca6c4db35f7603b3',
+      'nominal/6/true': 'c1d2a3d5a64b3a18',
+      'nominal/20/false': '31cbecbf5f7f8be4',
+      'nominal/20/true': '61781276450855d0',
+      'nominal/50/false': '5d227d5ec810dfb7',
+      'nominal/50/true': '5fd350aa593b7e6b',
+      'overhaul/2/false': '4b646108c27c2863',
+      'overhaul/2/true': '070e561e61dc098a',
+      'overhaul/3/false': '5b64ab8e37bde1d4',
+      'overhaul/3/true': 'ee6805e821b7919f',
+      'overhaul/6/false': 'd40317d0685cdc2f',
+      'overhaul/6/true': '96211c4770aa5049',
+      'overhaul/20/false': '4a64d47999c45898',
+      'overhaul/20/true': '7812522f0b99d37d',
+      'overhaul/50/false': '7507b0f3c17374d1',
+      'overhaul/50/true': 'fc7c43aa3cb2d949',
     };
     const states = { nominal: state, overhaul: withP103Overhaul(state) };
     for (const [name, st] of Object.entries(states)) {

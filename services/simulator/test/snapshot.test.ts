@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { STAGE_COUNT } from '../src/constants.js';
 import { startShift } from '../src/shift.js';
 import { restore, serialize } from '../src/snapshot.js';
-import { createInitialState, type PlantState } from '../src/state.js';
+import { BALANCE, createInitialState, NOMINAL, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
 import { GAME_ID } from './envelope.js';
 
@@ -25,7 +27,28 @@ function midShift2(): PlantState {
 const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0, GAME_ID)));
 
 function wrap(state: unknown, over: Record<string, unknown> = {}): string {
-  return JSON.stringify({ format: 'desal-snapshot', version: 4, savedAt: 0, state, ...over });
+  return JSON.stringify({ format: 'desal-snapshot', version: 5, savedAt: 0, state, ...over });
+}
+
+/**
+ * A live 20-stage save (format version 4), written on the Plan 6 plant: seed 3 played by the engaged
+ * bot to mid-shift 2, then given a tube leak on old stage 20 (index 19), a plugged stage 5 (derate 0.6)
+ * and a stuck controller fault on level20, which is in Manual.
+ */
+const fixtureJson = (): string => readFileSync(new URL('./fixtures/snapshot-v4.json', import.meta.url), 'utf8');
+const fixture = (): any => JSON.parse(fixtureJson());
+
+/** The v3 shape of a v4 doc: the fields version 4 added are deleted. */
+function toV3(doc: any): any {
+  const st = doc.state;
+  delete st.run.mode;
+  delete st.chaos.lastHadDisaster;
+  delete st.faults.fuelContamination;
+  delete st.faults.tsunami;
+  for (const p of [st.chaos.pending, st.chaos.active?.plan]) for (const e of p?.queue ?? []) delete e.disaster;
+  for (const e of st.chaos.active?.fired ?? []) delete e.disaster;
+  doc.version = 3;
+  return doc;
 }
 
 describe('snapshots', () => {
@@ -49,31 +72,90 @@ describe('snapshots', () => {
 
   it('rejects garbage, wrong format and unknown version', () => {
     const s = createInitialState(1, T0, GAME_ID);
-    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 5 })]) {
+    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 6 })]) {
       const r = restore(bad);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason.length).toBeGreaterThan(0);
     }
   });
 
-  it('serializes version 4', () => {
-    expect(JSON.parse(serialize(createInitialState(1, T0, GAME_ID))).version).toBe(4);
+  it('serializes version 5', () => {
+    expect(JSON.parse(serialize(createInitialState(1, T0, GAME_ID))).version).toBe(5);
   });
 
-  it('migrates a version 3 save to Normal with the new fields defaulted', () => {
-    const doc = JSON.parse(serialize({ ...midShift2(), run: { ...midShift2().run, mode: 'hard' } }));
+  describe('a live v4 save restores as 24 stages', () => {
+    const old = fixture().state;
+    const r = restore(fixtureJson());
+    const s = r.ok ? r.state : (null as unknown as PlantState);
+    const from = (j: number): number => Math.floor((j * 20) / 24);
+
+    it('restores', () => {
+      expect(r.ok).toBe(true);
+      expect(old.stages).toHaveLength(20);
+      expect(s.stages).toHaveLength(STAGE_COUNT);
+    });
+
+    it('resamples the stages and their derates: new stage j copies old stage floor(j*20/24)', () => {
+      for (let j = 0; j < STAGE_COUNT; j++) {
+        const o = old.stages[from(j)];
+        expect(s.stages[j]).toMatchObject({ levelM: o.levelM, softScaleMm: o.softScaleMm, hardScaleMm: o.hardScaleMm });
+        expect(s.faults.stageDerate[j]).toBe(old.faults.stageDerate[from(j)]);
+      }
+      // The plugged old stage 5 (index 4) lands on new index 5 only (floor(5 x 20 / 24) = 4).
+      expect(s.faults.stageDerate.flatMap((d, j) => (d === 0.6 ? [j] : []))).toEqual([5]);
+    });
+
+    it('moves the tube leak on old stage 20 into the last recovery stage (21)', () => {
+      expect(old.faults.tubeLeak.stage).toBe(19);
+      expect(s.faults.tubeLeak).toEqual({ stage: 20, ppm: old.faults.tubeLeak.ppm });
+    });
+
+    it('keeps the 20 level loops and clones level20 into level21-23', () => {
+      expect(s.loops.levels).toHaveLength(23);
+      for (let i = 0; i < 20; i++) expect(s.loops.levels[i]).toEqual(old.loops.levels[i]);
+      expect(s.loops.levels[19]).toMatchObject({ mode: 'manual', fault: { kind: 'stuck', bias: 0 } });
+      for (let i = 20; i < 23; i++) expect(s.loops.levels[i]).toEqual(old.loops.levels[19]);
+    });
+
+    it('adds a balanced makeup loop in Auto and holds the save\'s CF as the CF target', () => {
+      expect(s.loops.makeup.mode).toBe('auto');
+      expect(s.loops.makeup.setpoint).toBe(NOMINAL.levelM);
+      expect(s.loops.makeup.output).toBeCloseTo(BALANCE.makeupPct, 10);
+      expect(s.loops.makeup.fault).toBeNull();
+      expect(s.brine.makeupM3h).toBe(NOMINAL.makeupM3h);
+      expect(s.brine.cfTargetHeld).toBe(old.brine.concentrationFactor);
+      expect(s.brine.distillateM3h).toBe(NOMINAL.productM3h);
+    });
+
+    it('keeps running: 90 ticks and nothing trips', () => {
+      expect(s.status).toBe('online');
+      let x = s;
+      for (let i = 0; i < 90; i++) {
+        const t = tick(x, []);
+        expect(t.events.filter((e) => e.type === 'trip')).toEqual([]);
+        x = t.state;
+      }
+      expect(x.status).toBe('online');
+      expect(x.shift?.id).toBe(2);
+    });
+
+    it('re-serializes as a version 5 save that round-trips', () => {
+      const again = restore(serialize(s));
+      expect(again.ok).toBe(true);
+      if (again.ok) expect(again.state).toEqual(s);
+    });
+  });
+
+  it('migrates a version 3 save to Normal with the new fields defaulted, and to 24 stages', () => {
+    const doc = toV3(fixture());
     const st = doc.state;
     expect(st.chaos.active.plan.queue.length + st.chaos.active.fired.length).toBeGreaterThan(0);
-    delete st.run.mode;
-    delete st.chaos.lastHadDisaster;
-    delete st.faults.fuelContamination;
-    delete st.faults.tsunami;
-    for (const p of [st.chaos.pending, st.chaos.active.plan]) for (const e of p?.queue ?? []) delete e.disaster;
-    for (const e of st.chaos.active.fired) delete e.disaster;
-    doc.version = 3;
     const r = restore(JSON.stringify(doc));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
+    expect(r.state.stages).toHaveLength(STAGE_COUNT);
+    expect(r.state.loops.levels).toHaveLength(23);
+    expect(r.state.loops.makeup.mode).toBe('auto');
     expect(r.state.run.mode).toBe('normal');
     expect(r.state.chaos.lastHadDisaster).toBe(false);
     expect(r.state.faults.fuelContamination).toBeNull();
@@ -86,6 +168,12 @@ describe('snapshots', () => {
   it('rejects a version 2 save with its reason', () => {
     const r = restore(wrap(createInitialState(1, T0, GAME_ID), { version: 2 }));
     expect(r).toEqual({ ok: false, reason: 'unknown version: 2' });
+  });
+
+  it('rejects a version 4 save whose stages are not 20', () => {
+    const doc = fixture();
+    doc.state.stages.pop();
+    expect(restore(JSON.stringify(doc)).ok).toBe(false);
   });
 
   it('round-trips populated chaos, crew and fault state', () => {
@@ -133,10 +221,13 @@ describe('snapshots', () => {
     if (!r.ok) expect(r.reason).toContain('state.heater.tbtC');
   });
 
-  it('rejects wrong stage count, missing pump and bad enum', () => {
+  it('rejects wrong stage count, wrong level-loop count, missing pump and bad enum', () => {
     const a = clone();
     a.stages.pop();
     expect(restore(wrap(a)).ok).toBe(false);
+    const l = clone();
+    l.loops.levels.push(l.loops.levels[0]);
+    expect(restore(wrap(l)).ok).toBe(false);
     const b = clone();
     delete b.intake.pumps['P-103'];
     expect(restore(wrap(b)).ok).toBe(false);

@@ -14,7 +14,7 @@ function setLoopFault(s: PlantState, loopId: string, kind: string): PlantState {
     const levels = s.loops.levels.map((x, j): Loop => (j === i ? { ...x, fault } : x));
     return { ...s, loops: { ...s.loops, levels } };
   }
-  if (loopId === 'tbt' || loopId === 'intakeFlow' || loopId === 'recirc' || loopId === 'blowdown' || loopId === 'vacuum') {
+  if (loopId === 'tbt' || loopId === 'intakeFlow' || loopId === 'recirc' || loopId === 'blowdown' || loopId === 'vacuum' || loopId === 'makeup') {
     return { ...s, loops: { ...s.loops, [loopId]: { ...s.loops[loopId], fault } } };
   }
   return s;

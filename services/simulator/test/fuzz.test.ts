@@ -33,7 +33,7 @@ class Rand {
   }
 }
 
-const LOOPS = ['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum', 'level1', 'level7', 'level20'] as const;
+const LOOPS = ['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum', 'makeup', 'level1', 'level7', 'level20', 'level23'] as const;
 const SP: Record<string, [number, number]> = Object.fromEntries(
   (['tbt', 'intakeFlow', 'recirc', 'blowdown', 'vacuum'] as const).map((k) => [k, [LOOP_RANGES[k].spMin, LOOP_RANGES[k].spMax]]),
 );
