@@ -17,7 +17,7 @@ import org.desal.flink.model.KindStat;
 public class GameState {
   /** Snapshot restores so far; a higher epoch on a record means the game rewound. */
   public int epoch;
-  /** The last event seq applied in this epoch (-1: none). */
+  /** The last event seq accepted in {@link #bufferedEpoch} (-1: none). */
   public long lastSeq = -1;
   /** The last status tick applied in this epoch (-1: none). */
   public long lastStatusTick = -1;
@@ -38,28 +38,32 @@ public class GameState {
   public StatusView lastStatus;
 
   /**
-   * A shiftEnd held until status has caught up with it, and the tracker of the shift it ends
-   * (still fed the statuses up to the end tick); null when none is pending.
+   * Events accepted but not yet applied, in (epoch, tick, seq) order. An event is applied only
+   * once status has reached its tick (see ReportCardFunction), so the two inputs stay aligned.
    */
-  public PendingEnd pendingShiftEnd;
-  public ShiftTracker ending;
-  /** A gameEnd held until status has caught up with it; null when none is pending. */
-  public PendingEnd pendingGameEnd;
+  public List<BufferedEvent> buffer = new ArrayList<>();
+  /** The epoch of the newest event accepted into the buffer; {@link #lastSeq} belongs to it. */
+  public int bufferedEpoch;
+  /**
+   * Processing time (ms) of the last progress: the buffer filling up from empty, or a status being
+   * applied. The buffer is flushed when there has been none for PENDING_END_TIMEOUT_MS.
+   */
+  public long lastProgressAt;
 
   public GameState() {}
 
-  /** An end record (shiftEnd or gameEnd) waiting for status to reach its tick. */
-  public static class PendingEnd {
+  /** One plant.events record waiting for status to catch up. */
+  public static class BufferedEvent {
     /** The record's JSON. */
     public String json;
+    public String type;
     public int epoch;
     public long tick;
+    public long seq;
     /** The record's Kafka timestamp (gameEnd's endedAt). */
     public long timestamp;
-    /** Processing time (ms) after which it is finished with what the job has. */
-    public long deadline;
 
-    public PendingEnd() {}
+    public BufferedEvent() {}
   }
 
   /**

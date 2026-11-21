@@ -50,8 +50,7 @@ class ReportCardFunctionTest {
 
   @BeforeEach
   void open() throws Exception {
-    harness = ProcessFunctionTestHarnesses.forKeyedCoProcessFunction(
-        new ReportCardFunction(), i -> i.gameId, i -> i.gameId, Types.STRING);
+    harness = newHarness();
     seq = 0;
   }
 
@@ -278,30 +277,150 @@ class ReportCardFunctionTest {
     assertTrue(p.firstHandledWell);
   }
 
+  /**
+   * A backlog of three shifts: every event (all three shiftEnds included) is read before any
+   * status. Each report still credits its response from its own later statuses and takes its pace
+   * from them, and the reports are identical to those from the simulator's own order.
+   */
   @Test
-  void eventsAheadOfStatusWaitForTheShiftsStatuses() throws Exception {
-    // Catching up a backlog: the whole shift's events (and the next shift's start) are read
-    // before any of its statuses.
+  void threeShiftsOfEventsAheadOfTheirStatusesGiveTheSameReportsAsInOrder() throws Exception {
+    List<ObjectNode> events = new ArrayList<>();
+    List<ObjectNode> statuses = new ArrayList<>();
+    List<ObjectNode> inOrder = new ArrayList<>(); // events of a tick, then its status
+    ObjectNode start = event(0, 0, "gameStart");
+    start.put("callSign", "Kestrel-42");
+    events.add(start);
+    inOrder.add(start);
+    for (int k = 1; k <= 3; k++) {
+      long first = (k - 1) * 720L + 1;
+      long last = k * 720L;
+      long fire = first + 279;
+      for (long t = first; t <= last; t++) {
+        List<ObjectNode> at = new ArrayList<>();
+        if (t == first) {
+          at.add(shiftStartRecord(0, t, k));
+        }
+        if (t == fire) {
+          at.add(scenario(0, t, k, 1, "pumpTrip"));
+        }
+        if (t == fire + 10) {
+          at.add(cleared(0, t, k, 1, "pumpTrip", "player"));
+        }
+        if (t == last) {
+          at.add(shiftEnd(0, t, k, 3000 + k));
+        }
+        ObjectNode st = statusRecord(0, t, "running", k, (t - first + 1) * 5.0, t >= fire && t < fire + 6 ? 1 : 2, 2.0);
+        events.addAll(at);
+        statuses.add(st);
+        inOrder.addAll(at);
+        inOrder.add(st);
+      }
+    }
+    for (ObjectNode e : events) {
+      sendEvent(harness, e);
+    }
+    assertTrue(reports().isEmpty());
+    for (ObjectNode st : statuses) {
+      sendStatus(harness, st);
+    }
+    List<ShiftReport> reports = reports();
+    assertEquals(3, reports.size());
+    for (int k = 1; k <= 3; k++) {
+      ShiftReport r = reports.get(k - 1);
+      assertEquals(k, r.shiftId);
+      assertEquals(4.0, r.events.get(0).responseMinutes, EPS);
+      assertEquals("quick", r.events.get(0).verdict);
+      assertEquals(8, r.pace.size());
+      for (int h = 1; h <= 7; h++) {
+        assertEquals(90.0 * h * 5, pace(r, h), EPS);
+      }
+      assertEquals(3000 + k, pace(r, 8), EPS);
+    }
+
+    KeyedTwoInputStreamOperatorTestHarness<String, Input, Input, ShiftReportOut> ordered = newHarness();
+    try {
+      for (ObjectNode x : inOrder) {
+        if (x.has("type")) {
+          sendEvent(ordered, x);
+        } else {
+          sendStatus(ordered, x);
+        }
+      }
+      List<ShiftReport> expected = new ArrayList<>();
+      for (ShiftReportOut o : ordered.extractOutputValues()) {
+        expected.add(o.report);
+      }
+      assertEquals(3, expected.size());
+      assertEquals(Json.MAPPER.writeValueAsString(expected), Json.MAPPER.writeValueAsString(reports));
+    } finally {
+      ordered.close();
+    }
+  }
+
+  /**
+   * Events of both epochs read before the statuses: the epoch-0 event after the snapshot (tick
+   * 1170) is dropped when epoch 1's re-fired copy arrives; the one before it is applied with
+   * epoch 0's statuses.
+   */
+  @Test
+  void anEpochChangeWhileEventsAreBufferedKeepsWhatIsInTheSnapshot() throws Exception {
     gameStart(0, null);
     shiftStart(0, SHIFT2_START, 2);
-    send(scenario(0, 1000, 2, 1, "pumpTrip"), 1);
-    send(cleared(0, 1010, 2, 1, "pumpTrip", "player"), 1);
-    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
-    shiftStart(0, SHIFT2_END + 1, 3);
-    assertTrue(reports().isEmpty());
-    for (long t = SHIFT2_START; t <= SHIFT2_END; t++) {
-      status(0, t, "running", 2, (t - 720) * 5.0, t >= 1000 && t < 1006 ? 1 : 2);
+    send(scenario(0, 900, 2, 1, "pumpTrip"), 1);
+    send(scenario(0, 1180, 2, 2, "powerDip"), 1);
+    seq = 2;
+    send(scenario(1, 1175, 2, 2, "powerDip"), 1);
+    send(shiftEnd(1, SHIFT2_END, 2, 4163.88), 1);
+    for (long t = SHIFT2_START; t <= 1100; t++) {
+      status(0, t, "running", 2, 0, t >= 900 && t < 903 ? 1 : 2);
+    }
+    for (long t = 1171; t <= SHIFT2_END; t++) {
+      status(1, t, "running", 2, 0, t >= 1175 && t < 1178 ? 1 : 2);
     }
     List<ShiftReport> reports = reports();
     assertEquals(1, reports.size());
     ShiftReport r = reports.get(0);
-    assertEquals(2, r.shiftId);
-    assertEquals(4.0, r.events.get(0).responseMinutes, EPS);
-    assertEquals("quick", r.events.get(0).verdict);
-    assertEquals(8, r.pace.size());
-    for (int h = 1; h <= 7; h++) {
-      assertEquals(90.0 * h * 5, pace(r, h), EPS);
+    assertEquals(1, r.epoch);
+    assertEquals(2, r.events.size());
+    assertEquals(2.0, r.events.get(0).responseMinutes, EPS);
+    EventLine dip = r.events.get(1);
+    assertEquals((1175 - SHIFT2_START) * 2.0 / 3, dip.atMinute, EPS);
+    assertEquals(2.0, dip.responseMinutes, EPS);
+  }
+
+  /** A bloom read before the statuses around it takes the dose at its fire tick, not an old one. */
+  @Test
+  void aBloomReadAheadOfStatusTakesTheDoseAtItsFireTick() throws Exception {
+    gameStart(0, null);
+    sendStatus(harness, statusRecord(0, 700, "handover", 1, 0, 2, 3.0));
+    shiftStart(0, SHIFT2_START, 2);
+    send(scenario(0, 1000, 2, 1, "bloom"), 1);
+    for (long t = SHIFT2_START; t <= 1010; t++) {
+      sendStatus(harness, statusRecord(0, t, "running", 2, 0, 2, t >= 1003 ? 2.5 : 2.0));
     }
+    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
+    EventLine bloom = reports().get(0).events.get(0);
+    assertEquals(2.0, bloom.responseMinutes, EPS);
+    assertEquals("quick", bloom.verdict);
+  }
+
+  /** Buffered events are flushed once the game's status has made no progress for 15 s. */
+  @Test
+  void bufferedEventsAreReleasedWhenStatusStops() throws Exception {
+    gameStart(0, null);
+    shiftStart(0, SHIFT2_START, 2);
+    status(0, 999, "running", 2, 2000, 2);
+    send(scenario(0, 1000, 2, 1, "pumpTrip"), 1);
+    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    harness.setProcessingTime(10_000);
+    status(0, 1003, "running", 2, 2010, 2); // progress: releases the pump trip, pushes the flush back
+    harness.setProcessingTime(ReportCardFunction.PENDING_END_TIMEOUT_MS);
+    assertTrue(reports().isEmpty());
+    harness.setProcessingTime(10_000 + ReportCardFunction.PENDING_END_TIMEOUT_MS);
+    List<ShiftReport> reports = reports();
+    assertEquals(1, reports.size());
+    assertEquals(2.0, reports.get(0).events.get(0).responseMinutes, EPS);
   }
 
   @Test
@@ -491,6 +610,11 @@ class ReportCardFunctionTest {
   /** A plant.status record (only the fields the job reads, plus pace, which it ignores). */
   private void status(int epoch, long tick, String phase, int shiftId, double shiftProductM3, int pumps)
       throws Exception {
+    sendStatus(harness, statusRecord(epoch, tick, phase, shiftId, shiftProductM3, pumps, 2.0));
+  }
+
+  private static ObjectNode statusRecord(int epoch, long tick, String phase, int shiftId, double shiftProductM3,
+      int pumps, double chlorineMgL) {
     ObjectNode s = Json.MAPPER.createObjectNode();
     s.put("gameId", GAME);
     s.put("epoch", epoch);
@@ -505,11 +629,28 @@ class ReportCardFunctionTest {
       p.putObject("P-10" + (i + 1)).put("running", i < pumps).put("overhaulRemainingTicks", 0);
     }
     s.putObject("loops");
-    s.putObject("doses").put("chlorineMgL", 2.0);
+    s.putObject("doses").put("chlorineMgL", chlorineMgL);
     s.putNull("crew");
     s.put("shiftProductM3", shiftProductM3);
     s.putObject("pace").put("productM3h", 500);
-    harness.processElement2(new StreamRecord<>(new Input(GAME, s.toString(), tick), tick));
+    return s;
+  }
+
+  private static void sendStatus(KeyedTwoInputStreamOperatorTestHarness<String, Input, Input, ShiftReportOut> h,
+      ObjectNode s) throws Exception {
+    long tick = s.path("tick").asLong();
+    h.processElement2(new StreamRecord<>(new Input(GAME, s.toString(), tick), tick));
+  }
+
+  private static void sendEvent(KeyedTwoInputStreamOperatorTestHarness<String, Input, Input, ShiftReportOut> h,
+      ObjectNode e) throws Exception {
+    h.processElement1(new StreamRecord<>(new Input(GAME, e.toString(), 1), 1));
+  }
+
+  private static KeyedTwoInputStreamOperatorTestHarness<String, Input, Input, ShiftReportOut> newHarness()
+      throws Exception {
+    return ProcessFunctionTestHarnesses.forKeyedCoProcessFunction(
+        new ReportCardFunction(), i -> i.gameId, i -> i.gameId, Types.STRING);
   }
 
   private void send(ObjectNode event, long timestamp) throws Exception {
