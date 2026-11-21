@@ -45,6 +45,29 @@ describe('FIX', () => {
     expect(FIX.lowSteam.underway!(status({ standbySteam: false }))).toBe(false);
     expect(FIX.lowSteam.delayMin).toBe(8);
   });
+  it('has the three ejector-train texts verbatim (Plan 9)', () => {
+    expect(FIX.coolingLoss.text).toBe('Send the crew to clean the condenser cooling water strainer; cut load to slow the vacuum loss meanwhile.');
+    expect(FIX.airLeak.text).toBe('Switch on the standby ejectors to hold the vacuum, and send the crew to seal the air leak.');
+    expect(FIX.vacuumLoss.text).toBe('Switch on the standby ejectors, then send the crew to repair the failed ejector.');
+  });
+  it('hints coolingLoss and airLeak after 6 minutes, by half the earliest trip bound (12 min), held back while the crew is on it', () => {
+    const EARLIEST_TRIP_BOUND_MIN = 12;
+    const cases = [['coolingLoss', 'cleanStrainer'], ['airLeak', 'sealLeak']] as const;
+    for (const [kind, job] of cases) {
+      expect(FIX[kind].hint, kind).toBe('delay');
+      expect(FIX[kind].delayMin, kind).toBe(6);
+      expect(FIX[kind].delayMin!, kind).toBeLessThanOrEqual(EARLIEST_TRIP_BOUND_MIN / 2);
+      const ev = [fired(kind)];
+      expect(dueHints(ev, at(5.9), none), kind).toEqual([]);
+      expect(dueHints(ev, at(6), none), kind).toEqual([{ key: '1:1:hint', eventId: 1, kind, text: `Hint: ${FIX[kind].text}` }]);
+      expect(dueHints(ev, at(6, { crew: { job, remainingTicks: 5 } }), none), kind).toEqual([]);
+      expect(FIX[kind].underway!(status({ crew: { job, remainingTicks: 5 } })), kind).toBe(true);
+      expect(FIX[kind].underway!(status({ crew: { job: 'repairEjector', remainingTicks: 5 } })), kind).toBe(false);
+      expect(FIX[kind].underway!(status()), kind).toBe(false);
+    }
+    expect(FIX.vacuumLoss.underway!(status({ crew: { job: 'repairEjector', remainingTicks: 5 } }))).toBe(true);
+    expect(FIX.vacuumLoss.underway!(status({ standbyEjectors: true }))).toBe(false);
+  });
   it('tells a tube leak to put Divert on Auto', () => {
     expect(FIX.tubeLeak.text).toBe('Put Divert on Auto so off-spec water goes to drain, and send the crew to plug tubes.');
   });

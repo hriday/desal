@@ -153,6 +153,9 @@ describe('makeup loop faults and low steam forced into shift 2', () => {
     ['controllerFault', { loop: 'makeup', kind: 'stuck' }],
     // Plan 8: low motive steam, answered on the standby steam line.
     ['lowSteam', {}],
+    // Plan 9: the ejector-train faults, answered with the crew (and the standby ejectors for a leak).
+    ['coolingLoss', {}],
+    ['airLeak', {}],
   ];
   for (const [kind, params] of cases) {
     it(`${kind} ${JSON.stringify(params)}: the engaged bot ends shift 2 alive`, () => {

@@ -190,6 +190,8 @@ describe('snapshots', () => {
       ...s,
       run: { ...s.run, mode: 'hard', callSign: callSignFor(s.seed), runId: FRESH_RUN_ID },
       product: { ...s.product, divertMode: 'manual' }, // a pre-v7 save keeps the behaviour it was played with
+      // A pre-v8 save has no ejector-train faults (migrateV7); seed 7's shift 2 now draws an airLeak.
+      faults: { ...s.faults, coolingLoss: null, airLeak: null },
     });
   });
 

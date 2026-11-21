@@ -410,6 +410,8 @@ export const CREW_JOBS = {
   replaceSensor: { costUsd: 400, minutes: 30 },
   cleanScreens: { costUsd: 300, minutes: 30 },
   flushFuel: { costUsd: 1500, minutes: 60 },
+  cleanStrainer: { costUsd: 400, minutes: 30 },
+  sealLeak: { costUsd: 600, minutes: 60 },
 } as const;
 /**
  * Capacity multiplier of a stage whose tubes the crew has plugged. Plan 7: 0.6 -> 0.52, so one

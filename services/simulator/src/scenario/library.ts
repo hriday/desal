@@ -1,6 +1,8 @@
 import type { ScenarioKind } from '@desal/schema';
 import {
+  AIR_LEAK_LOAD,
   BASE_FUEL_BUDGET_USD,
+  COOLING_LOSS_FLOOR,
   BASE_TARGET_M3,
   EJECTOR_RATE_BASE_PER_MIN,
   EJECTOR_RATE_MAX_PER_MIN,
@@ -55,6 +57,10 @@ export function eventMessage(kind: ScenarioKind, p: Record<string, number | stri
       return radioLine(kind, p);
     case 'lowSteam':
       return `Motive steam pressure falling toward ${p.floorBar} bar.`;
+    case 'coolingLoss':
+      return 'Ejector condenser cooling falling: strainer fouling.';
+    case 'airLeak':
+      return `Air leaking into stage 24: ejectors carrying ${p.load}x the air.`;
   }
 }
 
@@ -181,6 +187,18 @@ export function drawEvent(
       let floorBar: number;
       [floorBar, s] = range(s, LOW_STEAM_FLOOR_BAR[0], LOW_STEAM_FLOOR_BAR[1], 0.1);
       params = { floorBar };
+      break;
+    }
+    case 'coolingLoss': {
+      let floor: number;
+      [floor, s] = range(s, COOLING_LOSS_FLOOR[0], COOLING_LOSS_FLOOR[1], 0.01);
+      params = { floor };
+      break;
+    }
+    case 'airLeak': {
+      let load: number;
+      [load, s] = range(s, AIR_LEAK_LOAD[0], AIR_LEAK_LOAD[1], 0.1);
+      params = { load };
       break;
     }
     case 'sensorFailure': {

@@ -22,7 +22,7 @@ export function monitorFor(kind: ScenarioKind, message = ''): MonitorId {
   switch (kind) {
     case 'pumpTrip': case 'powerDip': case 'storm': case 'bloom': case 'seawaterTemp': case 'pumpBearing': return 'intake';
     case 'tubeLeak': return 'product';
-    case 'vacuumLoss': case 'lowSteam': return 'stages';
+    case 'vacuumLoss': case 'lowSteam': case 'coolingLoss': case 'airLeak': return 'stages';
     case 'controllerFault': return faultMonitor(message);
     case 'gasCurtailNotice': case 'gasPriceSpike': case 'offgradeOnly': case 'deliveryDelay': case 'fuelContamination': return 'fuel';
     case 'demandChange': case 'sensorFailure': case 'earthquake': case 'tsunami': return 'shift';

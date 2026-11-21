@@ -98,5 +98,9 @@ export function applyEffect(s: PlantState, kind: ScenarioKind, p: Record<string,
       return s;
     case 'lowSteam':
       return { ...s, faults: { ...s.faults, lowSteam: { floorBar: Number(p.floorBar) } } };
+    case 'coolingLoss':
+      return { ...s, faults: { ...s.faults, coolingLoss: { floor: Number(p.floor) } } };
+    case 'airLeak':
+      return { ...s, faults: { ...s.faults, airLeak: { load: Number(p.load) } } };
   }
 }

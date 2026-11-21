@@ -9,9 +9,11 @@ describe('difficulty profiles', () => {
   it('has the Normal and Hard values', () => {
     expect(PROFILES.normal).toEqual({
       hellEveryShift: false, disasterChance: 0.08, disasterFromShift: 3, lowSteamChance: 0.15, lowSteamFromShift: 2,
+      vacuumTrainChance: 0.2, vacuumTrainFromShift: 2,
     });
     expect(PROFILES.hard).toEqual({
       hellEveryShift: true, disasterChance: 0.4, disasterFromShift: 2, lowSteamChance: 0.3, lowSteamFromShift: 2,
+      vacuumTrainChance: 0.4, vacuumTrainFromShift: 2,
     });
     expect(DISASTER_SALT).toBe(0xd15a5);
     expect(DISASTER_MINUTE).toEqual([90, 300]);

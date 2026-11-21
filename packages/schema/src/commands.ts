@@ -32,7 +32,7 @@ export type FuelGrade = z.infer<typeof FuelGradeSchema>;
 export const GameModeSchema = z.enum(['normal', 'hard']);
 export type GameMode = z.infer<typeof GameModeSchema>;
 
-export const CrewJobSchema = z.enum(['plugTubes', 'repairEjector', 'replaceSensor', 'cleanScreens', 'flushFuel']);
+export const CrewJobSchema = z.enum(['plugTubes', 'repairEjector', 'replaceSensor', 'cleanScreens', 'flushFuel', 'cleanStrainer', 'sealLeak']);
 export type CrewJob = z.infer<typeof CrewJobSchema>;
 
 export const DivertModeSchema = z.enum(['auto', 'manual']);

@@ -122,6 +122,10 @@ export function crewJobHasFault(s: PlantState, job: CrewJob): boolean {
     case 'flushFuel':
       // Only once the bad fuel is off the burner (or on its way off): flushing a fuel in use is pointless.
       return f.fuelContamination !== null && !contaminationActive(s);
+    case 'cleanStrainer':
+      return f.coolingLoss !== null;
+    case 'sealLeak':
+      return f.airLeak !== null;
   }
 }
 
@@ -152,6 +156,11 @@ function finishCrewJob(s: PlantState, job: CrewJob): PlantState {
       };
     case 'flushFuel':
       return { ...s, faults: { ...f, fuelContamination: null } };
+    case 'cleanStrainer':
+      // The condenser cooling comes back to nominal on the next ejector step (stepEjectors).
+      return { ...s, faults: { ...f, coolingLoss: null } };
+    case 'sealLeak':
+      return { ...s, faults: { ...f, airLeak: null } };
   }
 }
 

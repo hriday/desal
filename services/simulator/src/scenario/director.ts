@@ -10,6 +10,7 @@ import { drawEvent, eventMessage } from './library.js';
 import { lowSteamParamsAtFire } from './lowSteam.js';
 import { radioLine } from './orders.js';
 import { pumpAvailability } from './sharp.js';
+import { vacuumTrainParamsAtFire } from './vacuumTrain.js';
 
 /** Normal shift: the first event fires in this plant-minute window. */
 const NORMAL_FIRST_MIN = [30, 150] as const;
@@ -111,6 +112,10 @@ export function isCleared(s: PlantState, e: FiredEvent): ClearHow | null {
       return null;
     case 'lowSteam':
       return s.steam.standby || f.lowSteam === null ? 'player' : null;
+    case 'coolingLoss':
+      return f.coolingLoss === null ? 'crew' : null;
+    case 'airLeak':
+      return f.airLeak === null ? 'crew' : null;
   }
 }
 
@@ -138,6 +143,7 @@ export function isSettled(s: PlantState): boolean {
  */
 function resolve(s: PlantState, e: QueuedEvent, minute: number, seed: number, n: number): [ScenarioKind, Params, number] | null {
   if (e.kind === 'lowSteam') return [e.kind, lowSteamParamsAtFire(s), seed];
+  if (e.kind === 'coolingLoss' || e.kind === 'airLeak') return [e.kind, vacuumTrainParamsAtFire(s, e.kind), seed];
   if (e.kind === 'fuelContamination') return fuelContaminationViable(s) ? [e.kind, { fuel: s.fuel.active }, seed] : null;
   if (e.kind !== 'pumpTrip' && e.kind !== 'powerDip') return [e.kind, e.params, seed];
   const { running, spares } = pumpAvailability(s);
@@ -157,11 +163,15 @@ function resolve(s: PlantState, e: QueuedEvent, minute: number, seed: number, n:
   return [e.kind, e.params, seed]; // unreachable: SHARP_KINDS holds non-pump kinds
 }
 
+/** The plant faults on their own clock (low steam and the ejector-train faults), each drawn on its own substream. */
+const TIMED_FAULTS: readonly ScenarioKind[] = ['lowSteam', 'coolingLoss', 'airLeak'];
+
 /**
- * Events on their own clock: disasters, their children and low steam fire when their minute comes,
- * outside the gap and settling rules, move nobody's timing, and do not count toward the cap.
+ * Events on their own clock: disasters, their children, low steam and the ejector-train faults fire
+ * when their minute comes, outside the gap and settling rules, move nobody's timing, and do not
+ * count toward the cap.
  */
-const onOwnClock = (e: { disaster: boolean; kind: ScenarioKind }): boolean => e.disaster || e.kind === 'lowSteam';
+const onOwnClock = (e: { disaster: boolean; kind: ScenarioKind }): boolean => e.disaster || TIMED_FAULTS.includes(e.kind);
 
 /** Events that count toward the shift's cap: those on their own clock do not. */
 const countsTowardCap = (events: readonly { disaster: boolean; kind: ScenarioKind }[]): number =>
@@ -181,7 +191,8 @@ const CASCADES: Partial<Record<ScenarioKind, { kind: ScenarioKind; p: number; de
  * and leaves the other events' timing alone. Otherwise the first other event fires when its time has
  * come (normal: once the plant has settled, or the 180-minute override; hell: in a burst, rolling
  * cascades). Emits `eventCleared` and `scenario` events. All randomness comes from `state.seed`,
- * except low steam's floor, which has its own substream (lowSteamParamsAtFire).
+ * except low steam's floor and the ejector-train faults' params, which have their own substreams
+ * (lowSteamParamsAtFire, vacuumTrainParamsAtFire).
  */
 export function stepDirector(s0: PlantState): { state: PlantState; events: SimEvent[] } {
   const a0 = s0.chaos.active;
@@ -317,10 +328,11 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     nextEventId,
   };
   const state: PlantState = { ...s, seed, chaos: { ...s.chaos, active } };
-  // Low steam must not cost anyone else their tick: run the director again, so its clear (standby on)
-  // is marked and whatever else is due fires this same tick. Terminates: the entry has left the queue.
+  // A timed fault (low steam, an ejector-train fault) must not cost anyone else their tick: run the
+  // director again, so a clear already in place (standby on) is marked and whatever else is due fires
+  // this same tick. Terminates: the entry has left the queue.
   // Disasters keep their pre-Plan-8 behaviour (only another due own-clock event follows this tick).
-  if (kind === 'lowSteam' || dueOwnClock(rest, minute) !== -1) {
+  if (TIMED_FAULTS.includes(kind) || dueOwnClock(rest, minute) !== -1) {
     const more = stepDirector(state);
     return { state: more.state, events: [...events, ...more.events] };
   }

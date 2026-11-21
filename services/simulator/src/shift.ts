@@ -8,6 +8,7 @@ import { drawChaosPlan } from './scenario/draw.js';
 import { loadScenario } from './scenario/engine.js';
 import { scenarioForShift } from './scenario/library.js';
 import { drawLowSteam } from './scenario/lowSteam.js';
+import { drawVacuumTrainFault } from './scenario/vacuumTrain.js';
 import type { Scenario } from './scenario/types.js';
 import { noFaults, type Loop, type PlantState, type SimEvent } from './state.js';
 
@@ -43,8 +44,9 @@ const previousResult = (s: PlantState): { productM3: number; targetM3: number } 
  * Draw the next shift's chaos plan (shift `run.shiftNumber + 1`) and store it as `chaos.pending`.
  * The shift's starting conditions are drawn first, from the same seed sequence, and stored on the
  * plan so the orders quote exactly what the player will get. A disaster, if one is rolled (on its
- * own substream), joins the queue in time order, then low motive steam, if rolled (on another).
- * Advances `seed` (neither of those touches it); called at game creation and at every shift end.
+ * own substream), joins the queue in time order, then low motive steam, if rolled (on another), then
+ * an ejector-train fault, if rolled (on a third). Advances `seed` (none of those touches it); called
+ * at game creation and at every shift end.
  */
 export function drawPendingPlan(s: PlantState): PlantState {
   const shiftNumber = s.run.shiftNumber + 1;
@@ -60,13 +62,15 @@ export function drawPendingPlan(s: PlantState): PlantState {
   });
   const disaster = drawDisaster(s, shiftNumber);
   const lowSteam = drawLowSteam(s, shiftNumber);
+  const vacuumTrain = drawVacuumTrainFault(s, shiftNumber);
   let pending = disaster ? withTimedEntry(drawn, disaster) : drawn;
   if (lowSteam) pending = withTimedEntry(pending, lowSteam);
+  if (vacuumTrain) pending = withTimedEntry(pending, vacuumTrain);
   return { ...s, seed, chaos: { ...s.chaos, pending } };
 }
 
 /**
- * Add `timed` (a disaster or low steam: an event on its own clock) to `plan`'s queue in earliestMinute
+ * Add `timed` (a disaster, low steam or an ejector-train fault: an event on its own clock) to `plan`'s queue in earliestMinute
  * order (the other events keep their order and ids), with the next eventId. The director fires it
  * when its minute comes, wherever it sits.
  */

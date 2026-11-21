@@ -49,6 +49,7 @@ export const KIND_TEXT: Record<string, string> = {
   controllerFault: 'Controller fault', pumpTrip: 'Pump trip', tubeLeak: 'Tube leak', vacuumLoss: 'Vacuum loss', powerDip: 'Power dip',
   storm: 'Storm', sensorFailure: 'Instrument failure',
   fuelContamination: 'Contaminated fuel', earthquake: 'Earthquake', tsunami: 'Tsunami', lowSteam: 'Low motive steam',
+  coolingLoss: 'Condenser cooling loss', airLeak: 'Air leak',
 };
 
 /**
@@ -75,7 +76,7 @@ export const FIX: Record<ScenarioKind, FixEntry> = {
   pumpTrip: { text: 'Start a standby intake pump so two are Running.', hint: 'delay' },
   powerDip: { text: 'Start a standby intake pump so two are Running; recirculation comes back when the dip passes.', hint: 'delay' },
   tubeLeak: { text: `Put Divert on Auto so off-spec water goes to drain, and ${sendCrew('plugTubes')}.`, hint: 'delay', underway: crewOn('plugTubes') },
-  vacuumLoss: { text: `Watch the vacuum and ${sendCrew('repairEjector')}.`, hint: 'delay', underway: crewOn('repairEjector') },
+  vacuumLoss: { text: 'Switch on the standby ejectors, then send the crew to repair the failed ejector.', hint: 'delay', underway: crewOn('repairEjector') },
   storm: { text: `Keep two intake pumps Running and ${sendCrew('cleanScreens')}.`, hint: 'delay', underway: crewOn('cleanScreens') },
   sensorFailure: { text: `Find the reading that makes no sense (its loop is safer in Manual), and ${sendCrew('replaceSensor')}.`, hint: 'delay', underway: crewOn('replaceSensor') },
   fuelContamination: {
@@ -92,6 +93,19 @@ export const FIX: Record<ScenarioKind, FixEntry> = {
   },
   // 8 min: before the vacuum alarm (~14.7 min) and the earliest trip (~20.7 min, 10.0-bar floor) of an unanswered fault.
   lowSteam: { text: 'Switch on the standby steam line on the Stages screen.', hint: 'delay', delayMin: 8, underway: (st) => st.standbySteam === true },
+  // 6 min: by half the earliest trip of an unanswered fault (12 min bound; 20-36 min cooling loss, 15-29 min air leak).
+  coolingLoss: {
+    text: 'Send the crew to clean the condenser cooling water strainer; cut load to slow the vacuum loss meanwhile.',
+    hint: 'delay',
+    delayMin: 6,
+    underway: crewOn('cleanStrainer'),
+  },
+  airLeak: {
+    text: 'Switch on the standby ejectors to hold the vacuum, and send the crew to seal the air leak.',
+    hint: 'delay',
+    delayMin: 6,
+    underway: crewOn('sealLeak'),
+  },
 };
 
 /** How an event ended, as the debrief and the event log say it. */
