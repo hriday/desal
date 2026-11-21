@@ -1,6 +1,7 @@
 import type { PlantEvent, PlantStatus } from '@desal/schema';
 import { alarmContext, alarmsFor, byWorst, faultMonitor, requiredIntakeM3h, salinityLimit, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
 import { DEMO_GAME_ID, demoReadings, demoStatus, demoTarget } from '../src/demo';
+import { RECIRC_SUCTION_MIN_M } from '../src/plantConstants';
 
 // A healthy plant: the demo frame with its two deliberate problems removed.
 const clean = (over: Record<string, number> = {}) =>
@@ -47,6 +48,26 @@ describe('alarmsFor', () => {
   it('stage level covers all 24 stages, the S24 brine pool included', () => {
     expect(level('stageLevel', clean({ 'stages.s24.levelM': 0.66 }))).toBe('bad');
     expect(alarmsFor(demoStatus(), clean({ 'stages.s24.levelM': 0.66 })).find((a) => a.id === 'stageLevel')?.text).toContain('S24');
+  });
+
+  it('brine pool low: S24 at or below 1.5x the recirc suction minimum is warn, at or below the minimum bad', () => {
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 0.3 }))).toBeUndefined();
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 1.5 * RECIRC_SUCTION_MIN_M + 0.001 }))).toBeUndefined();
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 1.5 * RECIRC_SUCTION_MIN_M }))).toBe('warn');
+    expect(level('poolLow', clean({ 'stages.s24.levelM': RECIRC_SUCTION_MIN_M + 0.001 }))).toBe('warn');
+    expect(level('poolLow', clean({ 'stages.s24.levelM': RECIRC_SUCTION_MIN_M }))).toBe('bad');
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 0 }))).toBe('bad');
+    const a = alarmsFor(demoStatus(), clean({ 'stages.s24.levelM': 0.12 })).find((x) => x.id === 'poolLow');
+    expect(a).toMatchObject({ monitor: 'stages', level: 'warn', text: 'Brine pool (S24) level low 0.12 m: raise Makeup' });
+  });
+
+  it('brine pool low watches only S24, and a flooding pool still raises the stage-level alarm', () => {
+    expect(level('poolLow', clean({ 'stages.s23.levelM': 0.05 }))).toBeUndefined();
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 0.66 }))).toBeUndefined();
+    expect(level('stageLevel', clean({ 'stages.s24.levelM': 0.5 }))).toBe('warn');
+    const r = clean();
+    delete r['stages.s24.levelM'];
+    expect(level('poolLow', r)).toBeUndefined();
   });
 
   it('a controller fault on the makeup loop or any level loop opens Stages', () => {

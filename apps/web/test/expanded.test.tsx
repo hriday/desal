@@ -14,6 +14,7 @@ import { ShiftView, shiftAccount } from '../src/expanded/ShiftView';
 import { StagesView } from '../src/expanded/StagesView';
 import type { ExpandedProps } from '../src/expanded/types';
 import { RECIRC_SUCTION_MIN_M } from '../src/plantConstants';
+import { TRIP_FIX } from '../src/expanded/labels';
 
 afterEach(cleanup);
 
@@ -96,7 +97,7 @@ describe('expanded views', () => {
     expect(detailValue(container, 'Brine pool (S24) level')?.textContent).toBe('0.30 m');
   });
 
-  it('StagesView marks the brine pool bad below the recirc pump\'s suction minimum', () => {
+  it('StagesView marks the brine pool low on the brine-pool alarm\'s thresholds', () => {
     const tone = (v: number) => {
       const { container } = render(<StagesView {...sample()} readings={demoReadings({ 'stages.s24.levelM': v })} />);
       const cls = detailValue(container, 'Brine pool (S24) level')!.className;
@@ -104,8 +105,26 @@ describe('expanded views', () => {
       return cls;
     };
     expect(tone(RECIRC_SUCTION_MIN_M - 0.01)).toBe('tone--bad');
-    expect(tone(RECIRC_SUCTION_MIN_M)).not.toBe('tone--bad');
+    expect(tone(RECIRC_SUCTION_MIN_M)).toBe('tone--bad');
+    expect(tone(RECIRC_SUCTION_MIN_M + 0.01)).toBe('tone--warn');
+    expect(tone(1.5 * RECIRC_SUCTION_MIN_M)).toBe('tone--warn');
+    expect(tone(1.5 * RECIRC_SUCTION_MIN_M + 0.01)).toBe('');
     expect(tone(0.3)).toBe('');
+    expect(tone(0.66)).toBe('tone--bad'); // flooding, like any stage
+  });
+
+  it('trip advice sends the player to Makeup when the brine pool (S24) empties or floods', () => {
+    // An empty pool starves the recirc pump and trips on TBT; a full one trips as a stage flood. Only Makeup moves it.
+    expect(TRIP_FIX.tbtHighHigh).toContain('TBT setpoint');
+    expect(TRIP_FIX.tbtHighHigh).toMatch(/recirculation.*Brine pool \(S24\).*raise Makeup/);
+    expect(TRIP_FIX.stageFlood).toMatch(/level valves/);
+    expect(TRIP_FIX.stageFlood).toMatch(/Brine pool \(S24\).*lower Makeup/);
+    expect(TRIP_FIX.noIntakeFlow).toMatch(/Makeup refill the Brine pool \(S24\)/);
+    for (const k of ['tbtHighHigh', 'stageFlood', 'noIntakeFlow']) expect(TRIP_FIX[k]).toMatch(/then press Restart\.$/);
+    // The controls the advice names are on the Stages view under those labels.
+    const { container } = render(<StagesView {...sample()} />);
+    expect(container.textContent).toContain('Makeup setpoint');
+    expect(container.textContent).toContain('Brine pool (S24) level');
   });
 
   it('IntakeView compares intake flow with the required flow for the seawater temperature', () => {

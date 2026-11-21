@@ -10,16 +10,17 @@ import { Trend } from '../controls/Trend';
 import { FlashStages, scaleTint } from '../equipment/FlashStages';
 import { DASH, fmt, get, num, stageKey } from '../equipment/format';
 import { ACID_CLEAN_COST_USD, loopRange } from '../limits';
-import { LEVEL_LOOP_COUNT, RECIRC_SUCTION_MIN_M, RECOVERY_STAGES, STAGE_COUNT, TICK_PLANT_S } from '../plantConstants';
+import { POOL_LOW_BAD_M, POOL_LOW_WARN_M } from '../alarms/rules';
+import { LEVEL_LOOP_COUNT, RECOVERY_STAGES, STAGE_COUNT, TICK_PLANT_S } from '../plantConstants';
 import { Detail, Row, ViewLayout, type Tone } from './Layout';
 import type { ExpandedProps } from './types';
 
 /** A stage level's tone: high levels flood (the stage-level alarm's thresholds). */
 const highLevelTone = (level: number | undefined): Tone =>
   level === undefined ? undefined : level >= 0.65 ? 'bad' : level >= 0.5 ? 'warn' : undefined;
-/** The brine pool's tone: high like any stage, and bad once the recirc pump is losing suction. */
+/** The brine pool's tone: high like any stage, and low on the brine-pool alarm's thresholds (bad once the recirc pump is losing suction). */
 const poolTone = (level: number | undefined): Tone =>
-  level !== undefined && level < RECIRC_SUCTION_MIN_M ? 'bad' : highLevelTone(level);
+  level === undefined ? undefined : level <= POOL_LOW_BAD_M ? 'bad' : level <= POOL_LOW_WARN_M ? 'warn' : highLevelTone(level);
 
 const POOL_KEY = `stages.${stageKey(STAGE_COUNT)}.levelM`;
 
