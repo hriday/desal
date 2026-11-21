@@ -1,6 +1,6 @@
 import type { LoopId } from '@desal/schema';
 import { useState } from 'react';
-import { acidClean, ballCleaning, setpoint, standbySteam } from '../commands';
+import { acidClean, ballCleaning, setpoint, standbyEjectors, standbySteam } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
 import { canSend, pendingCommand, type ControlCtx } from '../controls/ctx';
 import { CrewButton } from '../controls/CrewButton';
@@ -9,7 +9,7 @@ import { LoopModeToggle, Toggle } from '../controls/Toggle';
 import { Trend } from '../controls/Trend';
 import { FlashStages, scaleTint } from '../equipment/FlashStages';
 import { DASH, fmt, get, num, stageKey, usd } from '../equipment/format';
-import { ACID_CLEAN_COST_USD, loopRange, STANDBY_STEAM_COST_USD_PER_H } from '../limits';
+import { ACID_CLEAN_COST_USD, loopRange, STANDBY_EJECTORS_COST_USD_PER_H, STANDBY_STEAM_COST_USD_PER_H } from '../limits';
 import { POOL_LOW_BAD_M, POOL_LOW_WARN_M } from '../alarms/rules';
 import { EJECTOR_FULL_REACH_BAR, LEVEL_LOOP_COUNT, RECOVERY_STAGES, STAGE_COUNT, STEAM_BAD_BAR, TICK_PLANT_S } from '../plantConstants';
 import { Detail, Row, ViewLayout, type Tone } from './Layout';
@@ -105,6 +105,12 @@ export function StagesView(props: ExpandedProps) {
   const affordable = num(bal) && bal >= ACID_CLEAN_COST_USD;
   const cleaning = status?.status === 'acidCleaning';
   const pool = get(readings, POOL_KEY);
+  const lastStage = get(readings, 'vacuum.lastStageMbar');
+  const interc = get(readings, 'vacuum.intercondenserMbar');
+  const coolOut = get(readings, 'vacuum.coolingOutC');
+  const ventAir = get(readings, 'vacuum.ventAirKgH');
+  const seaT = get(readings, 'intake.seawaterTempC');
+  const warnIf = (bad: boolean | undefined): Tone => (bad ? 'warn' : undefined);
   return (
     <ViewLayout
       drawing={<FlashStages {...props} />}
@@ -120,6 +126,11 @@ export function StagesView(props: ExpandedProps) {
           <Row k="Vacuum quality" v={fmt(vac, 2)} tone={vac === undefined ? undefined : vac < 0.7 ? 'bad' : vac < 0.8 ? 'warn' : undefined} />
           <Row k="Motive steam" v={fmt(steam, 1, 'bar')} tone={steam === undefined ? undefined : steam < STEAM_BAD_BAR ? 'bad' : steam < EJECTOR_FULL_REACH_BAR ? 'warn' : undefined} />
           <Row k="Ejector steam valve" v={fmt(num(valve) ? valve : undefined, 0, '%')} />
+          <Row k="Stage 24 pressure" v={fmt(lastStage, 0, 'mbar')} tone={warnIf(lastStage !== undefined && lastStage >= 100)} />
+          <Row k="Intercondenser" v={fmt(interc, 0, 'mbar')} tone={warnIf(interc !== undefined && (interc >= 350 || interc <= 160))} />
+          <Row k="Condenser cooling out" v={fmt(coolOut, 1, '°C')} tone={warnIf(coolOut !== undefined && seaT !== undefined && coolOut >= seaT + 10)} />
+          <Row k="Vent air" v={fmt(ventAir, 0, 'kg/h')} tone={warnIf(ventAir !== undefined && (ventAir >= 18 || ventAir <= 6))} />
+          <p className="ctl__meta">Hot cooling water → strainer. High vent air → air leak. Low intercondenser → failed ejector. Low motive steam → standby steam line.</p>
           <Row k="Ball cleaning" v={ball === true ? 'On' : ball === false ? 'Off' : DASH} />
         </Detail>
       }
@@ -173,7 +184,17 @@ export function StagesView(props: ExpandedProps) {
             note={`${usd(STANDBY_STEAM_COST_USD_PER_H)}/h while on`}
             onChange={(on) => props.send?.(standbySteam(on))}
           />
+          <Toggle
+            label="Standby ejectors"
+            on={typeof status?.standbyEjectors === 'boolean' ? status.standbyEjectors : undefined}
+            pending={pendingCommand(ctl, 'standbyEjectors') !== undefined}
+            disabled={!ok}
+            note={`${usd(STANDBY_EJECTORS_COST_USD_PER_H)}/h while on`}
+            onChange={(on) => props.send?.(standbyEjectors(on))}
+          />
           <CrewButton job="repairEjector" {...ctl} />
+          <CrewButton job="cleanStrainer" {...ctl} />
+          <CrewButton job="sealLeak" {...ctl} />
           {cleaning && (
             <span className="ctl__meta">
               Acid cleaning, {fmt(num(status.acidCleanRemainingTicks) ? (status.acidCleanRemainingTicks * TICK_PLANT_S) / 60 : undefined, 0, 'min')} left

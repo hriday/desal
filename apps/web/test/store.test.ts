@@ -403,6 +403,14 @@ describe('report cards and rank', () => {
     expect(s.pending.size).toBe(0);
   });
 
+  it('standbyEjectors is confirmed by its status field', () => {
+    let s = reducer(server(initialState(), statusMsg()), { type: 'sent', command: { type: 'standbyEjectors', on: true } });
+    s = server(s, statusMsg({ standbyEjectors: false }));
+    expect([...s.pending.keys()]).toEqual(['standbyEjectors']);
+    s = server(s, statusMsg({ standbyEjectors: true }));
+    expect(s.pending.size).toBe(0);
+  });
+
   it('a status stream meeting the divert-hint condition puts the hint on the radio once', () => {
     const MIN = 60_000;
     const drain = { divertMode: 'manual', divertToDrain: true } as const;
