@@ -135,10 +135,11 @@ export function StagesView(props: ExpandedProps) {
               <LoopModeToggle loop="recirc" name="Recirc" {...ctl} />
               <LoopModeToggle loop="blowdown" name="Blowdown" {...ctl} />
               <LoopModeToggle loop="vacuum" name="Vacuum" {...ctl} />
-              <LoopModeToggle loop="makeup" name="Makeup" {...ctl} />
             </div>
           )}
           <LoopSetpoint loop="makeup" name="Makeup" unit="m" step={0.01} digits={2} {...ctl} />
+          {/* An inventory loop: its mode can change in both control modes (and a controller fault on it clears in Manual). */}
+          <LoopModeToggle loop="makeup" name="Makeup" {...ctl} />
           <LevelControls {...ctl} />
           <Toggle
             label="Ball cleaning"

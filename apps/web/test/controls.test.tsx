@@ -286,11 +286,13 @@ describe('StagesView controls', () => {
     expect(sent).toEqual([{ type: 'setOutput', loop: 'makeup', value: 60 }]);
   });
 
-  it('in Manual control mode the makeup loop stays in Auto: a setpoint, no mode toggle', () => {
+  it('in Manual control mode the makeup loop keeps its setpoint and its mode toggle (a controller fault clears in Manual)', () => {
     const { container, sent } = withSend(StagesView, manual());
-    expect(within(container).queryByRole('button', { name: /makeup loop mode/i })).toBeNull();
     enter(container, /makeup setpoint/i, '0.3');
-    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'makeup', value: 0.3 }]);
+    fireEvent.click(within(container).getByRole('button', { name: /makeup loop mode/i }));
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'makeup', value: 0.3 }, { type: 'setLoopMode', loop: 'makeup', mode: 'manual' }]);
+    // The other Stages loops are plant-managed in Manual control mode: no toggles for them.
+    expect(within(container).queryByRole('button', { name: /(recirc|blowdown|vacuum) loop mode/i })).toBeNull();
   });
 
   it('blowdown CF and vacuum use controlFor', () => {

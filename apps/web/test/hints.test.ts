@@ -35,7 +35,7 @@ describe('FIX', () => {
   it('has the three disaster texts verbatim', () => {
     expect(FIX.fuelContamination.text).toBe('Switch to the other fuel, then send the crew to flush it.');
     expect(FIX.earthquake.text).toBe('Everything breaks at once; fix what hurts most first.');
-    expect(FIX.tsunami.text).toBe('When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens.');
+    expect(FIX.tsunami.text).toBe('When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens and run two pumps again.');
   });
   it('gives informational kinds no hint and the earthquake one at once', () => {
     for (const k of ['seawaterTemp', 'gasCurtailNotice', 'gasPriceSpike', 'offgradeOnly', 'deliveryDelay', 'demandChange', 'pumpBearing'] as const) {
@@ -75,6 +75,9 @@ describe('dueHints', () => {
     expect(dueHints(ev, at(30, { fuel: { ...status().fuel, changeoverTo: 'backup' } }), none)).toEqual([]);
     expect(dueHints(ev, at(30, { crew: { job: 'flushFuel', remainingTicks: 5 } }), none)).toEqual([]);
     expect(dueHints(ev, at(30), none)).toHaveLength(1);
+  });
+  it('a screen clean does not hold back the tsunami hint (the status cannot tell whether the surge has passed)', () => {
+    expect(dueHints([fired('tsunami')], at(20, { crew: { job: 'cleanScreens', remainingTicks: 10 } }), none)).toHaveLength(1);
   });
   it('gives no hint for a cleared event', () => {
     expect(dueHints([...leak, cleared('tubeLeak')], at(30), none)).toEqual([]);

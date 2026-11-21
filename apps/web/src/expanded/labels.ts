@@ -66,7 +66,7 @@ export const FIX: Record<ScenarioKind, FixEntry> = {
   gasPriceSpike: { text: 'Think about switching the Burner fuel to Backup while gas is dear.', hint: 'none' },
   offgradeOnly: { text: 'Order only the backup fuel you need: off-grade is all that is on offer.', hint: 'none' },
   deliveryDelay: { text: 'Watch the Backup tank and order fuel early.', hint: 'none' },
-  demandChange: { text: 'Check the new Water target and set the TBT setpoint to meet it.', hint: 'none' },
+  demandChange: { text: 'Check the new target in the shift orders and adjust the TBT to meet it.', hint: 'none' },
   controllerFault: { text: 'Put the faulty loop in Manual and set its output by hand.', hint: 'delay' },
   pumpTrip: { text: 'Start a standby intake pump so two are Running.', hint: 'delay' },
   powerDip: { text: 'Start a standby intake pump so two are Running; recirculation comes back when the dip passes.', hint: 'delay' },
@@ -80,10 +80,11 @@ export const FIX: Record<ScenarioKind, FixEntry> = {
     underway: (st) => st.fuel.changeoverTo !== null || st.crew?.job === 'flushFuel',
   },
   earthquake: { text: 'Everything breaks at once; fix what hurts most first.', hint: 'atOnce' },
+  // No under-way check: the status does not say whether the surge has passed, and a screen clean
+  // started during the surge does not count towards clearing it.
   tsunami: {
-    text: 'When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens.',
+    text: 'When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens and run two pumps again.',
     hint: 'delay',
-    underway: crewOn('cleanScreens'),
   },
 };
 
