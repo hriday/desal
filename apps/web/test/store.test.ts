@@ -410,7 +410,7 @@ describe('report cards and rank', () => {
     for (let m = 0; m <= 5; m++) s = server(s, { t: 'frame', tick: m, plantTime: m * MIN, readings: { 'product.salinityPpm': 10 } });
     s = server(s, statusMsg({ plantTime: 5 * MIN, ...drain }));
     expect(s.radio.current).toMatchObject({ text: "Hint: Product's back in spec — send it to the tank.", monitor: 'product', kind: null, eventId: 0 });
-    expect(s.hinted.has('1:divert:0')).toBe(true);
+    expect(s.hinted.has('1:divert:start')).toBe(true);
     s = reducer(s, { type: 'radioExpire' });
     s = server(s, statusMsg({ plantTime: 6 * MIN, ...drain }));
     s = server(s, statusMsg({ plantTime: 7 * MIN, ...drain }));

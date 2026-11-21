@@ -115,7 +115,7 @@ describe('divertHint', () => {
   it('is due once the product has been in spec for 5 plant minutes, not before', () => {
     expect(DIVERT_HINT_MIN).toBe(5);
     expect(divertHint(manualDrain(), [{ t: T, v: 10 }, { t: T + 4.9 * MIN, v: 10 }], none)).toBeNull();
-    expect(divertHint(manualDrain(), [{ t: T, v: 10 }, { t: T + 5 * MIN, v: 10 }], none)).toEqual({ key: `1:divert:${T}`, text: TEXT });
+    expect(divertHint(manualDrain(), [{ t: T, v: 10 }, { t: T + 5 * MIN, v: 10 }], none)).toEqual({ key: '1:divert:start', text: TEXT });
   });
   it('uses the shift target limit', () => {
     const st = manualDrain({ shiftTarget: { productM3: 1, maxSalinityPpm: 8 } as PlantStatus['shiftTarget'] });
@@ -137,7 +137,22 @@ describe('divertHint', () => {
     const pts = [...run(0, 3, 10), { t: T + 4 * MIN, v: 30 }, ...run(5, 9, 10)];
     expect(divertHint(manualDrain(), pts, none)).toBeNull(); // only 4 min since the spike
     const more = [...pts, ...run(10, 11, 10)];
-    expect(divertHint(manualDrain(), more, none)).toEqual({ key: `1:divert:${T + 5 * MIN}`, text: TEXT });
+    expect(divertHint(manualDrain(), more, none)).toEqual({ key: `1:divert:${T + 4 * MIN}`, text: TEXT });
+  });
+  it('keeps the same key as the trend window slides, so it is not re-pushed once hinted', () => {
+    const full = run(0, 20, 10);
+    const h = divertHint(manualDrain(), full, none)!;
+    expect(h.key).toBe('1:divert:start');
+    const slid = full.slice(7);
+    const again = divertHint(manualDrain(), slid, none)!;
+    expect(again.key).toBe(h.key);
+    expect(divertHint(manualDrain(), slid, new Set([h.key]))).toBeNull();
+  });
+  it('an off-spec point then a new in-spec stretch gives a new key', () => {
+    const h1 = divertHint(manualDrain(), run(0, 6, 10), none)!;
+    const h2 = divertHint(manualDrain(), [...run(0, 6, 10), { t: T + 7 * MIN, v: 30 }, ...run(8, 14, 10)], new Set([h1.key]))!;
+    expect(h2.key).toBe(`1:divert:${T + 7 * MIN}`);
+    expect(h2.key).not.toBe(h1.key);
   });
   it('shows once per stretch: a key already hinted gives null', () => {
     const pts = run(0, 6, 10);

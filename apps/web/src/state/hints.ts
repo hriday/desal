@@ -46,16 +46,20 @@ export function divertHint(status: PlantStatus, salinity: TrendPoint[] | undefin
   if (!salinity || salinity.length === 0) return null;
   const limit = salinityLimit(status.shiftTarget);
   let since = salinity[0]!.t;
+  // The key names the last off-spec point (or 'start'), not `since`, so it stays put as the trend window slides.
+  // `hinted` and the trends live in memory only, so a reload can repeat the hint once.
+  let lastOff = 'start';
   for (let i = salinity.length - 1; i >= 0; i--) {
     if (salinity[i]!.v > limit) {
       const next = salinity[i + 1];
       if (!next) return null; // off-spec right now
       since = next.t;
+      lastOff = String(salinity[i]!.t);
       break;
     }
   }
   if (salinity[salinity.length - 1]!.t - since < DIVERT_HINT_MIN * 60_000) return null;
-  const key = `${status.shiftId}:divert:${since}`;
+  const key = `${status.shiftId}:divert:${lastOff}`;
   if (hinted.has(key)) return null;
   return { key, text: "Hint: Product's back in spec — send it to the tank." };
 }
