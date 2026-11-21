@@ -24,23 +24,25 @@ Both items came from the user playing the live game:
    - The event clears when the standby line is on, or when the fault ends.
    - The fault ends by itself only at the end of the shift. Turning the standby line off while the fault is active
      brings the sag back.
-   - No cost for the standby line (YAGNI).
+   - The standby line costs **$150 per plant hour while it is on** (user decision, 2026-11-21; it was free at first).
 3. **Auto divert.**
    - A divert mode `auto | manual`, **auto by default**.
    - **Auto** diverts while salinity > limit, and returns to the tank once salinity < **0.9 × limit**. The gap between
      the two thresholds keeps it from flipping back and forth.
    - **Manual** is today's latch. Pressing the divert toggle selects Manual.
+   - Every shift starts with divert back on Auto (user decision, 2026-11-21), so a Manual latch never outlives its shift.
    - The product screen shows the mode and the direction: "Auto — to tank", "Auto — diverting", or "Manual — …".
 4. **Salinity lag.**
    - Product salinity lags toward the computed value.
    - Rising: **60 s** time constant.
    - Falling: **300 s** time constant, about 15 plant minutes to settle.
 5. **Hint** (Normal mode only, alongside the existing Plan 7 radio hints): when divert is Manual and on, and salinity
-   has been under the limit for 5 plant minutes, the radio says "Product's back in spec — send it to the tank."
+   has been under the limit for 5 plant minutes, the radio says "Product's back in spec — put Divert back on Auto."
 
 ## Non-goals
 - No steam boiler model.
-- No cost or fuel use for the standby line.
+- No fuel use for the standby line. (No running cost was the first plan; on 2026-11-21 the user chose a $150 per
+  plant hour running cost while the line is on.)
 - No change to how in-spec water is counted, beyond the routing decided above.
 
 ## Constraints

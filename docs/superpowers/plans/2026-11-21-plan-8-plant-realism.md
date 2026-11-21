@@ -29,7 +29,8 @@
   - `LOW_STEAM_SALT = 0x57ea3`. The planned minute is drawn from `LOW_STEAM_MINUTE = [60, 360]`.
   - At most one per shift. Never in shift 1.
 - **Clearing:** `lowSteam` clears with `how: 'player'` when `steam.standby` is on, or when `faults.lowSteam` is null. `startShift` resets the faults (`noFaults()`), which is "the fault ends at the end of the shift". The plant does not step during handover.
-- **Shift start (ruling):** `startShift` also resets `steam` to `{ motiveBar: 14.5, standby: false }`, so the oncoming crew puts the standby line back on standby. Without this, a free switch left on would make the fault impossible after the first time.
+- **Shift start (ruling):** `startShift` also resets `steam` to `{ motiveBar: 14.5, standby: false }`, so the oncoming crew puts the standby line back on standby. Without this, a switch left on would make the fault impossible after the first time. It also resets `product.divertMode` to `'auto'` (user decision, 2026-11-21); the valve follows Auto's next decision.
+- **Standby running cost (user decision, 2026-11-21):** `STANDBY_STEAM_COST_USD_PER_H = 150`, spent on each running tick the line is on and reported like the standing cost, as one hourly `accountChange` with cause `standbySteam` carrying that hour's on-time total (`steam.unbilledTicks` counts the ticks not yet reported). Nothing while it is off.
 - **Salinity lag:** `SALINITY_RISE_TAU_S = 60`, `SALINITY_FALL_TAU_S = 300`. It is an exact first-order lag, `x + (target − x)(1 − e^(−dt/τ))`, with τ chosen by `target > x`.
 - **Auto divert:**
   - It diverts when the lagged salinity is > limit.
@@ -55,13 +56,13 @@
   - The game seed sequence, every other queued event (kind, params, eventId, earliestMinute) and the other events' fire timing stay unchanged.
   - `test/fixtures/pending-plan-seed3.json` must pass unmodified. Shift 1 never draws lowSteam.
 - **Hints (web, Normal only):**
-  - The lowSteam FIX: `{ text: 'Switch on the standby steam line on the Stages screen.', hint: 'delay', underway: (st) => st.standbySteam === true }`.
-  - Divert hint: when `divertMode === 'manual'` and `divertToDrain` is on, and salinity has been below the limit for `DIVERT_HINT_MIN = 5` plant minutes, the radio says `Hint: Product's back in spec — send it to the tank.` The `Hint: ` prefix is the Plan 7 radio convention. The hint shows once per in-spec stretch, on the Product monitor.
+  - The lowSteam FIX: `{ text: 'Switch on the standby steam line on the Stages screen.', hint: 'delay', delayMin: 8, underway: (st) => st.standbySteam === true }` (`delayMin` is a per-kind override of `HINT_DELAY_MIN`; 8 plant minutes lands before the earliest 20.7-minute trip).
+  - Divert hint: when `divertMode === 'manual'` and `divertToDrain` is on, and salinity has been below the limit for `DIVERT_HINT_MIN = 5` plant minutes, the radio says `Hint: Product's back in spec — put Divert back on Auto.` The `Hint: ` prefix is the Plan 7 radio convention. The hint shows once per in-spec stretch, on the Product monitor.
 - **Labels:**
   - The vacuum loop's output reads **"Ejector steam valve"** (%).
   - The switch is **"Standby steam line"**.
   - The steam row is **"Motive steam"**, in bar to 1 decimal: `warn` below 13, `bad` below 11.
-  - KIND_TEXT: `lowSteam: 'Low motive steam'`. Leaderboard: `'low steam'`.
+  - KIND_TEXT: `lowSteam: 'Low motive steam'`. Leaderboard: `'low-steam fault'`.
 - **Flink:**
   - `Rules`: `lowSteam` is graded. It is responded to when `StatusView.standbySteam` is true.
   - `LeaderboardSql.GRADED_KINDS` gains `'lowSteam'`.
@@ -331,13 +332,13 @@
     - `since` is the `t` of the first point after the last point with `v > salinityLimit(status.shiftTarget)`, or the first point's `t` if none.
     - It is due when `last.t − since ≥ DIVERT_HINT_MIN × 60_000`.
     - The key is `${shiftId}:divert:${since}`, and the hint is skipped if that key is in `hinted`.
-    - The text is exactly `Hint: Product's back in spec — send it to the tank.`
+    - The text is exactly `Hint: Product's back in spec — put Divert back on Auto.`
   - `radio.ts`:
     - `RadioMsg.kind: ScenarioKind | null`;
     - the push action takes `kind: ScenarioKind | null` and an optional `monitor?: MonitorId`, used in place of `monitorFor`;
     - a null kind requires `monitor`.
   - `withHints` also pushes `divertHint(...)` with `monitor: 'product'`, `eventId: 0` and `kind: null`, and records its key in `hinted`.
-  - `labels.ts`: `FIX.tubeLeak.text` becomes `` `Leave Divert on Auto so off-spec water goes to drain, and ${sendCrew('plugTubes')}.` ``
+  - `labels.ts`: `FIX.tubeLeak.text` becomes `` `Put Divert on Auto so off-spec water goes to drain, and ${sendCrew('plugTubes')}.` ``
   - `plantConstants.ts`: `EJECTOR_FULL_REACH_BAR = 13` and `STEAM_BAD_BAR = 11`, for the row tones.
 
 - [ ] **Step 1: Write failing tests**

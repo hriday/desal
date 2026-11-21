@@ -132,7 +132,14 @@ To start a job with no state at all, cancel it in the UI (or `docker exec desal-
 remove its lines from `/flink-data/savepoints/last.txt` and from `/flink-data/jobs.txt` (a cancelled job's checkpoints
 are retained, and `submit-all` would otherwise restore from them), and run `submit-all`.
 
-A redeploy that changes the snapshot version (it is 6 since call signs and runIds) migrates v3, v4 and v5 saves, so their games resume; saves older than v3 are skipped, so such games in flight at that deploy end.
+A redeploy that changes the snapshot version (it is 7 since Plan 8's divert mode, motive steam and standby line) migrates v3 to v6 saves, so their games resume; saves older than v3 are skipped, so such games in flight at that deploy end.
+
+**Plan 8 (plant realism) deploy notes.**
+
+- Browser tabs left open across this deploy need a reload: their bundled schema has a strict `ScenarioKindSchema` that
+  rejects the new `lowSteam` kind (and the new `standbySteam` account cause), so an old tab drops those messages.
+- Rolling the simulator back past this version (snapshot v7) rejects every version-7 save, so every live game ends
+  on the rollback. Roll back only if that is acceptable.
 
 **One-off, after the first deploy of this version:** `plant.state` may still hold single-career (v1) records from before
 games existed. The simulator's `loadGames` skips records it does not recognise, so this is harmless. Also run once on
