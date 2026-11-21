@@ -29,7 +29,7 @@ class ReportCardJobTest {
         uids.add(node.getTransformationUID());
       }
     }
-    assertTrue(uids.containsAll(Set.of("plant-events-source", "plant-status-source", "report-card")), uids.toString());
+    assertTrue(uids.containsAll(Set.of("plant-events-source", "plant-status-source", "report-card", "shift-reports-sink", "run-results-sink")), uids.toString());
     assertEquals(1, env.getParallelism());
     assertEquals(ReportCardJob.CHECKPOINT_EVERY_MS, env.getCheckpointConfig().getCheckpointInterval());
   }

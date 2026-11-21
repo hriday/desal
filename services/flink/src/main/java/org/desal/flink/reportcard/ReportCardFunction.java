@@ -44,6 +44,9 @@ public class ReportCardFunction extends KeyedCoProcessFunction<String, Input, In
   /** A game's state is dropped after a week without records (a game that vanished without gameEnd). */
   public static final Duration STATE_TTL = Duration.ofDays(7);
 
+  /** How long a shiftEnd or gameEnd waits for status to catch up before it is finished anyway. */
+  public static final long PENDING_END_TIMEOUT_MS = 15_000;
+
   /** One shift report and the game it belongs to (the Kafka key of {@code shift.reports}). */
   public static class ShiftReportOut {
     public String gameId;
@@ -85,25 +88,31 @@ public class ReportCardFunction extends KeyedCoProcessFunction<String, Input, In
       return; // host events are not part of the game's seq order and never move its marks
     }
     GameState g = load();
-    if (g.ended) {
-      return;
+    if (g.ended || g.pendingGameEnd != null) {
+      return; // nothing follows a gameEnd; only its catching-up statuses still count
     }
     int epoch = e.path("epoch").asInt();
     long seq = e.path("seq").asLong();
     long tick = e.path("tick").asLong();
+    String type = e.path("type").asText();
     if (epoch < g.epoch) {
       return;
     }
     if (epoch > g.epoch) {
-      // Every tick that emits an event is snapshotted, so the first event of a new epoch comes
-      // after the snapshot tick: the snapshot is at tick - 1 at the latest.
-      rewind(g, epoch, tick - 1);
+      // Every tick that emits an event is snapshotted, so the first event of a new epoch normally
+      // comes after the snapshot tick: the snapshot is at tick - 1 at the latest. commandRejected
+      // is the exception: a paused game emits it without stepping, at the snapshot tick itself.
+      rewind(g, epoch, "commandRejected".equals(type) ? tick : tick - 1, ctx, out);
+      if (g.ended) {
+        game.update(g);
+        return;
+      }
     } else if (seq <= g.lastSeq) {
       return;
     }
     g.lastSeq = seq;
 
-    switch (e.path("type").asText()) {
+    switch (type) {
       case "gameStart":
         g.callSign = text(e, "callSign", g.callSign);
         g.mode = text(e, "mode", "normal");
@@ -125,17 +134,25 @@ public class ReportCardFunction extends KeyedCoProcessFunction<String, Input, In
       case "shiftEnd":
         g.runId = text(e, "runId", g.runId);
         // A shift whose shiftStart the job never saw (it started reading mid-shift) gets no report.
-        if (g.shift != null) {
-          ShiftReport report = g.shift.finish(e.path("summary"), g.history, g.mode);
-          report.epoch = g.epoch;
-          out.collect(new ShiftReportOut(ctx.getCurrentKey(), report));
-          g.history.add(report.self);
-          fold(g, report.events);
+        if (g.shift != null && g.shift.shiftId == e.path("shiftId").asInt()) {
+          if (g.pendingShiftEnd != null) {
+            finishShift(g, ctx.getCurrentKey(), out); // one pending shift at a time
+          }
+          // Hold the end until status reaches its tick (see holdEnd). The next shift may start
+          // meanwhile, so the ending shift keeps its own tracker.
+          g.ending = g.shift;
           g.shift = null;
+          g.pendingShiftEnd = holdEnd(in, epoch, tick, ctx);
+          if (g.lastStatusTick >= tick) {
+            finishShift(g, ctx.getCurrentKey(), out);
+          }
         }
         break;
       case "gameEnd":
-        endGame(g, e, in.timestamp, ctx);
+        g.pendingGameEnd = holdEnd(in, epoch, tick, ctx);
+        if (g.lastStatusTick >= tick) {
+          finishGame(g, ctx, out);
+        }
         break;
       default:
         break;
@@ -155,7 +172,11 @@ public class ReportCardFunction extends KeyedCoProcessFunction<String, Input, In
     if (s.epoch > g.epoch) {
       // A running game's first status after a restore is the tick after the snapshot; a paused or
       // handover game re-sends status stamped at the snapshot tick itself.
-      rewind(g, s.epoch, "running".equals(s.phase) ? s.tick - 1 : s.tick);
+      rewind(g, s.epoch, "running".equals(s.phase) ? s.tick - 1 : s.tick, ctx, out);
+      if (g.ended) {
+        game.update(g);
+        return;
+      }
     } else if (s.tick < g.lastStatusTick) {
       return;
     }
@@ -166,8 +187,32 @@ public class ReportCardFunction extends KeyedCoProcessFunction<String, Input, In
       g.mode = s.mode;
     }
     g.lastStatus = s;
-    if (g.shift != null) {
-      g.shift.onStatus(s);
+    // A status up to a pending shiftEnd's tick still belongs to the shift it ends.
+    if (g.pendingShiftEnd != null && s.tick <= g.pendingShiftEnd.tick) {
+      feed(g.ending, s);
+    }
+    feed(g.shift, s);
+    if (g.pendingShiftEnd != null && s.tick >= g.pendingShiftEnd.tick) {
+      finishShift(g, ctx.getCurrentKey(), out);
+    }
+    if (g.pendingGameEnd != null && s.tick >= g.pendingGameEnd.tick) {
+      finishGame(g, ctx, out);
+    }
+    game.update(g);
+  }
+
+  /** The fallback for an end record whose status never caught up: finish with what the job has. */
+  @Override
+  public void onTimer(long timestamp, OnTimerContext ctx, Collector<ShiftReportOut> out) throws Exception {
+    GameState g = game.value();
+    if (g == null) {
+      return;
+    }
+    if (g.pendingShiftEnd != null && g.pendingShiftEnd.deadline <= timestamp) {
+      finishShift(g, ctx.getCurrentKey(), out);
+    }
+    if (g.pendingGameEnd != null && g.pendingGameEnd.deadline <= timestamp) {
+      finishGame(g, ctx, out);
     }
     game.update(g);
   }
@@ -178,13 +223,87 @@ public class ReportCardFunction extends KeyedCoProcessFunction<String, Input, In
   }
 
   /**
-   * The game was restored from the snapshot taken at {@code snapshotTick}: the new epoch replays
-   * everything after it, so forget that and reset the marks.
+   * Holds an end record until a status of its epoch with a tick at or after it has been applied.
+   * The two inputs are read independently: while the job catches up a backlog (after a restore or
+   * a redeploy), the sparse events input runs far ahead of status, and finishing a shift on its
+   * shiftEnd would drop the statuses still to come (responses missed, pace hours lost).
+   *
+   * <p>Processing-time timer (first use): {@code registerProcessingTimeTimer(t)} makes Flink call
+   * {@link #onTimer} for this key once the machine's clock reaches {@code t}. Timers are kept with
+   * the keyed state, checkpoints included. This one is the fallback: if no such status arrives
+   * within {@link #PENDING_END_TIMEOUT_MS}, the end is finished with what the job has.
    */
-  private static void rewind(GameState g, int epoch, long snapshotTick) {
+  private static GameState.PendingEnd holdEnd(Input in, int epoch, long tick, Context ctx) {
+    GameState.PendingEnd p = new GameState.PendingEnd();
+    p.json = in.json;
+    p.epoch = epoch;
+    p.tick = tick;
+    p.timestamp = in.timestamp;
+    p.deadline = ctx.timerService().currentProcessingTime() + PENDING_END_TIMEOUT_MS;
+    ctx.timerService().registerProcessingTimeTimer(p.deadline);
+    return p;
+  }
+
+  /** Emits the pending shift's report and adds it to the run (once per held shiftEnd). */
+  private static void finishShift(GameState g, String gameId, Collector<ShiftReportOut> out) throws Exception {
+    JsonNode e = Json.MAPPER.readTree(g.pendingShiftEnd.json);
+    ShiftReport report = g.ending.finish(e.path("summary"), g.history, g.mode);
+    report.epoch = g.pendingShiftEnd.epoch;
+    out.collect(new ShiftReportOut(gameId, report));
+    g.history.add(report.self);
+    fold(g, report.events);
+    g.ending = null;
+    g.pendingShiftEnd = null;
+  }
+
+  /** Finishes a pending shiftEnd first (it came before the gameEnd), then ends the game. */
+  private static void finishGame(GameState g, Context ctx, Collector<ShiftReportOut> out) throws Exception {
+    if (g.pendingShiftEnd != null) {
+      finishShift(g, ctx.getCurrentKey(), out);
+    }
+    GameState.PendingEnd p = g.pendingGameEnd;
+    g.pendingGameEnd = null;
+    endGame(g, Json.MAPPER.readTree(p.json), p.timestamp, ctx);
+  }
+
+  /** Feeds a status to a tracker, unless it belongs to another shift. */
+  private static void feed(ShiftTracker t, StatusView s) {
+    if (t != null && (s.shiftId == null || s.shiftId == t.shiftId)) {
+      t.onStatus(s);
+    }
+  }
+
+  /**
+   * The game was restored from the snapshot taken at {@code snapshotTick}: the new epoch replays
+   * everything after it, so forget that and reset the marks. A pending end at or before the
+   * snapshot is in it and is not replayed, so it is finished now. One after it will be replayed by
+   * the new epoch, so it is dropped and its shift reopened (the newer epoch's records win, spec
+   * §4.3). A shift that started after the snapshot starts again, so its tracker is dropped.
+   */
+  private static void rewind(GameState g, int epoch, long snapshotTick, Context ctx, Collector<ShiftReportOut> out)
+      throws Exception {
+    if (g.pendingShiftEnd != null) {
+      if (g.pendingShiftEnd.tick <= snapshotTick) {
+        finishShift(g, ctx.getCurrentKey(), out);
+      } else {
+        g.shift = g.ending;
+        g.ending = null;
+        g.pendingShiftEnd = null;
+      }
+    }
+    if (g.pendingGameEnd != null) {
+      if (g.pendingGameEnd.tick <= snapshotTick) {
+        finishGame(g, ctx, out);
+        return;
+      }
+      g.pendingGameEnd = null;
+    }
     g.epoch = epoch;
     g.lastSeq = -1;
     g.lastStatusTick = Math.min(g.lastStatusTick, snapshotTick);
+    if (g.shift != null && g.shift.startTick > snapshotTick) {
+      g.shift = null;
+    }
     if (g.shift != null) {
       g.shift.rewindTo(snapshotTick);
     }
@@ -192,6 +311,7 @@ public class ReportCardFunction extends KeyedCoProcessFunction<String, Input, In
       g.lastStatus = null;
     }
   }
+
 
   /**
    * Adds one shift's events to the run's per-kind stats. Only graded kinds count, plus earthquake,

@@ -70,6 +70,29 @@ class ShiftTrackerTest {
     assertEquals("fixed by crew", e.outcome);
   }
 
+  @Test
+  void anEarlierStatusResponseReplacesTheClearTickWhenTheClearIsReadFirst() {
+    ShiftTracker t = tracker();
+    t.onScenario(1, "pumpTrip", 1000, null);
+    t.onCleared(1, "player", 1010);
+    t.onStatus(status(1003).pumps(1).view());
+    t.onStatus(status(1006).pumps(2).view());
+    t.onStatus(status(1012).pumps(2).view());
+    assertEquals(4.0, only(t).responseMinutes, EPS);
+  }
+
+  @Test
+  void aCrewDispatchBeforeTheClearCreditsTheEventWhenTheClearIsReadFirst() {
+    ShiftTracker t = tracker();
+    t.onScenario(1, "tubeLeak", 1000, null);
+    t.onCleared(1, "crew", 1120);
+    t.onStatus(status(1001).view());
+    t.onStatus(status(1030).crew("plugTubes", 90).view());
+    EventLine e = only(t);
+    assertEquals(20.0, e.responseMinutes, EPS);
+    assertEquals(80.0, e.clearMinutes, EPS);
+  }
+
   // (d)
   @Test
   void bloomRespondedWhenTheDoseRisesAboveTheDoseAtFiring() {

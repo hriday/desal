@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -97,6 +96,7 @@ class ReportCardFunctionTest {
     ObjectNode end = shiftEnd(0, SHIFT2_END, 2, 4163.88);
     send(end, 3);
     send(end, 4);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
     List<ShiftReport> reports = reports();
     assertEquals(1, reports.size());
     assertEquals("quick", reports.get(0).events.get(0).verdict);
@@ -125,6 +125,7 @@ class ReportCardFunctionTest {
       }
     }
     send(shiftEnd(1, SHIFT2_END, 2, 4163.88), 1);
+    status(1, SHIFT2_END, "handover", 2, 4163.88, 2);
 
     List<ShiftReport> reports = reports();
     assertEquals(1, reports.size());
@@ -160,6 +161,7 @@ class ReportCardFunctionTest {
       status(1, t, "running", 2, 0, t == 1003 ? 2 : 1);
     }
     send(shiftEnd(1, SHIFT2_END, 2, 4163.88), 1);
+    status(1, SHIFT2_END, "handover", 2, 4163.88, 2);
     ShiftReport r = reports().get(0);
     assertEquals(1, r.events.size());
     assertEquals(2.0, r.events.get(0).responseMinutes, EPS);
@@ -178,6 +180,7 @@ class ReportCardFunctionTest {
     host.set("score", score(0, 0));
     send(host, 1);
     send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 2);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
     assertEquals(1, reports().size());
     assertEquals(0, reports().get(0).epoch);
     assertTrue(runResults().isEmpty());
@@ -191,6 +194,7 @@ class ReportCardFunctionTest {
     send(scenario(0, 100, 1, 1, "pumpTrip"), 1);
     status(0, 101, "running", 1, 10, 1);
     send(shiftEnd(0, 720, 1, 3000), 1);
+    status(0, 720, "handover", 1, 3000, 2);
     // Shift 2: answered in 4 minutes (quick).
     shift2WithAPumpTrip();
     // Shift 3: a tube leak is still open when the game ends.
@@ -205,6 +209,7 @@ class ReportCardFunctionTest {
     send(end, 1_790_000_000_000L);
     // After gameEnd, records are ignored.
     send(shiftEnd(0, 2160, 3, 1), 1_790_000_000_001L);
+    status(0, 1510, "over", 3, 0, 0);
 
     List<ShiftReport> reports = reports();
     assertEquals(2, reports.size());
@@ -249,6 +254,7 @@ class ReportCardFunctionTest {
     end.put("reason", "quit");
     end.set("score", score(1, 4163.88));
     send(end, 5);
+    status(0, SHIFT2_END, "over", 2, 4163.88, 2);
 
     ShiftReport r = reports().get(0);
     assertEquals("hard", r.mode);
@@ -273,10 +279,82 @@ class ReportCardFunctionTest {
   }
 
   @Test
+  void eventsAheadOfStatusWaitForTheShiftsStatuses() throws Exception {
+    // Catching up a backlog: the whole shift's events (and the next shift's start) are read
+    // before any of its statuses.
+    gameStart(0, null);
+    shiftStart(0, SHIFT2_START, 2);
+    send(scenario(0, 1000, 2, 1, "pumpTrip"), 1);
+    send(cleared(0, 1010, 2, 1, "pumpTrip", "player"), 1);
+    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    shiftStart(0, SHIFT2_END + 1, 3);
+    assertTrue(reports().isEmpty());
+    for (long t = SHIFT2_START; t <= SHIFT2_END; t++) {
+      status(0, t, "running", 2, (t - 720) * 5.0, t >= 1000 && t < 1006 ? 1 : 2);
+    }
+    List<ShiftReport> reports = reports();
+    assertEquals(1, reports.size());
+    ShiftReport r = reports.get(0);
+    assertEquals(2, r.shiftId);
+    assertEquals(4.0, r.events.get(0).responseMinutes, EPS);
+    assertEquals("quick", r.events.get(0).verdict);
+    assertEquals(8, r.pace.size());
+    for (int h = 1; h <= 7; h++) {
+      assertEquals(90.0 * h * 5, pace(r, h), EPS);
+    }
+  }
+
+  @Test
+  void aShiftEndWithNoStatusIsFinishedAfterTheTimeout() throws Exception {
+    gameStart(0, null);
+    shiftStart(0, SHIFT2_START, 2);
+    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    harness.setProcessingTime(ReportCardFunction.PENDING_END_TIMEOUT_MS - 1);
+    assertTrue(reports().isEmpty());
+    harness.setProcessingTime(ReportCardFunction.PENDING_END_TIMEOUT_MS);
+    assertEquals(1, reports().size());
+    assertEquals(4163.88, reports().get(0).productM3, EPS);
+  }
+
+  @Test
+  void aGameEndWithNoStatusIsFinishedAfterTheTimeout() throws Exception {
+    gameStart(0, null);
+    shiftStart(0, SHIFT2_START, 2);
+    send(scenario(0, 1000, 2, 1, "tubeLeak"), 1);
+    ObjectNode end = event(0, 1100, "gameEnd");
+    end.put("callSign", "Kestrel-42");
+    end.put("runId", RUN);
+    end.put("reason", "quit");
+    end.set("score", score(1, 4000));
+    send(end, 77);
+    harness.setProcessingTime(ReportCardFunction.PENDING_END_TIMEOUT_MS - 1);
+    assertTrue(runResults().isEmpty());
+    harness.setProcessingTime(ReportCardFunction.PENDING_END_TIMEOUT_MS);
+    List<RunResult> results = runResults();
+    assertEquals(1, results.size());
+    assertEquals(77, results.get(0).endedAt);
+    assertEquals(1, kind(results.get(0), "tubeLeak").count);
+    assertTrue(reports().isEmpty());
+  }
+
+  @Test
+  void aDuplicateShiftEndWhilePendingGivesOneReport() throws Exception {
+    gameStart(0, null);
+    shiftStart(0, SHIFT2_START, 2);
+    ObjectNode end = shiftEnd(0, SHIFT2_END, 2, 4163.88);
+    send(end, 1);
+    send(end, 2);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
+    harness.setProcessingTime(ReportCardFunction.PENDING_END_TIMEOUT_MS * 2);
+    assertEquals(1, reports().size());
+  }
+
+  @Test
   void aGameStartWithoutModeIsNormal() throws Exception {
     gameStart(0, null);
     shiftStart(0, SHIFT2_START, 2);
     send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
     assertEquals("normal", reports().get(0).mode);
   }
 
@@ -320,6 +398,7 @@ class ReportCardFunctionTest {
     status(0, 1006, "running", 2, 2020, 2);
     send(cleared(0, 1010, 2, 1, "pumpTrip", "player"), 1);
     send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
   }
 
   // --- record builders ----------------------------------------------------------------------
@@ -421,9 +500,9 @@ class ReportCardFunctionTest {
     s.put("mode", "normal");
     s.put("phase", phase);
     s.put("status", "online");
-    ArrayNode p = s.putArray("pumps");
+    ObjectNode p = s.putObject("pumps"); // PlantStatus.pumps: a record keyed by pump id
     for (int i = 0; i < 3; i++) {
-      p.addObject().put("id", "P-10" + (i + 1)).put("running", i < pumps);
+      p.putObject("P-10" + (i + 1)).put("running", i < pumps).put("overhaulRemainingTicks", 0);
     }
     s.putObject("loops");
     s.putObject("doses").put("chlorineMgL", 2.0);

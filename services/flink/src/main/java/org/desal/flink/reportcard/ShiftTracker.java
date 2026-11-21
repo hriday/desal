@@ -16,7 +16,9 @@ import org.desal.flink.model.ShiftReport;
  *
  * <p>Response rule: a status counts only if its tick is later than the firing tick. An
  * eventCleared with how player or crew and no response yet credits the clear tick (this is how
- * fuelContamination and tsunami are graded).
+ * fuelContamination and tsunami are graded). Events and status are read independently, so the
+ * clear can be read before the statuses leading up to it: a response status earlier than the
+ * credited tick (and before the clear) replaces it, so the earliest response always wins.
  *
  * <p>Crew kinds (tubeLeak, vacuumLoss, storm, sensorFailure) are credited by a crew dispatch, not
  * by every status showing the job. A plugTubes, repairEjector or cleanScreens job fixes one fault,
@@ -130,7 +132,7 @@ public class ShiftTracker {
       if (e.baselineChlorine == null && s.tick <= e.fireTick) {
         e.baselineChlorine = s.chlorineMgL;
       }
-      if (e.clearTick == null && Rules.crewJobFor(e.kind) == null) {
+      if ((e.clearTick == null || s.tick < e.clearTick) && Rules.crewJobFor(e.kind) == null) {
         credit(e, s);
       }
     }
@@ -266,7 +268,8 @@ public class ShiftTracker {
     dispatches.add(d);
     OpenEvent oldest = null;
     for (OpenEvent e : events) {
-      boolean fixes = e.clearTick == null && e.responseTick == null && job.equals(Rules.crewJobFor(e.kind))
+      boolean fixes = (e.clearTick == null || e.clearTick > s.tick) && (e.responseTick == null || e.responseTick > s.tick)
+          && job.equals(Rules.crewJobFor(e.kind))
           && e.fireTick < s.tick;
       if (fixes && fixesAll(job)) {
         e.responseTick = s.tick;
@@ -283,7 +286,7 @@ public class ShiftTracker {
   }
 
   private void credit(OpenEvent e, StatusView s) {
-    if (e.responseTick == null && s.tick > e.fireTick && "running".equals(s.phase)
+    if ((e.responseTick == null || s.tick < e.responseTick) && s.tick > e.fireTick && "running".equals(s.phase)
         && Rules.hasVerdict(e.kind) && Rules.responded(e, s)) {
       e.responseTick = s.tick;
     }

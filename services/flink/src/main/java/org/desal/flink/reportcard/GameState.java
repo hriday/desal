@@ -37,7 +37,30 @@ public class GameState {
   /** The newest status seen (credits a response seen before its scenario event). */
   public StatusView lastStatus;
 
+  /**
+   * A shiftEnd held until status has caught up with it, and the tracker of the shift it ends
+   * (still fed the statuses up to the end tick); null when none is pending.
+   */
+  public PendingEnd pendingShiftEnd;
+  public ShiftTracker ending;
+  /** A gameEnd held until status has caught up with it; null when none is pending. */
+  public PendingEnd pendingGameEnd;
+
   public GameState() {}
+
+  /** An end record (shiftEnd or gameEnd) waiting for status to reach its tick. */
+  public static class PendingEnd {
+    /** The record's JSON. */
+    public String json;
+    public int epoch;
+    public long tick;
+    /** The record's Kafka timestamp (gameEnd's endedAt). */
+    public long timestamp;
+    /** Processing time (ms) after which it is finished with what the job has. */
+    public long deadline;
+
+    public PendingEnd() {}
+  }
 
   /**
    * Running totals for one kind over the run. {@link KindStat} carries the mean, which cannot be
