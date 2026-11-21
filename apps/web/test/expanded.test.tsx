@@ -13,6 +13,7 @@ import { ProductView } from '../src/expanded/ProductView';
 import { ShiftView, shiftAccount } from '../src/expanded/ShiftView';
 import { StagesView } from '../src/expanded/StagesView';
 import type { ExpandedProps } from '../src/expanded/types';
+import { RECIRC_SUCTION_MIN_M } from '../src/plantConstants';
 
 afterEach(cleanup);
 
@@ -63,17 +64,48 @@ describe('expanded views', () => {
     expect(container.innerHTML).not.toMatch(/NaN|undefined|Infinity|function|\[object/);
   });
 
-  it('StagesView lays out all 20 stages in two rows of 10, each with temperature, level and scale', () => {
+  it('StagesView lays out all 24 stages in two labelled groups, each cell with temperature, level and scale', () => {
     const { container } = render(<StagesView {...sample()} />);
-    const rows = container.querySelectorAll('.xv-stages__row');
-    expect(rows).toHaveLength(2);
-    rows.forEach((r) => expect(r.querySelectorAll('[data-stage-cell]')).toHaveLength(10));
+    const groups = container.querySelectorAll('[data-stage-group]');
+    expect(groups).toHaveLength(2);
+    expect(container.querySelectorAll('[data-stage-cell]')).toHaveLength(24);
+    const cells = (g: Element) => [...g.querySelectorAll('[data-stage-cell]')].map((c) => Number(c.getAttribute('data-stage-cell')));
+    expect(groups[0]!.getAttribute('aria-label')).toBe('Heat recovery 1–21');
+    expect(groups[0]!.textContent).toContain('Heat recovery 1–21');
+    expect(cells(groups[0]!)).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+    expect(groups[1]!.getAttribute('aria-label')).toBe('Heat rejection 22–24');
+    expect(groups[1]!.textContent).toContain('Heat rejection 22–24');
+    expect(cells(groups[1]!)).toEqual([22, 23, 24]);
+    expect(container.querySelector('[data-stage-cell="24"]')!.textContent).toContain('Brine pool');
+    expect(container.querySelector('[data-stage-cell="23"]')!.textContent).not.toContain('Brine pool');
     const s2 = container.querySelector('[data-stage-cell="2"]')!.textContent;
     expect(s2).toContain('S2');
-    expect(s2).toContain('89.3 °C');
+    expect(s2).toContain('89.8 °C');
     expect(s2).toContain('0.314 m');
     expect(s2).toContain('0.05');
     expect(s2).toContain('0.80');
+  });
+
+  const detailValue = (root: HTMLElement, k: string) =>
+    [...root.querySelectorAll('.detail__row')].find((r) => r.querySelector('dt')?.textContent === k)?.querySelector('dd');
+
+  it('StagesView shows the makeup and cooling-water reject flows and the brine pool level', () => {
+    const { container } = render(<StagesView {...sample()} />);
+    expect(detailValue(container, 'Makeup to brine pool')?.textContent).toBe('1,714 m³/h');
+    expect(detailValue(container, 'Cooling water reject')?.textContent).toBe('4,086 m³/h');
+    expect(detailValue(container, 'Brine pool (S24) level')?.textContent).toBe('0.30 m');
+  });
+
+  it('StagesView marks the brine pool bad below the recirc pump\'s suction minimum', () => {
+    const tone = (v: number) => {
+      const { container } = render(<StagesView {...sample()} readings={demoReadings({ 'stages.s24.levelM': v })} />);
+      const cls = detailValue(container, 'Brine pool (S24) level')!.className;
+      cleanup();
+      return cls;
+    };
+    expect(tone(RECIRC_SUCTION_MIN_M - 0.01)).toBe('tone--bad');
+    expect(tone(RECIRC_SUCTION_MIN_M)).not.toBe('tone--bad');
+    expect(tone(0.3)).toBe('');
   });
 
   it('IntakeView compares intake flow with the required flow for the seawater temperature', () => {

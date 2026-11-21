@@ -6,7 +6,7 @@ import type { FuelGrade, LoopId } from '@desal/schema';
 // Prices that change at run time (backup fuel) come from status, not from here. The plant still
 // validates every command; these only shape the UI.
 
-/** LOOP_RANGES: setpoint and output ranges per loop kind; 'level' covers level1..level20. Outputs are percent. */
+/** LOOP_RANGES: setpoint and output ranges per loop kind; 'level' covers level1..level23, 'makeup' the S24 brine pool level. Outputs are percent. */
 export const LOOP_RANGES = {
   tbt: { spMin: 85, spMax: 112, outMin: 0, outMax: 100 },
   intakeFlow: { spMin: 0, spMax: 7000, outMin: 0, outMax: 100 },
@@ -14,6 +14,7 @@ export const LOOP_RANGES = {
   blowdown: { spMin: 1.2, spMax: 1.8, outMin: 0, outMax: 100 },
   vacuum: { spMin: 0.5, spMax: 1.0, outMin: 0, outMax: 100 },
   level: { spMin: 0.15, spMax: 0.6, outMin: 0, outMax: 100 },
+  makeup: { spMin: 0.15, spMax: 0.6, outMin: 0, outMax: 100 },
 } as const;
 
 export type LoopKind = keyof typeof LOOP_RANGES;

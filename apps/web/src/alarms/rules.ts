@@ -43,7 +43,7 @@ export function faultMonitor(text: string): MonitorId {
   const loop = /loop (\w+)/.exec(text)?.[1];
   if (loop === 'tbt') return 'heater';
   if (loop === 'intakeFlow') return 'intake';
-  if (loop === 'recirc' || loop === 'blowdown' || loop === 'vacuum' || loop?.startsWith('level')) return 'stages';
+  if (loop === 'recirc' || loop === 'blowdown' || loop === 'vacuum' || loop === 'makeup' || loop?.startsWith('level')) return 'stages';
   return 'shift';
 }
 

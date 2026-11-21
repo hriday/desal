@@ -47,6 +47,8 @@ describe('limits', () => {
   it('mirrors the simulator LOOP_RANGES', () => {
     expect(LOOP_RANGES.tbt).toEqual({ spMin: 85, spMax: 112, outMin: 0, outMax: 100 });
     expect(LOOP_RANGES.recirc).toEqual({ spMin: 2000, spMax: 6500, outMin: 0, outMax: 100 });
+    expect(LOOP_RANGES.makeup).toEqual({ spMin: 0.15, spMax: 0.6, outMin: 0, outMax: 100 });
+    expect(loopRange('makeup', 'setSetpoint')).toEqual({ min: 0.15, max: 0.6 });
     expect(loopRange('level7', 'setSetpoint')).toEqual({ min: 0.15, max: 0.6 });
     expect(loopRange('recirc', 'setOutput')).toEqual({ min: 0, max: 100 });
   });
@@ -82,9 +84,12 @@ describe('loop controls follow the mode', () => {
   it('stage levels stay setpoint-driven in Manual; all at once or per stage', () => {
     const { container, sent } = withSend(StagesView, manual());
     enter(container, /all stage levels/i, '0.4');
-    expect(sent).toHaveLength(20);
+    expect(sent).toHaveLength(23);
     expect(sent.every((c) => c.type === 'setSetpoint' && c.value === 0.4)).toBe(true);
-    expect(sent.map((c) => (c as { loop: string }).loop)).toContain('level20');
+    const loops = sent.map((c) => (c as { loop: string }).loop);
+    expect(loops).toContain('level23');
+    expect(loops).not.toContain('level24');
+    expect(loops).not.toContain('makeup');
     sent.length = 0;
     fireEvent.change(within(container).getByRole('combobox', { name: /stage/i }), { target: { value: '7' } });
     enter(container, /S7 level setpoint/i, '0.3');
@@ -258,6 +263,34 @@ describe('StagesView controls', () => {
     fireEvent.click(btn);
     fireEvent.click(within(tripped.container).getByRole('button', { name: /confirm acid clean/i }));
     expect(tripped.sent).toEqual([{ type: 'acidClean' }]);
+  });
+
+  it('the stage picker lists the 23 level loops, S1–S23 (the brine pool is the makeup loop\'s)', () => {
+    const { container } = withSend(StagesView, demoStatus());
+    const options = [...within(container).getByRole('combobox', { name: /stage/i }).querySelectorAll('option')].map((o) => o.textContent);
+    expect(options).toEqual(Array.from({ length: 23 }, (_, i) => `S${i + 1}`));
+  });
+
+  it('the makeup loop has a pool-level setpoint (m) and, in Auto, a loop-mode toggle', () => {
+    const { container, sent } = withSend(StagesView, demoStatus());
+    expect(container.querySelector('[data-control="Makeup setpoint"]')!.textContent).toContain('0.15–0.6 m');
+    enter(container, /makeup setpoint/i, '0.32');
+    fireEvent.click(within(container).getByRole('button', { name: /makeup loop mode/i }));
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'makeup', value: 0.32 }, { type: 'setLoopMode', loop: 'makeup', mode: 'manual' }]);
+  });
+
+  it('the makeup loop takes outputs when switched to manual', () => {
+    const st = demoStatus();
+    const { container, sent } = withSend(StagesView, { ...st, loops: { ...st.loops, makeup: { mode: 'manual', setpoint: 0.3, output: 50 } } });
+    enter(container, /makeup output/i, '60');
+    expect(sent).toEqual([{ type: 'setOutput', loop: 'makeup', value: 60 }]);
+  });
+
+  it('in Manual control mode the makeup loop stays in Auto: a setpoint, no mode toggle', () => {
+    const { container, sent } = withSend(StagesView, manual());
+    expect(within(container).queryByRole('button', { name: /makeup loop mode/i })).toBeNull();
+    enter(container, /makeup setpoint/i, '0.3');
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'makeup', value: 0.3 }]);
   });
 
   it('blowdown CF and vacuum use controlFor', () => {

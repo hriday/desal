@@ -1,5 +1,5 @@
 import type { PlantEvent, PlantStatus } from '@desal/schema';
-import { alarmContext, alarmsFor, byWorst, requiredIntakeM3h, salinityLimit, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
+import { alarmContext, alarmsFor, byWorst, faultMonitor, requiredIntakeM3h, salinityLimit, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
 import { DEMO_GAME_ID, demoReadings, demoStatus, demoTarget } from '../src/demo';
 
 // A healthy plant: the demo frame with its two deliberate problems removed.
@@ -42,6 +42,17 @@ describe('alarmsFor', () => {
     expect(level('stageLevel', clean({ 'stages.s07.levelM': 0.649 }))).toBe('warn');
     expect(level('stageLevel', clean({ 'stages.s07.levelM': 0.65 }))).toBe('bad');
     expect(alarmsFor(demoStatus(), clean({ 'stages.s07.levelM': 0.66 })).find((a) => a.id === 'stageLevel')?.text).toContain('S7');
+  });
+
+  it('stage level covers all 24 stages, the S24 brine pool included', () => {
+    expect(level('stageLevel', clean({ 'stages.s24.levelM': 0.66 }))).toBe('bad');
+    expect(alarmsFor(demoStatus(), clean({ 'stages.s24.levelM': 0.66 })).find((a) => a.id === 'stageLevel')?.text).toContain('S24');
+  });
+
+  it('a controller fault on the makeup loop or any level loop opens Stages', () => {
+    expect(faultMonitor('Controller fault on loop makeup: stuck.')).toBe('stages');
+    expect(faultMonitor('Controller fault on loop level23: drift.')).toBe('stages');
+    expect(alarmsFor(demoStatus(), clean(), { faults: ['Controller fault on loop makeup: stuck.'] }).find((a) => a.id === 'fault0')?.monitor).toBe('stages');
   });
 
   it('vacuum: warn below 0.8, bad below 0.7', () => {

@@ -20,7 +20,7 @@ afterEach(cleanup);
 const EQUIPMENT: [string, ComponentType<EquipmentProps>, string[]][] = [
   ['Intake', Intake, ['5,800 m³/h', 'Chl-a 4.1', 'P-101', 'P-103']],
   ['BrineHeater', BrineHeater, ['93.5 °C', '72 %', 'burner health 93 %']],
-  ['FlashStages', FlashStages, ['20 stages', 'Vac 0.94']],
+  ['FlashStages', FlashStages, ['24 stages', 'Vac 0.94']],
   ['ProductWater', ProductWater, ['512 m³/h', '18 ppm', 'in spec']],
   ['Fuel', Fuel, ['60 MW', '$8.00/GJ', '128 t', 'standard', 'on gas']],
   ['ShiftAccount', ShiftAccount, ['Shift 3', '3h 40m left', '2,380 / 3,900 m³', '$12,450']],
@@ -108,6 +108,39 @@ describe('equipment drawings', () => {
     const { container } = render(<FlashStages status={demoStatus()} readings={r} target={null} />);
     const tint = (n: number) => container.querySelector(`[data-stage="${n}"]`)?.getAttribute('data-scale');
     expect([tint(1), tint(2), tint(3), tint(4)]).toEqual(['ok', 'bad', 'warn', 'ok']);
+  });
+
+  it('draws 24 stages: heat recovery 1–21, then a separate heat-rejection section 22–24', () => {
+    const { container } = render(<FlashStages status={demoStatus()} readings={demoReadings()} target={null} />);
+    const stages = [...container.querySelectorAll('[data-stage]')];
+    expect(stages.map((g) => Number(g.getAttribute('data-stage')))).toEqual(Array.from({ length: 24 }, (_, i) => i + 1));
+    const section = (n: number) => stages[n - 1]!.closest('[data-section]')?.getAttribute('data-section');
+    expect([section(1), section(21), section(22), section(24)]).toEqual(['recovery', 'recovery', 'reject', 'reject']);
+    // The reject section stands apart: the gap between S21 and S22 is wider than between neighbours.
+    const x = (n: number) => Number(stages[n - 1]!.querySelector('rect')!.getAttribute('x'));
+    expect(x(22) - x(21)).toBeGreaterThan(x(21) - x(20));
+  });
+
+  it('pipes: seawater through the reject tubes, makeup to the pool, cooling reject to sea, recycle from S24 through S21 → S1', () => {
+    const r = demoReadings({ 'brine.makeupM3h': 0 });
+    const { container } = render(<FlashStages status={demoStatus()} readings={r} target={null} />);
+    const pipe = (name: string) => container.querySelector(`[data-pipe="${name}"]`);
+    for (const name of ['seawater', 'makeup', 'coolingReject', 'recycle', 'distillate']) expect(pipe(name), name).not.toBeNull();
+    expect(pipe('condenser')).toBeNull();
+    expect(pipe('makeup')!.getAttribute('data-flowing')).toBe('false');
+    expect(pipe('seawater')!.getAttribute('data-flowing')).toBe('true');
+    expect(pipe('coolingReject')!.getAttribute('data-flowing')).toBe('true');
+    expect(pipe('recycle')!.getAttribute('data-flowing')).toBe('true');
+    // Recycle starts under the S24 pool and ends at S1's tubes (on to the heater).
+    const shell = (n: number) => container.querySelector(`[data-stage="${n}"] rect`)!;
+    const left = (n: number) => Number(shell(n).getAttribute('x'));
+    const right = (n: number) => left(n) + Number(shell(n).getAttribute('width'));
+    const d = pipe('recycle')!.querySelector('path')!.getAttribute('d')!;
+    const start = Number(/^M\s*([\d.]+)/.exec(d)![1]);
+    const end = Number(/H\s*([\d.]+)\s*$/.exec(d)![1]);
+    expect(start).toBeGreaterThanOrEqual(left(24));
+    expect(start).toBeLessThanOrEqual(right(24));
+    expect(end).toBeLessThanOrEqual(left(1));
   });
 
   it('fills a stage by its brine level', () => {

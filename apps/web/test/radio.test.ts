@@ -46,6 +46,7 @@ describe('monitorFor', () => {
     expect(monitorFor('tsunami')).toBe('shift');
     expect(monitorFor('controllerFault', 'Controller fault on loop tbt')).toBe('heater');
     expect(monitorFor('controllerFault', 'loop recirc stuck')).toBe('stages');
+    expect(monitorFor('controllerFault', 'Controller fault on loop makeup: stuck.')).toBe('stages');
   });
 });
 

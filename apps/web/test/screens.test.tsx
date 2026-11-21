@@ -41,6 +41,10 @@ describe('Start', () => {
     expect(onStart).toHaveBeenCalledWith('hard');
     expect(queryByText('When disaster strikes')).toBeNull();
   });
+  it('the plant picture shows all 24 flash stages', () => {
+    const { container } = render(<Start onStart={vi.fn()} />);
+    expect(container.querySelectorAll('.start__plant [data-stage]')).toHaveLength(24);
+  });
   it('capacity shows the message and a retry button', () => {
     const onStart = vi.fn();
     const { getByRole, getByText } = render(<Start onStart={onStart} capacityMessage="The plant is at capacity, try again in a minute" />);

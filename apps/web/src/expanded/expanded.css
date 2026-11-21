@@ -60,8 +60,17 @@
 .xv-table th:first-child, .xv-table td:first-child { text-align: left; }
 .xv-table thead th { color: var(--muted); font-weight: 400; }
 
-.xv-stages { display: flex; flex-direction: column; gap: 6px; }
-.xv-stages__row { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; }
+/* Heat recovery (7 across, 3 rows) beside heat rejection (3 across): the same cell width in both. */
+.xv-stages { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 3fr); gap: 6px 12px; align-items: start; }
+.xv-stages__group { min-width: 0; }
+.xv-stages__title { margin: 0 0 4px; color: var(--muted); font-family: var(--font-display); font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.xv-stages__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.xv-stages__group--reject .xv-stages__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.xv-stage__name { font-weight: 400; }
+@media (max-width: 640px) {
+  .xv-stages { grid-template-columns: minmax(0, 1fr); }
+  .xv-stages__grid, .xv-stages__group--reject .xv-stages__grid { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); }
+}
 .xv-stage { padding: 4px; border: 1px solid var(--line); border-radius: 3px; background: var(--bg); font-size: 11px; }
 .xv-stage--warn { border-color: var(--warn); }
 .xv-stage--bad { border-color: var(--bad); }
