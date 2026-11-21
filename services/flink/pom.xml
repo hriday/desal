@@ -66,6 +66,14 @@
       <version>${flink.version}</version>
       <scope>provided</scope>
     </dependency>
+    <!-- DeliveryGuarantee and the sink base classes KafkaSink builds on; flink-connector-kafka
+         declares it provided because flink-dist bundles it. -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-connector-base</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
     <dependency>
       <groupId>org.apache.flink</groupId>
       <artifactId>flink-json</artifactId>

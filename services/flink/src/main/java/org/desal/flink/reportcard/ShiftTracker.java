@@ -197,14 +197,10 @@ public class ShiftTracker {
     r.spentUsd = summary.path("spentUsd").asDouble();
     r.minutesTripped = trippedTicks.size() * Rules.TICK_MINUTES;
 
-    r.events = new ArrayList<>();
+    r.events = lines();
     List<String> verdicts = new ArrayList<>();
     int handledWell = 0;
-    List<OpenEvent> ordered = new ArrayList<>(events);
-    ordered.sort(Comparator.comparingInt(e -> e.eventId));
-    for (OpenEvent e : ordered) {
-      EventLine line = line(e);
-      r.events.add(line);
+    for (EventLine line : r.events) {
       if (line.verdict != null) {
         verdicts.add(line.verdict);
         if (line.verdict.equals("quick") || line.verdict.equals("ok")) {
@@ -229,6 +225,21 @@ public class ShiftTracker {
     r.vsPrevious = history.isEmpty() ? null : history.get(history.size() - 1);
     r.vsBest = history.stream().max(Comparator.comparingDouble(c -> c.targetPct)).orElse(null);
     return r;
+  }
+
+  /**
+   * The shift's events as report-card lines, in eventId order, graded as of now (an event with no
+   * response yet is missed). Used by {@link #finish} and, for a shift still open at gameEnd, by the
+   * run's per-kind stats.
+   */
+  public List<EventLine> lines() {
+    List<OpenEvent> ordered = new ArrayList<>(events);
+    ordered.sort(Comparator.comparingInt(e -> e.eventId));
+    List<EventLine> out = new ArrayList<>();
+    for (OpenEvent e : ordered) {
+      out.add(line(e));
+    }
+    return out;
   }
 
   /** replaceSensor repairs every failed sensor; the other jobs fix one fault each. */
