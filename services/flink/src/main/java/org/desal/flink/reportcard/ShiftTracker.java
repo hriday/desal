@@ -17,6 +17,12 @@ import org.desal.flink.model.ShiftReport;
  * <p>Response rule: a status counts only if its tick is later than the firing tick. An
  * eventCleared with how player or crew and no response yet credits the clear tick (this is how
  * fuelContamination and tsunami are graded).
+ *
+ * <p>Crew kinds (tubeLeak, vacuumLoss, storm, sensorFailure) are credited by a crew dispatch, not
+ * by every status showing the job: the crew does one job at a time and each fixes one fault, so a
+ * dispatch credits only the oldest open, not yet credited event of its kind. Two sensor failures
+ * fired together by an earthquake need two replaceSensor jobs. A dispatch is a status whose crew
+ * job differs from the previous status's, or whose remaining ticks went up (a new job).
  */
 public class ShiftTracker {
   public int shiftId;
@@ -31,6 +37,22 @@ public class ShiftTracker {
   public List<Long> trippedTicks = new ArrayList<>();
   /** The latest status tick seen; a repeated tick (handover, pause) is not counted again. */
   public long lastStatusTick = -1;
+  /** Crew dispatches seen this shift, in order. */
+  public List<CrewDispatch> dispatches = new ArrayList<>();
+  /** The crew's job and remaining ticks at the last running status (null, 0 when idle). */
+  public String crewJob;
+  public long crewRemainingTicks;
+
+  /** One crew job as first seen in status, and the event it credited (null: none yet). */
+  public static class CrewDispatch {
+    public String job;
+    public long tick;
+    /** The job's remaining ticks at {@code tick}. */
+    public long remainingTicks;
+    public Integer eventId;
+
+    public CrewDispatch() {}
+  }
 
   public ShiftTracker() {}
 
@@ -42,12 +64,16 @@ public class ShiftTracker {
     this.pace = new ArrayList<>();
     this.trippedTicks = new ArrayList<>();
     this.lastStatusTick = tick - 1;
+    this.dispatches = new ArrayList<>();
+    this.crewJob = null;
+    this.crewRemainingTicks = 0;
   }
 
   /**
    * An event fired at {@code tick}. {@code latest} is the newest status seen (or null); it is the
    * bloom baseline, and if it is already later than the firing and shows the response (status read
-   * before the event, as topics are consumed independently) it is credited.
+   * before the event, as topics are consumed independently) it is credited. For a crew kind, that
+   * means a dispatch after the firing that has not credited another event.
    */
   public void onScenario(int eventId, String kind, long tick, StatusView latest) {
     events.removeIf(e -> e.eventId == eventId);
@@ -59,8 +85,24 @@ public class ShiftTracker {
       e.baselineChlorine = latest.chlorineMgL;
     }
     events.add(e);
-    if (latest != null) {
-      credit(e, latest);
+    String job = Rules.crewJobFor(kind);
+    if (job == null) {
+      if (latest != null) {
+        credit(e, latest);
+      }
+      return;
+    }
+    if (latest != null && latest.tick > lastStatusTick && latest.tick >= startTick && "running".equals(latest.phase)) {
+      detectDispatch(latest); // a status the tracker has not seen yet; it may credit e itself
+    }
+    if (e.responseTick == null) {
+      for (CrewDispatch d : dispatches) {
+        if (d.eventId == null && d.job.equals(job) && d.tick > e.fireTick) {
+          e.responseTick = d.tick;
+          d.eventId = e.eventId;
+          break;
+        }
+      }
     }
   }
 
@@ -85,10 +127,11 @@ public class ShiftTracker {
       if (e.baselineChlorine == null && s.tick <= e.fireTick) {
         e.baselineChlorine = s.chlorineMgL;
       }
-      if (e.clearTick == null) {
+      if (e.clearTick == null && Rules.crewJobFor(e.kind) == null) {
         credit(e, s);
       }
     }
+    detectDispatch(s);
     recordPace(s);
     if (s.tick > lastStatusTick) {
       if ("tripped".equals(s.status) || "restarting".equals(s.status)) {
@@ -99,25 +142,39 @@ public class ShiftTracker {
   }
 
   /**
-   * The game was restored from a snapshot and resumes at {@code tick}: everything this tracker
-   * learned at or after it is replayed by the new epoch, so forget it. Hour points ending at or
-   * after the tick are dropped and recomputed from the new statuses; events fired at or after it
-   * are dropped (they fire again), and responses, clears and trip ticks at or after it are undone.
+   * The game was restored from the snapshot taken at {@code tick}: the snapshot holds everything up
+   * to and including that tick, and the new epoch replays what came after. So everything this
+   * tracker learned strictly after it is forgotten: hour points ending after it (recomputed from the
+   * new statuses), events fired after it (they fire again), and responses, clears, trip ticks and
+   * crew dispatches after it. A game restored while paused re-sends status at {@code tick} itself,
+   * and an event fired at {@code tick} is in the snapshot and never re-fired, so it is kept.
    */
   public void rewindTo(long tick) {
-    pace.removeIf(p -> hourEndTick(p.hour) >= tick);
-    events.removeIf(e -> e.fireTick >= tick);
+    pace.removeIf(p -> hourEndTick(p.hour) > tick);
+    events.removeIf(e -> e.fireTick > tick);
     for (OpenEvent e : events) {
-      if (e.responseTick != null && e.responseTick >= tick) {
+      if (e.responseTick != null && e.responseTick > tick) {
         e.responseTick = null;
       }
-      if (e.clearTick != null && e.clearTick >= tick) {
+      if (e.clearTick != null && e.clearTick > tick) {
         e.clearTick = null;
         e.how = null;
       }
     }
-    trippedTicks.removeIf(t -> t >= tick);
-    lastStatusTick = Math.min(lastStatusTick, tick - 1);
+    trippedTicks.removeIf(t -> t > tick);
+    lastStatusTick = Math.min(lastStatusTick, tick);
+    dispatches.removeIf(d -> d.tick > tick);
+    // The crew as it was at the snapshot: the last surviving job, counted down one per running tick.
+    crewJob = null;
+    crewRemainingTicks = 0;
+    if (!dispatches.isEmpty()) {
+      CrewDispatch last = dispatches.get(dispatches.size() - 1);
+      long left = last.remainingTicks - (tick - last.tick);
+      if (left > 0) {
+        crewJob = last.job;
+        crewRemainingTicks = left;
+      }
+    }
   }
 
   /**
@@ -169,6 +226,35 @@ public class ShiftTracker {
     r.vsPrevious = history.isEmpty() ? null : history.get(history.size() - 1);
     r.vsBest = history.stream().max(Comparator.comparingDouble(c -> c.targetPct)).orElse(null);
     return r;
+  }
+
+  /** Records a new crew job seen in {@code s} and gives it to the oldest open event it fixes. */
+  private void detectDispatch(StatusView s) {
+    String job = s.crewJob;
+    boolean dispatched = job != null && (!job.equals(crewJob) || s.crewRemainingTicks > crewRemainingTicks);
+    crewJob = job;
+    crewRemainingTicks = job == null ? 0 : s.crewRemainingTicks;
+    if (!dispatched) {
+      return;
+    }
+    CrewDispatch d = new CrewDispatch();
+    d.job = job;
+    d.tick = s.tick;
+    d.remainingTicks = s.crewRemainingTicks;
+    dispatches.add(d);
+    OpenEvent oldest = null;
+    for (OpenEvent e : events) {
+      if (e.clearTick == null && e.responseTick == null && job.equals(Rules.crewJobFor(e.kind))
+          && e.fireTick < s.tick
+          && (oldest == null || e.fireTick < oldest.fireTick
+              || (e.fireTick == oldest.fireTick && e.eventId < oldest.eventId))) {
+        oldest = e;
+      }
+    }
+    if (oldest != null) {
+      oldest.responseTick = s.tick;
+      d.eventId = oldest.eventId;
+    }
   }
 
   private void credit(OpenEvent e, StatusView s) {

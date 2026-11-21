@@ -223,6 +223,7 @@ class ShiftTrackerTest {
     assertEquals("restarting", s.status);
     assertEquals(2, s.pumpsRunning);
     assertEquals("plugTubes", s.crewJob);
+    assertEquals(45, s.crewRemainingTicks);
     assertEquals(2.5, s.chlorineMgL, 0);
     assertEquals(1234.5, s.shiftProductM3, 0);
     assertEquals("manual", s.loops.get("level12").mode);
@@ -276,15 +277,16 @@ class ShiftTrackerTest {
     assertEquals(1, r.self.handledWell);
   }
 
-  // (j)
+  // (j) rewindTo takes the snapshot tick R; the new epoch resumes at R + 1 (here 1170), so the
+  // brief's "drops hour points ending at or after 1170" is rewindTo(1169).
   @Test
-  void rewindDropsHourPointsEndingAtOrAfterTheTickAndRecomputesThem() {
+  void rewindDropsHourPointsEndingAfterTheSnapshotTickAndRecomputesThem() {
     ShiftTracker t = tracker();
     for (long tick = 730; tick <= 1260; tick += 10) {
       t.onStatus(status(tick).product((tick - START + 1) * 5.0).view());
     }
     // Hour 5 ends at tick 721 + 450 - 1 = 1170, hour 4 at 1080.
-    t.rewindTo(1170);
+    t.rewindTo(1169);
     assertEquals(List.of(1, 2, 3, 4), t.pace.stream().map(p -> p.hour).toList());
     t.onStatus(status(1170).product(2000).view());
     List<PacePoint> pace = finish(t).pace;
@@ -295,7 +297,35 @@ class ShiftTrackerTest {
   }
 
   @Test
-  void rewindForgetsResponsesClearsAndEventsAtOrAfterTheTick() {
+  void rewindToTheLastTickOfAnHourKeepsThatHour() {
+    ShiftTracker t = tracker();
+    for (long tick = 730; tick <= 1260; tick += 10) {
+      t.onStatus(status(tick).product((tick - START + 1) * 5.0).view());
+    }
+    t.rewindTo(1170);
+    assertEquals(List.of(1, 2, 3, 4, 5), t.pace.stream().map(p -> p.hour).toList());
+  }
+
+  @Test
+  void rewindKeepsWhatHappenedAtTheSnapshotTickItself() {
+    // Restored while paused: the snapshot is at 1170 and the first new status is stamped 1170.
+    ShiftTracker t = tracker();
+    t.onScenario(1, "pumpTrip", 1170, status(1169).pumps(1).view());
+    t.onScenario(2, "storm", 1160, status(1159).view());
+    t.onCleared(2, "expired", 1170);
+    t.onStatus(status(1170).pumps(1).plant("tripped").view());
+    t.rewindTo(1170);
+    t.onStatus(status(1170).pumps(1).plant("tripped").phase("paused").view());
+    t.onStatus(status(1171).pumps(2).view());
+    ShiftReport r = finish(t);
+    assertEquals(2, r.events.size());
+    assertEquals(2.0 / 3, r.events.get(0).responseMinutes, EPS);
+    assertEquals("passed", r.events.get(1).outcome);
+    assertEquals(2.0 / 3, r.minutesTripped, EPS);
+  }
+
+  @Test
+  void rewindForgetsResponsesClearsAndEventsAfterTheTick() {
     ShiftTracker t = tracker();
     t.onScenario(1, "pumpTrip", 1150, status(1149).view());
     t.onStatus(status(1160).pumps(1).view());
@@ -310,6 +340,93 @@ class ShiftTrackerTest {
     assertEquals(22 * 2.0 / 3, e.responseMinutes, EPS);
     assertEquals("not cleared", e.outcome);
     assertEquals(0, r.minutesTripped, EPS);
+  }
+
+  @Test
+  void oneReplaceSensorJobCreditsOnlyOneOfTwoSensorFailures() {
+    // An earthquake fires two sensor failures at the same tick; the crew fixes one at a time.
+    ShiftTracker t = tracker();
+    t.onScenario(1, "sensorFailure", 1000, status(999).view());
+    t.onScenario(2, "sensorFailure", 1000, status(999).view());
+    t.onStatus(status(1003).crew("replaceSensor", 45).view());
+    t.onStatus(status(1004).crew("replaceSensor", 44).view());
+    t.onStatus(status(1004).crew("replaceSensor", 44).phase("paused").view());
+    t.onStatus(status(1047).crew("replaceSensor", 1).view());
+    t.onStatus(status(1048).crew(null).view());
+    t.onCleared(1, "crew", 1048);
+    List<EventLine> events = finish(t).events;
+    assertEquals(2.0, events.get(0).responseMinutes, EPS);
+    assertEquals("quick", events.get(0).verdict);
+    assertNull(events.get(1).responseMinutes);
+    assertEquals("missed", events.get(1).verdict);
+  }
+
+  @Test
+  void aSecondDispatchCreditsTheSecondEventAtItsOwnTick() {
+    ShiftTracker t = tracker();
+    t.onScenario(1, "sensorFailure", 1000, status(999).view());
+    t.onScenario(2, "sensorFailure", 1000, status(999).view());
+    t.onStatus(status(1003).crew("replaceSensor", 45).view());
+    t.onStatus(status(1047).crew("replaceSensor", 1).view());
+    // The next job straight after the first, with no idle status between: remaining ticks jump up.
+    t.onStatus(status(1048).crew("replaceSensor", 45).view());
+    t.onCleared(1, "crew", 1048);
+    List<EventLine> events = finish(t).events;
+    assertEquals(2.0, events.get(0).responseMinutes, EPS);
+    assertEquals(32.0, events.get(1).responseMinutes, EPS);
+    assertEquals("slow", events.get(1).verdict);
+  }
+
+  @Test
+  void eachCrewKindIsCreditedOncePerDispatch() {
+    String[][] kinds = {{"tubeLeak", "plugTubes"}, {"vacuumLoss", "repairEjector"}, {"storm", "cleanScreens"}};
+    for (String[] k : kinds) {
+      ShiftTracker t = tracker();
+      t.onScenario(1, k[0], 1000, status(999).view());
+      t.onScenario(2, k[0], 1001, status(999).view());
+      t.onStatus(status(1006).crew(k[1], 45).view());
+      t.onStatus(status(1007).crew(k[1], 44).view());
+      List<EventLine> events = finish(t).events;
+      assertEquals(4.0, events.get(0).responseMinutes, EPS, k[0]);
+      assertNull(events.get(1).responseMinutes, k[0]);
+    }
+  }
+
+  @Test
+  void aDispatchSeenBeforeItsScenarioIsCreditedOnce() {
+    ShiftTracker t = tracker();
+    StatusView s = status(1030).crew("plugTubes", 90).view();
+    t.onStatus(s);
+    t.onScenario(1, "tubeLeak", 1000, s);
+    t.onScenario(2, "tubeLeak", 1000, s);
+    List<EventLine> events = finish(t).events;
+    assertEquals(20.0, events.get(0).responseMinutes, EPS);
+    assertNull(events.get(1).responseMinutes);
+
+    // The same when the tracker had not been given that status before the scenario.
+    ShiftTracker u = tracker();
+    StatusView unseen = status(1030).crew("plugTubes", 90).view();
+    u.onScenario(1, "tubeLeak", 1000, unseen);
+    u.onStatus(unseen);
+    u.onScenario(2, "tubeLeak", 1000, unseen);
+    events = finish(u).events;
+    assertEquals(20.0, events.get(0).responseMinutes, EPS);
+    assertNull(events.get(1).responseMinutes);
+  }
+
+  @Test
+  void aJobStillRunningAcrossARewindIsNotANewDispatch() {
+    ShiftTracker t = tracker();
+    t.onScenario(1, "tubeLeak", 1150, status(1149).view());
+    t.onScenario(2, "tubeLeak", 1155, status(1154).view());
+    t.onStatus(status(1160).crew("plugTubes", 90).view());
+    t.onStatus(status(1175).crew("plugTubes", 75).view());
+    t.rewindTo(1170);
+    // The new epoch resumes at 1171 with the same job, 79 ticks left (90 - 11).
+    t.onStatus(status(1171).crew("plugTubes", 79).view());
+    List<EventLine> events = finish(t).events;
+    assertEquals(20.0 / 3, events.get(0).responseMinutes, EPS);
+    assertNull(events.get(1).responseMinutes);
   }
 
   // --- helpers ---
@@ -381,10 +498,14 @@ class ShiftTrackerTest {
     }
 
     StatusJson crew(String job) {
+      return crew(job, 45);
+    }
+
+    StatusJson crew(String job, long remainingTicks) {
       if (job == null) {
         json.putNull("crew");
       } else {
-        json.putObject("crew").put("job", job).put("remainingTicks", 45);
+        json.putObject("crew").put("job", job).put("remainingTicks", remainingTicks);
       }
       return this;
     }
@@ -437,6 +558,7 @@ class ShiftTrackerTest {
       loops = v.loops;
       chlorineMgL = v.chlorineMgL;
       crewJob = v.crewJob;
+      crewRemainingTicks = v.crewRemainingTicks;
       shiftProductM3 = v.shiftProductM3;
     }
   }

@@ -26,6 +26,8 @@ public class StatusView {
   public double chlorineMgL;
   /** The crew's current job, or null when the crew is idle. */
   public String crewJob;
+  /** Ticks left on the crew's job (0 when idle); it counts down one per running tick. */
+  public long crewRemainingTicks;
   /** In-spec water made so far this shift (cumulative). */
   public double shiftProductM3;
 
@@ -63,6 +65,7 @@ public class StatusView {
     }
     s.chlorineMgL = status.path("doses").path("chlorineMgL").asDouble();
     s.crewJob = text(status.path("crew").path("job"), null);
+    s.crewRemainingTicks = s.crewJob == null ? 0 : status.path("crew").path("remainingTicks").asLong();
     s.shiftProductM3 = status.path("shiftProductM3").asDouble();
     return s;
   }

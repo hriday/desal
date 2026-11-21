@@ -13,7 +13,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class GameStateTest {
 
   @ParameterizedTest
-  @ValueSource(classes = {GameState.class, GameState.KindTally.class, ShiftTracker.class, OpenEvent.class,
+  @ValueSource(classes = {GameState.class, GameState.KindTally.class, ShiftTracker.class, ShiftTracker.CrewDispatch.class, OpenEvent.class,
       StatusView.class, StatusView.Loop.class})
   void isSerializedAsAPojoWithoutKryo(Class<?> type) {
     PojoTestUtils.assertSerializedAsPojoWithoutKryo(type);
