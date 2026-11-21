@@ -1,18 +1,95 @@
 {
-  "shiftId": 2, "epoch": 0, "mode": "hard", "grade": "B", "score": 78.5,
-  "targetM3": 1500, "productM3": 1320, "offSpecM3": 12, "offSpecMinutes": 4, "trips": 1, "spentUsd": 900, "minutesTripped": 6.5,
-  "self": { "shiftId": 2, "targetPct": 88, "handledWell": 1, "handledOf": 2, "minutesTripped": 6.5 },
-  "events": [
-    { "eventId": 1, "kind": "pumpTrip", "atMinute": 12, "responseMinutes": 3.3, "clearMinutes": 3.3, "outcome": "cleared by you", "verdict": "quick" },
-    { "eventId": 2, "kind": "fuelContamination", "atMinute": 100, "responseMinutes": 20, "clearMinutes": 20, "outcome": "fixed by crew", "verdict": "slow" },
-    { "eventId": 3, "kind": "earthquake", "atMinute": 200, "responseMinutes": null, "clearMinutes": null, "outcome": "noted", "verdict": null }
-  ],
-  "pace": [
-    { "hour": 1, "productM3": 150, "targetM3": 187.5 }, { "hour": 2, "productM3": 320, "targetM3": 375 },
-    { "hour": 3, "productM3": 500, "targetM3": 562.5 }, { "hour": 4, "productM3": 680, "targetM3": 750 },
-    { "hour": 5, "productM3": 850, "targetM3": 937.5 }, { "hour": 6, "productM3": 1000, "targetM3": 1125 },
-    { "hour": 7, "productM3": 1150, "targetM3": 1312.5 }, { "hour": 8, "productM3": 1320, "targetM3": 1500 }
-  ],
-  "vsPrevious": { "shiftId": 1, "targetPct": 95, "handledWell": 2, "handledOf": 2, "minutesTripped": 0 },
-  "vsBest": null
+  "shiftId" : 2,
+  "epoch" : 0,
+  "mode" : "hard",
+  "grade" : "B",
+  "score" : 74.5,
+  "targetM3" : 1500.0,
+  "productM3" : 1320.0,
+  "offSpecM3" : 12.0,
+  "offSpecMinutes" : 4.0,
+  "trips" : 1.0,
+  "spentUsd" : 900.0,
+  "minutesTripped" : 6.5,
+  "self" : {
+    "shiftId" : 2,
+    "targetPct" : 88.0,
+    "handledWell" : 2,
+    "handledOf" : 3,
+    "minutesTripped" : 6.5
+  },
+  "events" : [ {
+    "eventId" : 1,
+    "kind" : "pumpTrip",
+    "atMinute" : 12.0,
+    "responseMinutes" : 3.3,
+    "clearMinutes" : 3.3,
+    "outcome" : "cleared by you",
+    "verdict" : "quick"
+  }, {
+    "eventId" : 2,
+    "kind" : "tubeLeak",
+    "atMinute" : 60.0,
+    "responseMinutes" : null,
+    "clearMinutes" : null,
+    "outcome" : "not cleared",
+    "verdict" : "missed"
+  }, {
+    "eventId" : 3,
+    "kind" : "fuelContamination",
+    "atMinute" : 100.0,
+    "responseMinutes" : 12.0,
+    "clearMinutes" : 12.0,
+    "outcome" : "cleared by you",
+    "verdict" : "ok"
+  }, {
+    "eventId" : 4,
+    "kind" : "earthquake",
+    "atMinute" : 200.0,
+    "responseMinutes" : null,
+    "clearMinutes" : null,
+    "outcome" : "noted",
+    "verdict" : null
+  } ],
+  "pace" : [ {
+    "hour" : 1,
+    "productM3" : 150.0,
+    "targetM3" : 187.5
+  }, {
+    "hour" : 2,
+    "productM3" : 320.0,
+    "targetM3" : 375.0
+  }, {
+    "hour" : 3,
+    "productM3" : 500.0,
+    "targetM3" : 562.5
+  }, {
+    "hour" : 4,
+    "productM3" : 680.0,
+    "targetM3" : 750.0
+  }, {
+    "hour" : 5,
+    "productM3" : 850.0,
+    "targetM3" : 937.5
+  }, {
+    "hour" : 6,
+    "productM3" : 1000.0,
+    "targetM3" : 1125.0
+  }, {
+    "hour" : 7,
+    "productM3" : 1150.0,
+    "targetM3" : 1312.5
+  }, {
+    "hour" : 8,
+    "productM3" : 1320.0,
+    "targetM3" : 1500.0
+  } ],
+  "vsPrevious" : {
+    "shiftId" : 1,
+    "targetPct" : 95.0,
+    "handledWell" : 2,
+    "handledOf" : 2,
+    "minutesTripped" : 0.0
+  },
+  "vsBest" : null
 }

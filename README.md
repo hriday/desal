@@ -50,6 +50,8 @@ pnpm --filter @desal/web e2e              # browser tests (Playwright); needs th
 
 Integration tests set `DESAL_TOPIC_SUFFIX` to a unique value, so they create throwaway topics (and consumer groups such as `desal-sim<suffix>`) and never touch your real games.
 
+The Flink jobs (`services/flink`, Java 17 + Maven) need only Docker: `services/flink/mvn.sh` runs Maven in the `maven:3.9.11-eclipse-temurin-17` image with the repo mounted and dependencies cached in the `desal-m2` volume, so no JDK or Maven is installed on the host. `services/flink/mvn.sh test` runs the Java tests, which also rewrite the contract fixtures in `packages/schema/test/fixtures/flink/` that `pnpm --filter @desal/schema test` then validates with the zod schemas. `services/flink/mvn.sh package` builds `services/flink/target/desal-flink.jar`.
+
 ## Running it locally
 
 With Kafka up (see Setup), in separate terminals:
