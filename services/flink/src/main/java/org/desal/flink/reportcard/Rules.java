@@ -17,12 +17,12 @@ public final class Rules {
 
   /**
    * Kinds that get a verdict: the six sharp kinds, controllerFault, bloom, and the two disasters
-   * graded on time-to-clear. earthquake is only noted (its children are graded as their own kinds)
+   * graded on time-to-clear, and lowSteam (answered by the standby steam line). earthquake is only noted (its children are graded as their own kinds)
    * and the informational kinds need no response.
    */
   private static final Set<String> GRADED = Set.of(
       "pumpTrip", "powerDip", "controllerFault", "sensorFailure", "tubeLeak", "vacuumLoss", "storm",
-      "bloom", "fuelContamination", "tsunami");
+      "bloom", "fuelContamination", "tsunami", "lowSteam");
 
   private Rules() {}
 
@@ -78,6 +78,8 @@ public final class Rules {
           }
         }
         return false;
+      case "lowSteam":
+        return s.standbySteam;
       case "bloom":
         return e.baselineChlorine != null && s.chlorineMgL > e.baselineChlorine;
       case "tubeLeak":

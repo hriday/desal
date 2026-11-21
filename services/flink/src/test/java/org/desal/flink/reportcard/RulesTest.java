@@ -22,13 +22,25 @@ class RulesTest {
   @Test
   void whichKindsGetAVerdict() {
     for (String k : new String[] {"pumpTrip", "powerDip", "controllerFault", "sensorFailure", "tubeLeak",
-        "vacuumLoss", "storm", "bloom", "fuelContamination", "tsunami"}) {
+        "vacuumLoss", "storm", "bloom", "fuelContamination", "tsunami", "lowSteam"}) {
       assertTrue(Rules.hasVerdict(k), k);
     }
     for (String k : new String[] {"earthquake", "seawaterTemp", "pumpBearing", "gasCurtailNotice",
         "gasPriceSpike", "offgradeOnly", "deliveryDelay", "demandChange"}) {
       assertFalse(Rules.hasVerdict(k), k);
     }
+  }
+
+  @Test
+  void lowSteamNeedsTheStandbyLine() {
+    OpenEvent e = event("lowSteam");
+    assertFalse(Rules.responded(e, status(s -> s.standbySteam = false)));
+    assertFalse(Rules.responded(e, status(s -> {
+      s.standbySteam = false;
+      s.crewJob = "repairEjector";
+    })));
+    assertTrue(Rules.responded(e, status(s -> s.standbySteam = true)));
+    assertNull(Rules.crewJobFor("lowSteam"));
   }
 
   @Test

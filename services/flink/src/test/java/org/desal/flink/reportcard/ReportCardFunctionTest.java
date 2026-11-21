@@ -423,6 +423,41 @@ class ReportCardFunctionTest {
     assertEquals("quick", bloom.verdict);
   }
 
+  /** lowSteam is answered by the standby line: status T+3 with it on is 2 plant minutes. */
+  @Test
+  void aLowSteamAnsweredByTheStandbyLineIsGradedQuick() throws Exception {
+    gameStart(0, null);
+    sendStatus(harness, statusRecord(0, 700, "handover", 1, 0, 2, 3.0));
+    shiftStart(0, SHIFT2_START, 2);
+    send(scenario(0, 1000, 2, 1, "lowSteam"), 1);
+    for (long t = SHIFT2_START; t <= 1010; t++) {
+      ObjectNode st = statusRecord(0, t, "running", 2, 0, 2, 2.0);
+      st.put("standbySteam", t >= 1003);
+      sendStatus(harness, st);
+    }
+    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
+    EventLine e = reports().get(0).events.get(0);
+    assertEquals("lowSteam", e.kind);
+    assertEquals(2.0, e.responseMinutes, EPS);
+    assertEquals("quick", e.verdict);
+  }
+
+  @Test
+  void aLowSteamWithNoStandbyLineIsMissed() throws Exception {
+    gameStart(0, null);
+    sendStatus(harness, statusRecord(0, 700, "handover", 1, 0, 2, 3.0));
+    shiftStart(0, SHIFT2_START, 2);
+    send(scenario(0, 1000, 2, 1, "lowSteam"), 1);
+    for (long t = SHIFT2_START; t <= 1010; t++) {
+      sendStatus(harness, statusRecord(0, t, "running", 2, 0, 2, 2.0));
+    }
+    send(shiftEnd(0, SHIFT2_END, 2, 4163.88), 1);
+    status(0, SHIFT2_END, "handover", 2, 4163.88, 2);
+    EventLine e = reports().get(0).events.get(0);
+    assertEquals("missed", e.verdict);
+  }
+
   /** Buffered events are flushed once the game's status has made no progress for 15 s. */
   @Test
   void bufferedEventsAreReleasedWhenStatusStops() throws Exception {

@@ -17,7 +17,7 @@ public final class LeaderboardSql {
    * time-to-clear. earthquake is only noted (no verdict), and the other kinds are not sharp.
    */
   public static final String GRADED_KINDS = "'pumpTrip', 'tubeLeak', 'vacuumLoss', 'powerDip', 'storm', "
-      + "'sensorFailure', 'fuelContamination', 'tsunami'";
+      + "'sensorFailure', 'fuelContamination', 'tsunami', 'lowSteam'";
 
   private LeaderboardSql() {}
 

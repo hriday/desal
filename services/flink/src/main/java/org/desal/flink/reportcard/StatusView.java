@@ -30,6 +30,8 @@ public class StatusView {
   public long crewRemainingTicks;
   /** In-spec water made so far this shift (cumulative). */
   public double shiftProductM3;
+  /** Whether the standby steam line is on (the response to lowSteam); false when the record has none. */
+  public boolean standbySteam = false;
 
   public StatusView() {}
 
@@ -67,6 +69,7 @@ public class StatusView {
     s.crewJob = text(status.path("crew").path("job"), null);
     s.crewRemainingTicks = s.crewJob == null ? 0 : status.path("crew").path("remainingTicks").asLong();
     s.shiftProductM3 = status.path("shiftProductM3").asDouble();
+    s.standbySteam = status.path("standbySteam").asBoolean(false);
     return s;
   }
 
