@@ -40,6 +40,7 @@ export type Pace = z.infer<typeof PaceSchema>;
 
 export const PlantStatusSchema = z.object({
   gameId: z.uuid(),
+  callSign: z.string(),
   /** Restores from a snapshot so far (see the events' epoch); tick can rewind when it goes up. */
   epoch: z.number().int().min(0),
   shiftNumber: num,

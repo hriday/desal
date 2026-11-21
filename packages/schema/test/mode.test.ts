@@ -12,9 +12,9 @@ test('newGame mode defaults to normal', () => {
   expect(ClientMsgSchema.parse({ t: 'newGame' })).toEqual({ t: 'newGame', mode: 'normal' });
 });
 test('gameEnd and gameStart without mode parse as normal', () => {
-  const end = PlantEventSchema.parse({ ...base, type: 'gameEnd', reason: 'bankrupt', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: -5 } });
+  const end = PlantEventSchema.parse({ ...base, type: 'gameEnd', callSign: 'Kestrel-42', reason: 'bankrupt', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: -5 } });
   expect(end.type === 'gameEnd' && end.mode).toBe('normal');
-  const start = PlantEventSchema.parse({ ...base, type: 'gameStart' });
+  const start = PlantEventSchema.parse({ ...base, type: 'gameStart', callSign: 'Kestrel-42' });
   expect(start.type === 'gameStart' && start.mode).toBe('normal');
 });
 test('flushFuel crew job and disaster kinds', () => {

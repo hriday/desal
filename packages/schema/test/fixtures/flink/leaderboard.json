@@ -1,0 +1,9 @@
+{
+  "updatedAt": 1790000000000, "online": 3,
+  "normal": {
+    "allTime": [ { "rank": 1, "callSign": "Kestrel-42", "shiftsCompleted": 3, "totalProductM3": 4100.5, "endedAt": 1790000000000, "runId": "11111111-2222-4333-8444-555555555555" } ],
+    "today": [],
+    "stats": [ { "kind": "pumpTrip", "operators": 12, "firstHandledWellPct": 58.3 } ]
+  },
+  "hard": { "allTime": [], "today": [], "stats": [] }
+}

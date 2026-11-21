@@ -1,0 +1,18 @@
+{
+  "shiftId": 2, "epoch": 0, "mode": "hard", "grade": "B", "score": 78.5,
+  "targetM3": 1500, "productM3": 1320, "offSpecM3": 12, "offSpecMinutes": 4, "trips": 1, "spentUsd": 900, "minutesTripped": 6.5,
+  "self": { "shiftId": 2, "targetPct": 88, "handledWell": 1, "handledOf": 2, "minutesTripped": 6.5 },
+  "events": [
+    { "eventId": 1, "kind": "pumpTrip", "atMinute": 12, "responseMinutes": 3.3, "clearMinutes": 3.3, "outcome": "cleared by you", "verdict": "quick" },
+    { "eventId": 2, "kind": "fuelContamination", "atMinute": 100, "responseMinutes": 20, "clearMinutes": 20, "outcome": "fixed by crew", "verdict": "slow" },
+    { "eventId": 3, "kind": "earthquake", "atMinute": 200, "responseMinutes": null, "clearMinutes": null, "outcome": "noted", "verdict": null }
+  ],
+  "pace": [
+    { "hour": 1, "productM3": 150, "targetM3": 187.5 }, { "hour": 2, "productM3": 320, "targetM3": 375 },
+    { "hour": 3, "productM3": 500, "targetM3": 562.5 }, { "hour": 4, "productM3": 680, "targetM3": 750 },
+    { "hour": 5, "productM3": 850, "targetM3": 937.5 }, { "hour": 6, "productM3": 1000, "targetM3": 1125 },
+    { "hour": 7, "productM3": 1150, "targetM3": 1312.5 }, { "hour": 8, "productM3": 1320, "targetM3": 1500 }
+  ],
+  "vsPrevious": { "shiftId": 1, "targetPct": 95, "handledWell": 2, "handledOf": 2, "minutesTripped": 0 },
+  "vsBest": null
+}
