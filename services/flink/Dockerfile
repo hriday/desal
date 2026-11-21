@@ -10,7 +10,9 @@ WORKDIR /build
 COPY services/flink services/flink
 WORKDIR /build/services/flink
 # Builds target/desal-flink.jar (both jobs; no Main-Class, so jobs are submitted with -c).
-# The cache mount keeps Maven's downloads between builds on the same machine.
+# The cache mount keeps Maven's downloads between builds on the same machine. The heap cap keeps
+# the build from pushing the small server (which runs the live stack meanwhile) into swap.
+ENV MAVEN_OPTS=-Xmx512m
 RUN --mount=type=cache,target=/root/.m2 mvn -B -DskipTests package
 
 FROM flink:2.2.1-java17

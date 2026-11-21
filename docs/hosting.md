@@ -98,8 +98,9 @@ state, then stops the job; the paths go to `last.txt`). A session cluster forget
 carry over. If a savepoint no longer fits the new job (the leaderboard's SQL operators get their ids from the query,
 so changing a query can do this), the script prints `!!! leaderboard: savepoint incompatible, starting fresh` and
 submits it without one: the board rebuilds from the compacted `run.results` topic. It never skips state with
-`--allowNonRestoredState`. A job already running is never submitted twice. The current and previous deploy's
-savepoints are kept; older ones are deleted.
+`--allowNonRestoredState`. A job already running is never submitted twice. A job that was not running at
+`stop-all` (or whose stop failed) keeps its line from the previous `last.txt`, so it resumes from its last savepoint.
+Every savepoint `last.txt` names is kept, plus the previous deploy's; older ones are deleted.
 
 Flink problems print lines starting `!!!` but never fail the deploy. If the Flink image does not build, the previous
 one keeps running (on a first deploy, the stack starts without Flink). To redo the Flink step by hand:

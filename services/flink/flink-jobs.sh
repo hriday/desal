@@ -57,7 +57,7 @@ reason() {
 # the overview's field order is fixed, so each job object is matched by one sed expression.
 REST=http://localhost:8081
 list_jobs() {
-  curl -sf "$REST/jobs/overview" | sed 's/{"jid":/\n/g' | sed -nE \
+  curl -sf --max-time 10 "$REST/jobs/overview" | sed 's/{"jid":/\n/g' | sed -nE \
     's/^"([0-9a-f]{32})","name":"([^"]*)".*"state":"([A-Z_]+)".*"tasks":\{"running":([0-9]+),.*"total":([0-9]+),.*/\1 \2 \3 \4 \5/p'
 }
 
@@ -71,15 +71,24 @@ progress_of() {
   list_jobs | awk -v id="$1" '$1 == id {print $3, $4, $5}'
 }
 
+# Stops each job with a savepoint and rewrites <list-file> with one `name=path` line per job.
+# A job that is not running, or whose stop fails, keeps its line from the previous list: its
+# last savepoint is still the best state there is, and the next submit-all resumes from it.
 stop_all() {
-  local file="$1" failed=0 name id out path
+  local file="$1" failed=0 name id out path old
   local previous=""
-  [ -f "$file" ] && previous="$(cat "$file")"
+  if [ -f "$file" ]; then previous="$(cat "$file")"; fi
   : >"$file.tmp"
   for name in "${JOBS[@]}"; do
+    old="$(sed -n "s/^$name=//p" <<<"$previous" | tail -n 1)"
     id="$(active_ids "$name" | head -n 1)"
     if [ -z "$id" ]; then
-      echo "    $name: not running, no savepoint"
+      if [ -n "$old" ]; then
+        echo "$name=$old" >>"$file.tmp"
+        echo "    $name: not running; keeping its previous savepoint $old"
+      else
+        echo "    $name: not running, no savepoint"
+      fi
       continue
     fi
     echo "    $name: stopping $id with a savepoint"
@@ -94,11 +103,16 @@ stop_all() {
       echo "    $name: savepoint $path"
     else
       echo "!!! $name: stop with savepoint failed; it may still be running: $(reason "$out")" >&2
+      if [ -n "$old" ]; then
+        echo "$name=$old" >>"$file.tmp"
+        echo "    $name: keeping its previous savepoint $old"
+      fi
       failed=1
     fi
   done
   mv "$file.tmp" "$file"
-  # Keep the savepoints just taken and the previous deploy's (a manual way back); delete older ones.
+  # Keep every savepoint the new list names (carried-over ones included) and the previous list's
+  # (a manual way back); delete the rest.
   local dir
   for dir in "$SAVEPOINT_DIR"/savepoint-*; do
     [ -e "$dir" ] || continue

@@ -117,7 +117,7 @@ docker compose up -d --remove-orphans ${services[@]+"${services[@]}"}
 if [ ${#services[@]} -eq 0 ]; then
   flink_ready=""
   for _ in $(seq 1 60); do
-    if curl -s 127.0.0.1:8082/overview | grep -q '"taskmanagers":[1-9]'; then flink_ready=1; break; fi
+    if curl -s --max-time 5 127.0.0.1:8082/overview | grep -q '"taskmanagers":[1-9]'; then flink_ready=1; break; fi
     sleep 2
   done
   if [ -z "$flink_ready" ]; then

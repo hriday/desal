@@ -114,6 +114,7 @@ services:
     restart: unless-stopped
     command: jobmanager
     mem_limit: 700m
+    # About 120 threads with both jobs running (and briefly more while flink-jobs.sh runs the CLI).
     pids_limit: 512
     # REST API and web UI: Caddy serves it at /flink behind basic auth (deploy/desal.caddy).
     ports:
@@ -149,6 +150,7 @@ services:
     restart: unless-stopped
     command: taskmanager
     mem_limit: 1100m
+    # About 115 threads with both jobs running.
     pids_limit: 512
     depends_on:
       - flink-jobmanager

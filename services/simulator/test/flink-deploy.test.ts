@@ -37,6 +37,8 @@ describe('deploy/compose.yml: Flink', () => {
     expect(prod).toMatch(/taskmanager\.memory\.process\.size:\s*1024m/);
     expect(prod).toMatch(/taskmanager\.numberOfTaskSlots:\s*2\b/);
     expect(prod).toMatch(/^volumes:[\s\S]*^\s{2}flink-checkpoints:/m);
+    // Both measured at about 120 threads with the two jobs running.
+    for (const s of [jm, tm]) expect(s).toMatch(/^\s*pids_limit:\s*512\s*$/m);
   });
 
   it('publishes the Flink REST/UI only on 127.0.0.1:8082 and never accepts jar uploads', () => {
@@ -123,6 +125,8 @@ describe('scripts/deploy/deploy.sh: Flink', () => {
     expect(up).toBeGreaterThan(stop);
     expect(submit).toBeGreaterThan(up);
     expect(deploy).toMatch(/127\.0\.0\.1:8082\/overview/);
+    // The wait loop is bounded by wall-clock time, not only by its iteration count.
+    expect(deploy).toMatch(/curl -s --max-time \d+ 127\.0\.0\.1:8082\/overview/);
   });
 });
 
@@ -140,5 +144,25 @@ describe('services/flink/flink-jobs.sh', () => {
     // -n is the short form; the CLI arguments are built in `cmd` arrays.
     expect(text).not.toMatch(/cmd\+?=\([^)]*\s-n[\s)]/);
     expect(text).toMatch(/savepoint incompatible, starting fresh/);
+  });
+
+  it("keeps a job's previous savepoint line when stop-all takes no new one for it", () => {
+    const text = readFileSync(script, 'utf8');
+    const stopAll = text.slice(text.indexOf('stop_all() {'), text.indexOf('\n}\n', text.indexOf('stop_all() {')));
+    // Both the not-running and the failed-stop branches write the old line back.
+    expect(stopAll.match(/echo "\$name=\$old" >>"\$file\.tmp"/g)).toHaveLength(2);
+  });
+
+  it('bounds every REST call in wall-clock time', () => {
+    const text = readFileSync(script, 'utf8');
+    const calls = text.replace(/#.*$/gm, '').match(/curl [^|\n]*/g) ?? [];
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) expect(call).toMatch(/--max-time \d+/);
+  });
+});
+
+describe('services/flink/Dockerfile', () => {
+  it("caps Maven's heap so the build cannot push the small server into swap", () => {
+    expect(read('services/flink/Dockerfile')).toMatch(/^ENV MAVEN_OPTS=-Xmx512m$/m);
   });
 });
