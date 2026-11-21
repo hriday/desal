@@ -1,5 +1,6 @@
 import type { LoopId, PlantStatus, PumpId, TelemetryReading, UnitId } from '@desal/schema';
 import { PUMP_WEAR_FLOW_LOSS, SHIFT_TICKS, STAGE_COUNT } from './constants.js';
+import { paceOf } from './pace.js';
 import { measured } from './sensors.js';
 import type { Loop, LoopSensorId, PlantState } from './state.js';
 
@@ -148,5 +149,6 @@ export function toStatus(s: PlantState): PlantStatus {
     mode: s.run.mode,
     // Never exposed in handover, so an unwarned hell shift cannot be peeked at.
     hell: s.phase === 'running' ? (s.chaos.active?.plan.hell ?? null) : null,
+    pace: paceOf(s),
   };
 }

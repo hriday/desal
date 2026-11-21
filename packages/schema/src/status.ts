@@ -34,6 +34,10 @@ export type LoopFaultKind = z.infer<typeof LoopFaultKindSchema>;
 export const PlantStatusKindSchema = z.enum(['online', 'tripped', 'restarting', 'acidCleaning']);
 export type PlantStatusKind = z.infer<typeof PlantStatusKindSchema>;
 
+/** How fast the game runs: calm is 3 ticks per real second, busy (an open event, a trip) 1. */
+export const PaceSchema = z.enum(['calm', 'busy']);
+export type Pace = z.infer<typeof PaceSchema>;
+
 export const PlantStatusSchema = z.object({
   gameId: z.uuid(),
   /** Restores from a snapshot so far (see the events' epoch); tick can rewind when it goes up. */
@@ -85,5 +89,7 @@ export const PlantStatusSchema = z.object({
   /** The active shift's hell flag; null in handover so an unwarned hell can't be peeked at. */
   hell: z.boolean().nullable(),
   mode: GameModeSchema.default('normal'),
+  /** Optional on the wire: older simulators did not report it. */
+  pace: PaceSchema.default('calm'),
 });
 export type PlantStatus = z.infer<typeof PlantStatusSchema>;

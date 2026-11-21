@@ -8,7 +8,7 @@ const gameId = '11111111-1111-4111-8111-111111111111';
 function status(over: Partial<PlantStatus> = {}): PlantStatus {
   return {
     gameId, epoch: 0, shiftNumber: 1, balanceUsd: 1000, tick: 0, plantTime: 0, shiftId: 1,
-    phase: 'running', mode: 'normal', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
+    phase: 'running', mode: 'normal', pace: 'calm', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
     loops: { tbt: { mode: 'auto', setpoint: 100, output: 50 } } as PlantStatus['loops'],
     pumps: { 'P-101': { running: true, overhaulRemainingTicks: 0 }, 'P-102': { running: false, overhaulRemainingTicks: 0 }, 'P-103': { running: false, overhaulRemainingTicks: 0 } },
     fuel: {

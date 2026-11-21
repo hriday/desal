@@ -10,6 +10,7 @@ export const status: PlantStatus = {
   shiftId: null,
   phase: 'handover',
   mode: 'normal',
+  pace: 'busy',
   status: 'online',
   controlMode: 'auto',
   tripCause: null,

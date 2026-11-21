@@ -1,5 +1,7 @@
 /** Plant seconds advanced per simulation tick. */
 export const TICK_PLANT_S = 40;
+/** Ticks per real second while the plant is calm (src/pace.ts); a busy plant runs at 1. */
+export const FAST_PACE = 3;
 /** Ticks in one operating shift. */
 export const SHIFT_TICKS = 720;
 /** Number of evaporator stages: heat recovery 1-21, then heat rejection 22-24 (spec Plan 7 §2.1). */

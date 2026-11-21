@@ -5,6 +5,7 @@ import { GameHost } from '../../src/host.js';
 import * as tickModule from '../../src/tick.js';
 import { topicName } from '../../src/kafka/client.js';
 import { commandsGroup, SimRunner, type OutRecord, type SimIO } from '../../src/kafka/runner.js';
+import { CALM_TICK_MS } from '../../src/pace.js';
 import { restore } from '../../src/snapshot.js';
 import type { PlantState } from '../../src/state.js';
 import { nextId } from '../envelope.js';
@@ -337,8 +338,34 @@ describe('SimRunner start', () => {
     await runner.start([saved]);
     // A restored game enters the next epoch.
     const restored = { ...saved, run: { ...saved.run, epoch: saved.run.epoch + 1 } };
-    expect(host.games().get(A)).toEqual({ state: restored, lastSeenMs: 5_000_000, lastPlayerActionMs: 5_000_000 });
+    // Due at once, with no commands waiting.
+    expect(host.games().get(A)).toEqual({ state: restored, lastSeenMs: 5_000_000, lastPlayerActionMs: 5_000_000, dueMs: 5_000_000, queued: [] });
     const stopping = runner.stop();
+    await vi.advanceTimersByTimeAsync(1000);
+    await stopping;
+  });
+});
+
+describe('SimRunner step period', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('with the default options, steps the host CALM_TICK_MS apart (the calm pace)', async () => {
+    const io = new FakeIO();
+    const host = new GameHost();
+    const at: number[] = [];
+    const real = host.step.bind(host);
+    vi.spyOn(host, 'step').mockImplementation((envs, nowMs) => {
+      at.push(nowMs);
+      return real(envs, nowMs);
+    });
+    const runner = new SimRunner(io, host, { log: () => {}, warn: () => {} });
+    await runner.start();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(at.length).toBeGreaterThanOrEqual(8);
+    expect(at.length).toBeLessThanOrEqual(10);
+    for (let i = 1; i < at.length; i++) expect(at[i]! - at[i - 1]!).toBeCloseTo(CALM_TICK_MS, 0);
+    const stopping = runner.stop({ finalSnapshot: false });
     await vi.advanceTimersByTimeAsync(1000);
     await stopping;
   });

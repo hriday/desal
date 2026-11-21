@@ -27,3 +27,10 @@ test('crew, orders and hell are required; null crew parses', () => {
   expect(PlantStatusSchema.safeParse(noCrew).success).toBe(false);
   expect(PlantStatusSchema.safeParse({ ...status, crew: null, orders: null, hell: true }).success).toBe(true);
 });
+
+test('pace defaults to calm when missing; only calm and busy parse', () => {
+  const { pace: _p, ...noPace } = status;
+  expect(PlantStatusSchema.parse(noPace).pace).toBe('calm');
+  expect(PlantStatusSchema.parse({ ...status, pace: 'busy' }).pace).toBe('busy');
+  expect(PlantStatusSchema.safeParse({ ...status, pace: 'fast' }).success).toBe(false);
+});

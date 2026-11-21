@@ -11,6 +11,7 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
     gameId,
     epoch: 0,
     mode: 'normal',
+    pace: 'calm',
     shiftNumber: 1,
     balanceUsd: 15000,
     tick,
