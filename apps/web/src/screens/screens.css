@@ -226,3 +226,99 @@
 }
 
 .debrief__todo { color: var(--ink-muted); font-size: 14px; }
+
+/* The run's call sign, signed at the sheet's top right in the operator's hand. */
+.screen .sheet .sheet__sign {
+  position: absolute;
+  top: calc(var(--row) * 2);
+  right: 28px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  transform: rotate(-2deg);
+}
+.sheet__head { position: relative; }
+.sheet__signk { color: var(--ink-muted); font-size: 13px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.screen .sheet .sheet__rank { font-family: var(--font-display); font-size: 20px; font-weight: 700; }
+@media (max-width: 480px) {
+  /* No room beside the title: the call sign gets its own row under it. */
+  .screen .sheet .sheet__sign { position: static; transform: none; }
+}
+
+/* ---------- Report card (handover): the grade stamp, pace sparkline, graded events, comparisons ---------- */
+.report__top { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-top: 4px; }
+.report__grade {
+  display: inline-grid;
+  place-items: center;
+  width: calc(var(--row) * 3);
+  height: calc(var(--row) * 3);
+  color: var(--stamp);
+  border: 4px solid currentColor;
+  border-radius: 10px;
+  font-family: var(--font-display);
+  font-size: 68px;
+  font-weight: 700;
+  line-height: 1;
+  transform: rotate(-8deg);
+  opacity: .9;
+}
+.report__pacebox { flex: 1 1 180px; min-width: 0; max-width: 280px; }
+.report__k { display: block; color: var(--ink-muted); font-family: var(--font-display); font-size: 14px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.report__pace { display: block; width: 100%; height: auto; aspect-ratio: 160 / 44; overflow: visible; }
+.report__target { fill: none; stroke: var(--ink-muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.report__product { fill: none; stroke: #1d3b5e; stroke-width: 1.8; stroke-linejoin: round; }
+.report__pace circle { fill: #1d3b5e; }
+.sheet .report__events { margin-top: 4px; }
+.report__verdict { padding: 0 5px; border: 1px solid currentColor; border-radius: 3px; font-family: var(--font-display); font-size: 14px; font-weight: 700; line-height: 18px; white-space: nowrap; }
+.report__verdict[data-verdict="quick"] { color: #1f6b3a; }
+.report__verdict[data-verdict="ok"] { color: #1d3b5e; }
+.report__verdict[data-verdict="slow"] { color: #8a5a00; }
+.report__verdict[data-verdict="missed"] { color: var(--stamp); }
+.screen .sheet .report__vs { color: var(--ink-muted); font-size: 15px; }
+.report__hard { margin-left: 4px; }
+.screen .sheet .report__grading { color: var(--ink-muted); font-style: italic; }
+
+/* ---------- Leaderboard card (start): Normal and Hard boards on one dark panel ---------- */
+.lb {
+  margin: 40px auto 0;
+  max-width: 880px;
+  padding: 16px 20px 20px;
+  text-align: left;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .45);
+}
+.screen .lb h2 { margin: 0; text-align: center; }
+.screen .lb p { margin: 0; }
+.screen .lb .lb__online, .screen .lb .lb__note { margin-top: 4px; text-align: center; color: var(--muted); }
+.lb__boards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 28px; margin-top: 12px; }
+.lb__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.lb__board h3 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .04em; }
+.lb__board:last-child h3 { color: var(--bad); }
+.lb__toggle { display: flex; }
+.screen .lb__toggle button { padding: 3px 10px; font-size: 14px; border-radius: 0; color: var(--muted); }
+.screen .lb__toggle button:first-child { border-radius: 4px 0 0 4px; }
+.screen .lb__toggle button:last-child { border-radius: 0 4px 4px 0; border-left: 0; }
+.screen .lb__toggle button[aria-pressed="true"] { color: var(--text); background: #12345a; border-color: var(--water); }
+.lb__rows { margin: 6px 0 0; padding: 0; list-style: none; font-family: var(--mono); font-size: 13px; }
+.lb__rows li {
+  display: grid;
+  grid-template-columns: 2.5ch minmax(0, 1fr) auto auto;
+  gap: 0 10px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(35, 54, 74, .6);
+}
+.lb__rank { color: var(--muted); text-align: right; }
+.lb__who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-family: var(--font-display); font-size: 15px; font-weight: 600; }
+.lb__water { text-align: right; }
+.lb__shifts { color: var(--muted); text-align: right; min-width: 8ch; }
+.screen .lb .lb__empty { padding: 8px 0; color: var(--muted); }
+.screen .lb .lb__stat { margin-top: 8px; color: var(--muted); font-size: 14px; line-height: 1.4; min-height: 2.8em; }
+@media (max-width: 640px) {
+  .lb { padding: 12px; }
+  .lb__boards { grid-template-columns: minmax(0, 1fr); }
+  .lb__rows li { grid-template-columns: 2.5ch minmax(0, 1fr) auto; }
+  .lb__shifts { grid-column: 2 / -1; text-align: left; min-width: 0; font-size: 12px; }
+}

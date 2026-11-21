@@ -1,9 +1,9 @@
 # Production stack on the shared server: compose project "desal" in /opt/desal
 # (docs/hosting.md). scripts/deploy/deploy.sh copies this file there and writes
-# .env with SIMULATOR_IMAGE and GATEWAY_IMAGE. Every container is capped: the server
-# has 2 GB RAM. Nothing is published publicly: Caddy on the host reaches the gateway
-# on 127.0.0.1:8081 and Kafka UI on 127.0.0.1:8080, and Kafka's 127.0.0.1:9092 is
-# for SSH tunnels from the laptop.
+# .env with SIMULATOR_IMAGE, GATEWAY_IMAGE and FLINK_IMAGE. Every container is capped:
+# the server has 3.9 GB RAM plus 2 GB swap. Nothing is published publicly: Caddy on the
+# host reaches the gateway on 127.0.0.1:8081, Kafka UI on 127.0.0.1:8080 and the Flink
+# UI on 127.0.0.1:8082, and Kafka's 127.0.0.1:9092 is for SSH tunnels from the laptop.
 name: desal
 
 services:
@@ -104,5 +104,88 @@ services:
       SERVER_SERVLET_CONTEXT_PATH: /kafka
       JAVA_OPTS: "-Xmx192m"
 
+  # Flink session cluster: one jobmanager (schedules jobs, coordinates checkpoints, serves the REST
+  # API and web UI) and one taskmanager (runs the jobs' operators in its 2 slots). deploy.sh
+  # submits the report-card and leaderboard jobs to it with flink-jobs.sh. The game never needs
+  # Flink: with it down only the report card and the leaderboard are missing.
+  flink-jobmanager:
+    image: ${FLINK_IMAGE:?set by deploy.sh}
+    container_name: desal-flink-jobmanager
+    restart: unless-stopped
+    command: jobmanager
+    mem_limit: 700m
+    # About 120 threads with both jobs running (and briefly more while flink-jobs.sh runs the CLI).
+    pids_limit: 512
+    # REST API and web UI: Caddy serves it at /flink behind basic auth (deploy/desal.caddy).
+    ports:
+      - "127.0.0.1:8082:8081"
+    environment:
+      # Flink reads these into conf/config.yaml at startup. Memory: the process sizes are what the
+      # JVM may use in total (heap, metaspace, network buffers, overhead), kept under mem_limit.
+      # State is a few KB per game, so it lives on the JVM heap (hashmap backend). Managed memory
+      # (off-heap; RocksDB would use it, here only the leaderboard's SQL window buffers do) would
+      # take 40% of the taskmanager by default and leave its task heap at 26 MB, so it is fixed
+      # at 64 MB; and the jobmanager's JVM overhead reserve is cut from its 192 MB minimum to
+      # 128 MB so its heap gets the recommended 128 MB.
+      # Checkpoints (periodic, automatic) and savepoints (taken by deploys) go to the shared volume.
+      # A job's last checkpoint is kept when it is cancelled or the jobmanager goes away, so a
+      # restarted jobmanager can resubmit the jobs from it (desal-entrypoint.sh, flink-jobs.sh).
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 640m
+        jobmanager.memory.jvm-overhead.min: 128m
+        taskmanager.memory.process.size: 1024m
+        taskmanager.memory.managed.size: 64m
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 1
+        state.backend.type: hashmap
+        execution.checkpointing.dir: file:///flink-data/checkpoints
+        execution.checkpointing.savepoint-dir: file:///flink-data/savepoints
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+        web.submit.enable: false
+        rest.bind-address: 0.0.0.0
+    volumes:
+      - flink-checkpoints:/flink-data
+
+  flink-taskmanager:
+    image: ${FLINK_IMAGE:?set by deploy.sh}
+    container_name: desal-flink-taskmanager
+    restart: unless-stopped
+    command: taskmanager
+    mem_limit: 1100m
+    # About 115 threads with both jobs running.
+    pids_limit: 512
+    depends_on:
+      - flink-jobmanager
+    environment:
+      # Flink reads these into conf/config.yaml at startup. Memory: the process sizes are what the
+      # JVM may use in total (heap, metaspace, network buffers, overhead), kept under mem_limit.
+      # State is a few KB per game, so it lives on the JVM heap (hashmap backend). Managed memory
+      # (off-heap; RocksDB would use it, here only the leaderboard's SQL window buffers do) would
+      # take 40% of the taskmanager by default and leave its task heap at 26 MB, so it is fixed
+      # at 64 MB; and the jobmanager's JVM overhead reserve is cut from its 192 MB minimum to
+      # 128 MB so its heap gets the recommended 128 MB.
+      # Checkpoints (periodic, automatic) and savepoints (taken by deploys) go to the shared volume.
+      # A job's last checkpoint is kept when it is cancelled or the jobmanager goes away, so a
+      # restarted jobmanager can resubmit the jobs from it (desal-entrypoint.sh, flink-jobs.sh).
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 640m
+        jobmanager.memory.jvm-overhead.min: 128m
+        taskmanager.memory.process.size: 1024m
+        taskmanager.memory.managed.size: 64m
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 1
+        state.backend.type: hashmap
+        execution.checkpointing.dir: file:///flink-data/checkpoints
+        execution.checkpointing.savepoint-dir: file:///flink-data/savepoints
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+        web.submit.enable: false
+        rest.bind-address: 0.0.0.0
+    volumes:
+      - flink-checkpoints:/flink-data
+
 volumes:
   kafka-data:
+  # Flink checkpoints and savepoints (deploy.sh keeps the list of the last ones in savepoints/last.txt).
+  flink-checkpoints:

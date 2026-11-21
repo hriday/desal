@@ -23,6 +23,8 @@
 }
 .topbar__shift { font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: 0.04em; }
 .topbar__k { color: var(--muted); margin-right: 4px; font-family: var(--font-display); font-weight: 600; letter-spacing: 0.04em; }
+/* The run's call sign, as a callsign plate. */
+.topbar__sign { padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--text); font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.06em; }
 .topbar__hard { color: var(--bad); font-family: var(--font-display); font-weight: 700; letter-spacing: 0.08em; }
 .topbar__conn { color: var(--muted); }
 /* Pace: ▶▶ calm (3x), ▶ busy (1x). Fixed width so the bar does not shift when it changes. */

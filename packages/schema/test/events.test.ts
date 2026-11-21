@@ -21,9 +21,9 @@ const events: PlantEvent[] = [
   { ...base, type: 'deliveryArrived', tonnes: 20, grade: 'offgrade' },
   { ...base, type: 'commandRejected', commandId: 'c1', reason: 'tripped', shiftId: null },
   { ...base, type: 'damage', component: 'pump', value: 0.5 },
-  { ...base, type: 'gameStart', mode: 'normal' },
+  { ...base, type: 'gameStart', callSign: 'Kestrel-42', mode: 'normal' },
   { ...base, type: 'gameRejected', reason: 'capacity' },
-  { ...base, type: 'gameEnd', mode: 'normal', reason: 'bankrupt', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: -5 } },
+  { ...base, type: 'gameEnd', callSign: 'Kestrel-42', mode: 'normal', reason: 'bankrupt', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: -5 } },
   { ...base, type: 'accountChange', deltaUsd: -6000, balanceUsd: 34000, cause: 'acidClean' },
   { ...base, type: 'accountChange', deltaUsd: 9700, balanceUsd: 24000, cause: 'allocation' },
 ];
@@ -42,6 +42,14 @@ test('the account has no revenue or fines: those causes and summary fields are g
   }
   const { spentUsd: _s, ...noSpent } = summary;
   expect(PlantEventSchema.safeParse({ ...base, type: 'shiftEnd', summary: noSpent }).success).toBe(false);
+});
+
+test('gameEnd without runId parses (the browser view); gameStart needs a callSign', () => {
+  const end = { ...base, type: 'gameEnd', callSign: 'Kestrel-42', reason: 'quit', score: { shiftsCompleted: 1, totalProductM3: 10, balanceUsd: 0 } };
+  expect(PlantEventSchema.safeParse(end).success).toBe(true);
+  expect(PlantEventSchema.safeParse({ ...end, runId: G }).success).toBe(true);
+  expect(PlantEventSchema.safeParse({ ...base, type: 'gameStart', mode: 'normal' }).success).toBe(false);
+  expect(PlantEventSchema.safeParse({ ...base, type: 'shiftEnd', summary, runId: G }).success).toBe(true);
 });
 
 test('rejects unknown trip cause and missing envelope fields', () => {

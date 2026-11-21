@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { callSignFor } from '../src/callsign.js';
 import { STAGE_COUNT } from '../src/constants.js';
 import { startShift } from '../src/shift.js';
 import { restore, serialize } from '../src/snapshot.js';
@@ -8,6 +9,8 @@ import { tick } from '../src/tick.js';
 import { GAME_ID } from './envelope.js';
 
 const T0 = Date.UTC(2026, 0, 1);
+const RUN_ID = 'dddddddd-dddd-4ddd-8ddd-000000000001';
+const FRESH_RUN_ID = 'eeeeeeee-eeee-4eee-8eee-000000000001';
 
 function run(s: PlantState, n: number) {
   const telemetry: unknown[] = [];
@@ -27,7 +30,7 @@ function midShift2(): PlantState {
 const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0, GAME_ID)));
 
 function wrap(state: unknown, over: Record<string, unknown> = {}): string {
-  return JSON.stringify({ format: 'desal-snapshot', version: 5, savedAt: 0, state, ...over });
+  return JSON.stringify({ format: 'desal-snapshot', version: 6, savedAt: 0, state, ...over });
 }
 
 /**
@@ -72,20 +75,65 @@ describe('snapshots', () => {
 
   it('rejects garbage, wrong format and unknown version', () => {
     const s = createInitialState(1, T0, GAME_ID);
-    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 6 })]) {
+    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 7 })]) {
       const r = restore(bad);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason.length).toBeGreaterThan(0);
     }
   });
 
-  it('serializes version 5', () => {
-    expect(JSON.parse(serialize(createInitialState(1, T0, GAME_ID))).version).toBe(5);
+  it('serializes version 6', () => {
+    expect(JSON.parse(serialize(createInitialState(1, T0, GAME_ID))).version).toBe(6);
+  });
+
+  it('a v6 round-trip keeps the call sign, runId and mode', () => {
+    const s = createInitialState(5, T0, GAME_ID, 'hard', RUN_ID);
+    const r = restore(serialize(s), () => FRESH_RUN_ID);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.run).toMatchObject({ callSign: callSignFor(5), runId: RUN_ID, mode: 'hard' });
+    expect(r.state).toEqual(s);
+  });
+
+  it('a v5 save gets the call sign from its seed and a fresh runId, and keeps its mode and 24 stages', () => {
+    const s = midShift2();
+    const doc = JSON.parse(serialize({ ...s, run: { ...s.run, mode: 'hard' } }));
+    delete doc.state.run.callSign;
+    delete doc.state.run.runId;
+    doc.version = 5;
+    const r = restore(JSON.stringify(doc), () => FRESH_RUN_ID);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.run.callSign).toBe(callSignFor(s.seed));
+    expect(r.state.run.runId).toBe(FRESH_RUN_ID);
+    expect(r.state.run.mode).toBe('hard');
+    expect(r.state.stages).toEqual(s.stages);
+    expect(r.state.loops).toEqual(s.loops);
+    expect(r.state).toEqual({ ...s, run: { ...s.run, mode: 'hard', callSign: callSignFor(s.seed), runId: FRESH_RUN_ID } });
+  });
+
+  it('a v5 save without an injected id generator gets a random uuid', () => {
+    const doc = JSON.parse(serialize(createInitialState(1, T0, GAME_ID)));
+    delete doc.state.run.callSign;
+    delete doc.state.run.runId;
+    doc.version = 5;
+    const r = restore(JSON.stringify(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.state.run.runId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it('rejects a v6 save without a call sign or runId', () => {
+    const a = clone();
+    delete a.run.callSign;
+    expect(restore(wrap(a)).ok).toBe(false);
+    const b = clone();
+    b.run.runId = 'not-a-uuid';
+    expect(restore(wrap(b)).ok).toBe(false);
   });
 
   describe('a live v4 save restores as 24 stages', () => {
     const old = fixture().state;
-    const r = restore(fixtureJson());
+    const r = restore(fixtureJson(), () => FRESH_RUN_ID);
     const s = r.ok ? r.state : (null as unknown as PlantState);
     const from = (j: number): number => Math.floor((j * 20) / 24);
 
@@ -93,6 +141,10 @@ describe('snapshots', () => {
       expect(r.ok).toBe(true);
       expect(old.stages).toHaveLength(20);
       expect(s.stages).toHaveLength(STAGE_COUNT);
+    });
+
+    it('migrates on to v6: call sign from the seed, a fresh runId, its mode kept', () => {
+      expect(s.run).toMatchObject({ callSign: callSignFor(old.seed), runId: FRESH_RUN_ID, mode: old.run.mode });
     });
 
     it('resamples the stages and their derates: new stage j copies old stage floor(j*20/24)', () => {
@@ -139,20 +191,22 @@ describe('snapshots', () => {
       expect(x.shift?.id).toBe(2);
     });
 
-    it('re-serializes as a version 5 save that round-trips', () => {
+    it('re-serializes as a version 6 save that round-trips', () => {
       const again = restore(serialize(s));
       expect(again.ok).toBe(true);
       if (again.ok) expect(again.state).toEqual(s);
     });
   });
 
-  it('migrates a version 3 save to Normal with the new fields defaulted, and to 24 stages', () => {
+  it('migrates a version 3 save through v4 and v5 to v6: Normal, new fields defaulted, 24 stages, a call sign and runId', () => {
     const doc = toV3(fixture());
     const st = doc.state;
     expect(st.chaos.active.plan.queue.length + st.chaos.active.fired.length).toBeGreaterThan(0);
-    const r = restore(JSON.stringify(doc));
+    const r = restore(JSON.stringify(doc), () => FRESH_RUN_ID);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
+    expect(r.state.run.callSign).toBe(callSignFor(st.seed));
+    expect(r.state.run.runId).toBe(FRESH_RUN_ID);
     expect(r.state.stages).toHaveLength(STAGE_COUNT);
     expect(r.state.loops.levels).toHaveLength(23);
     expect(r.state.loops.makeup.mode).toBe('auto');

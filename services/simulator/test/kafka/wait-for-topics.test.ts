@@ -1,9 +1,10 @@
+import { TOPICS } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
-import { waitForTopics, type KafkaInstance } from '../../src/kafka/client.js';
+import { topicName, waitForTopics, type KafkaInstance } from '../../src/kafka/client.js';
 
 /** A fake admin whose metadata calls fail `failures` times (like a fresh topic), then succeed. */
 function fakeKafka(failures: number) {
-  const calls = { metadata: 0, connect: 0, disconnect: 0 };
+  const calls = { metadata: 0, connect: 0, disconnect: 0, topics: [] as string[] };
   const admin = {
     async connect() {
       calls.connect++;
@@ -13,6 +14,7 @@ function fakeKafka(failures: number) {
     },
     async fetchTopicMetadata({ topics }: { topics: string[] }) {
       calls.metadata++;
+      calls.topics = topics;
       if (calls.metadata <= failures) {
         throw Object.assign(new Error('Broker: Unknown topic or partition'), { code: 3 });
       }
@@ -35,6 +37,12 @@ describe('waitForTopics', () => {
     expect(logs[0]).toMatch(/waiting for topic metadata.*Unknown topic/);
     expect(logs.at(-1)).toMatch(/ready/);
     expect(calls.disconnect).toBe(calls.connect);
+  });
+
+  it('waits for every topic, the Flink output topics included', async () => {
+    const { kafka, calls } = fakeKafka(0);
+    await waitForTopics(kafka, { timeoutMs: 5000, intervalMs: 5 });
+    expect([...calls.topics].sort()).toEqual(Object.values(TOPICS).map(topicName).sort());
   });
 
   it('throws once timeoutMs has passed, and still disconnects', async () => {

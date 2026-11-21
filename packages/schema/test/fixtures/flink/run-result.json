@@ -1,0 +1,22 @@
+{
+  "runId" : "11111111-2222-4333-8444-555555555555",
+  "callSign" : "Kestrel-42",
+  "mode" : "hard",
+  "endedAt" : 1790000000000,
+  "shiftsCompleted" : 3,
+  "totalProductM3" : 4100.5,
+  "endReason" : "bankrupt",
+  "kinds" : [ {
+    "kind" : "pumpTrip",
+    "count" : 2,
+    "handledWell" : 1,
+    "meanResponseMinutes" : 4.2,
+    "firstHandledWell" : true
+  }, {
+    "kind" : "storm",
+    "count" : 1,
+    "handledWell" : 0,
+    "meanResponseMinutes" : null,
+    "firstHandledWell" : false
+  } ]
+}

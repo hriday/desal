@@ -118,7 +118,7 @@ describe('ControlRoom', () => {
   it('a gameEnd switches to game over at once, even with a monitor expanded', () => {
     const { container, ws } = mount(running());
     fireEvent.click(container.querySelector('[data-monitor="fuel"]')!);
-    ws.push({ t: 'event', event: ev({ seq: 9, type: 'gameEnd', reason: 'bankrupt', score: { totalProductM3: 100, shiftsCompleted: 2, balanceUsd: -5 } }) });
+    ws.push({ t: 'event', event: ev({ seq: 9, type: 'gameEnd', callSign: 'Kestrel-42', reason: 'bankrupt', score: { totalProductM3: 100, shiftsCompleted: 2, balanceUsd: -5 } }) });
     const over = container.querySelector('[data-screen="over"]')!;
     expect(over).not.toBeNull();
     expect(container.querySelector('[data-expanded]')).toBeNull();

@@ -4,7 +4,8 @@ A map from Kafka concept to where it appears in the code and why it was done tha
 
 ## Topics
 
-Every record on every topic is keyed by `gameId` (the one simulator process runs many games).
+Every record on every `plant.*` topic is keyed by `gameId` (the one simulator process runs many games). The four Flink
+output topics are not: they hold no gameId except `shift.reports`, which only the gateway reads.
 
 | Topic | Partitions | Key | Config | Written by |
 | --- | --- | --- | --- | --- |
@@ -13,6 +14,13 @@ Every record on every topic is keyed by `gameId` (the one simulator process runs
 | `plant.events` | 1 | `gameId` | LogAppendTime, 7 days (kept for Flink) and 256 MiB per partition retention | simulator |
 | `plant.status` | 1 | `gameId` | LogAppendTime, 1 h retention | simulator |
 | `plant.state` | 1 | `gameId` | `cleanup.policy=compact`, `segment.ms=1h`, `min.cleanable.dirty.ratio=0.1` | simulator (one save per game; tombstone when it ends) |
+| `shift.reports` | 1 | `gameId` | LogAppendTime, 7 days retention | created by the simulator; written by Flink (one report card per finished shift; read only by the gateway) |
+| `run.results` | 1 | `runId` | `cleanup.policy=compact`, `retention.ms=-1` (kept forever), `segment.ms=1h`, `min.cleanable.dirty.ratio=0.1` | created by the simulator; written by Flink (one result per finished run) |
+| `leaderboard` | 1 | one key | `cleanup.policy=compact`, `segment.ms=1h`, `min.cleanable.dirty.ratio=0.1` | created by the simulator; written by Flink (the current boards) |
+| `run.ranks` | 1 | `runId` | `cleanup.policy=compact`, `segment.ms=1h`, `min.cleanable.dirty.ratio=0.1` | created by the simulator; written by Flink (each run's current rank; read only by the gateway) |
+
+`ensureTopics` creates all nine, so the Flink output topics exist with the right shape before any Flink job starts, and
+`waitForTopics` waits for all nine.
 
 ## Concept to code
 
@@ -57,7 +65,7 @@ All records produced by one tick share one clock: every event, telemetry reading
 
 This is the contract for anything reading the plant topics: the gateway today, Flink jobs next.
 
-**Keys.** Every record on every topic is keyed by `gameId`, the game it belongs to (a UUID). The one exception is a
+**Keys.** Every record on every plant topic is keyed by `gameId`, the game it belongs to (a UUID). The one exception is a
 host event about a message the simulator could not attribute (an unparseable command), keyed by the all-zero id
 `00000000-0000-0000-0000-000000000000`. A `plant.state` tombstone (null value) under a `gameId` means that game ended.
 
@@ -108,7 +116,7 @@ A shift is 720 ticks (480 plant minutes). The simulator draws each shift's plan 
 | `shiftStart` | Once, when the player starts a shift. | `scenarioId` (string), `mode` (`auto` or `manual`), `target` (`productM3`, `maxSalinityPpm`, `fuelBudgetUsd`, all numbers), `hell` (boolean), `orders` |
 | `scenario` | When the director fires an event. | `eventId` (integer, 1 or more, unique within the shift), `kind`, `message` (string), `radio` (string, the line the player hears) |
 | `eventCleared` | When a fired event is dealt with. | `eventId`, `kind`, `how` |
-| `shiftEnd` | Once, when the shift's clock runs out. | `summary` |
+| `shiftEnd` | Once, when the shift's clock runs out. | `summary`, `runId` (see "Runs" below) |
 
 `orders` is `{ targetM3, maxSalinityPpm, budgetUsd, lines: string[], briefing: string[] }`. `budgetUsd` is the shift's fuel guidance (`target.fuelBudgetUsd`), not the allocation credited to the account. `briefing` has lines only on shift 1; `lines` is the foreman's note. On a hell shift, `target.productM3` is 85 % of the normal target (rounded). `hell` is true for the whole shift even when the orders did not warn of it.
 
@@ -198,6 +206,7 @@ Example `shiftEnd`:
   "gameId": "8f14e45f-ceea-467a-9575-1f2b0c6e4a11",
   "epoch": 0, "seq": 31, "tick": 1440, "plantTime": 57600000, "shiftId": 2,
   "type": "shiftEnd",
+  "runId": "3b9d6f0e-51c2-4d7a-9f3e-2a8c1d4e6b70",
   "summary": {
     "productM3": 4163.88, "targetM3": 4056, "offSpecMinutes": 0, "offSpecM3": 0,
     "fuelCostUsd": 9829.24, "fuelBudgetUsd": 12480, "trips": 0,
@@ -213,6 +222,22 @@ Example `shiftEnd`:
 ```
 
 `spentUsd` counts fuel, deliveries, repairs, crew jobs and the standing cost (here $9,829 fuel + $1,800 crew + $720 standing).
+
+### Runs: call sign and runId
+
+A run is one game from `startGame` to `gameEnd`. At `startGame` the simulator gives it two names, both kept in the
+game's state and its snapshot:
+
+- `callSign`: the run's public name, e.g. `Kestrel-42` (one of 64 bird and weather words, then a number from 10 to
+  99), derived from the game seed (`callSignFor` in `services/simulator/src/callsign.ts`). Call signs need not be
+  unique. It is on `gameStart`, on `gameEnd` and at the top level of every `plant.status` record.
+- `runId`: a random UUID minted by the game host (`GameHost`, option `newRunId`). It is on `gameEnd` and on every
+  `shiftEnd`, and nowhere else. Flink keys `run.results` and `run.ranks` by it, so those topics and `leaderboard` never
+  contain a gameId.
+
+**runId never reaches a browser.** The gateway reads it (to look up a finished run's rank in `run.ranks`) and strips it
+from every event and leaderboard row before anything goes out over HTTP or WebSocket. In the schema it is optional on
+`shiftEnd` and `gameEnd` for that reason; on Kafka the simulator always sets it.
 
 ### Account events
 
@@ -243,6 +268,7 @@ A rejected dispatch produces a `commandRejected` event with one of these `reason
 
 `plant.status` gained these fields (`status.ts`):
 
+- `callSign`: the run's call sign (see "Runs" above).
 - `shiftProductM3`, `shiftOffSpecM3`: in-spec and off-spec water made so far this shift (numbers).
 - `productFlowM3h`: current product flow (number).
 - `crew`: `{ job, remainingTicks }` while a job runs, else null.
@@ -255,4 +281,11 @@ Nominal TBT is 93.5 degC. The TBT setpoint range is 85 to 112 degC. The high-hig
 
 ### Snapshots
 
-The snapshot version is 3. The pending and active plan, the director's position and the crew job are in it, so a restart in the middle of a shift replays the same events. Version 2 (and 1) saves are skipped with a log line, as v1 was; games in flight at the upgrade end.
+The snapshot version is 6. The pending and active plan, the director's position and the crew job are in it, so a restart in the middle of a shift replays the same events. Older saves are migrated one version at a time (`restore` in `services/simulator/src/snapshot.ts`):
+
+- v3 -> v4: game mode `normal`, disaster flags and the fuel contamination and tsunami faults defaulted.
+- v4 -> v5: the 20-stage plant resampled to the 24-stage layout, with a balanced makeup loop.
+- v5 -> v6: `callSign` derived from the save's seed and a fresh `runId`, so a run that was in flight at the upgrade
+  reports its result under a new runId.
+
+Version 2 (and 1) saves are skipped with a log line, as v1 was; games in flight at the upgrade end.

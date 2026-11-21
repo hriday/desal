@@ -1,0 +1,46 @@
+{
+  "updatedAt" : 1790000060000,
+  "online" : 3,
+  "normal" : {
+    "allTime" : [ {
+      "rank" : 1,
+      "callSign" : "Kestrel-42",
+      "shiftsCompleted" : 5,
+      "totalProductM3" : 7200.25,
+      "endedAt" : 1789913600000,
+      "runId" : "66666666-7777-4888-9999-aaaaaaaaaaaa"
+    }, {
+      "rank" : 2,
+      "callSign" : "Heron-7",
+      "shiftsCompleted" : 3,
+      "totalProductM3" : 4100.5,
+      "endedAt" : 1790000000000,
+      "runId" : "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+    } ],
+    "today" : [ {
+      "rank" : 1,
+      "callSign" : "Heron-7",
+      "shiftsCompleted" : 3,
+      "totalProductM3" : 4100.5,
+      "endedAt" : 1790000000000,
+      "runId" : "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+    } ],
+    "stats" : [ {
+      "kind" : "pumpTrip",
+      "operators" : 12,
+      "firstHandledWellPct" : 58.3
+    } ]
+  },
+  "hard" : {
+    "allTime" : [ {
+      "rank" : 1,
+      "callSign" : "Kestrel-42",
+      "shiftsCompleted" : 3,
+      "totalProductM3" : 4100.5,
+      "endedAt" : 1790000000000,
+      "runId" : "11111111-2222-4333-8444-555555555555"
+    } ],
+    "today" : [ ],
+    "stats" : [ ]
+  }
+}

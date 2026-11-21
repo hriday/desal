@@ -64,6 +64,7 @@ export function Screens() {
     case 'handover':
       body = (
         <Handover status={state.status} readings={state.readings} events={state.events}
+          reports={state.reports} reportWait={state.reportWait}
           busy={state.pending.has('startShift') || state.pending.has('quitGame')}
           onStartShift={(mode) => send(startShift(mode))} onQuit={() => send(quit())} />
       );
@@ -72,7 +73,10 @@ export function Screens() {
       body = <ControlRoom />;
       break;
     case 'over':
-      body = <GameOver reason={state.endReason} mode={state.endMode ?? state.status?.mode ?? 'normal'} score={state.score} onPlayAgain={() => dispatch({ type: 'reset' })} />;
+      body = (
+        <GameOver reason={state.endReason} mode={state.endMode ?? state.status?.mode ?? 'normal'} score={state.score}
+          callSign={state.status?.callSign} rank={state.rank} rankWait={state.rankWait} onPlayAgain={() => dispatch({ type: 'reset' })} />
+      );
       break;
   }
   return (

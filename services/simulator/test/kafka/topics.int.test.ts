@@ -7,9 +7,22 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const SUFFIX = `.test-${Date.now()}`;
 process.env.DESAL_TOPIC_SUFFIX = SUFFIX;
 
-const { createKafka, ensureTopics, topicName } = await import('../../src/kafka/client.js');
+const { createKafka, ensureTopics, topicName, waitForTopics } = await import('../../src/kafka/client.js');
 
 const kafka = createKafka();
+
+// The KafkaJS-compatible admin in @confluentinc/kafka-javascript has no
+// describeConfigs, so ask the broker's own CLI inside the container.
+const describeTopic = (topic: string) =>
+  execFileSync(
+    'docker',
+    [
+      'exec', 'desal-kafka', '/opt/kafka/bin/kafka-configs.sh',
+      '--bootstrap-server', 'localhost:9092',
+      '--entity-type', 'topics', '--entity-name', topicName(topic), '--describe',
+    ],
+    { encoding: 'utf8' },
+  );
 const admin = kafka.admin();
 
 beforeAll(async () => {
@@ -22,7 +35,7 @@ afterAll(async () => {
 });
 
 describe('ensureTopics', () => {
-  it('is idempotent and creates all five topics with the right shape', async () => {
+  it('is idempotent and creates all nine topics with the right shape', async () => {
     await ensureTopics(kafka);
     await ensureTopics(kafka);
 
@@ -32,9 +45,13 @@ describe('ensureTopics', () => {
       [TOPICS.events]: 1,
       [TOPICS.status]: 1,
       [TOPICS.state]: 1,
+      [TOPICS.shiftReports]: 1,
+      [TOPICS.runResults]: 1,
+      [TOPICS.leaderboard]: 1,
+      [TOPICS.runRanks]: 1,
     };
     const meta = await admin.fetchTopicMetadata({ topics: Object.keys(expected).map(topicName) });
-    expect(meta).toHaveLength(5);
+    expect(meta).toHaveLength(9);
     for (const [base, partitions] of Object.entries(expected)) {
       const t = meta.find((m) => m.name === topicName(base));
       expect(t?.partitions, base).toHaveLength(partitions);
@@ -42,18 +59,7 @@ describe('ensureTopics', () => {
   });
 
   it('configures compaction, retention and LogAppendTime timestamps', () => {
-    // The KafkaJS-compatible admin in @confluentinc/kafka-javascript has no
-    // describeConfigs, so ask the broker's own CLI inside the container.
-    const describe = (topic: string) =>
-      execFileSync(
-        'docker',
-        [
-          'exec', 'desal-kafka', '/opt/kafka/bin/kafka-configs.sh',
-          '--bootstrap-server', 'localhost:9092',
-          '--entity-type', 'topics', '--entity-name', topicName(topic), '--describe',
-        ],
-        { encoding: 'utf8' },
-      );
+    const describe = describeTopic;
     const state = describe(TOPICS.state);
     expect(state).toContain('cleanup.policy=compact');
     expect(state).toContain('segment.ms=3600000');
@@ -72,5 +78,28 @@ describe('ensureTopics', () => {
     const events = describe(TOPICS.events);
     expect(events).toContain('retention.ms=604800000'); // 7 days, kept for Flink
     expect(events).toContain('retention.bytes=268435456');
+  });
+
+  it('configures the Flink output topics', () => {
+    const reports = describeTopic(TOPICS.shiftReports);
+    expect(reports).toContain('retention.ms=604800000');
+    expect(reports).toContain('message.timestamp.type=LogAppendTime');
+    expect(reports).not.toContain('cleanup.policy=compact');
+    const results = describeTopic(TOPICS.runResults);
+    expect(results).toContain('cleanup.policy=compact');
+    expect(results).toContain('retention.ms=-1');
+    for (const t of [TOPICS.runResults, TOPICS.leaderboard, TOPICS.runRanks]) {
+      const d = describeTopic(t);
+      expect(d, t).toContain('cleanup.policy=compact');
+      expect(d, t).toContain('segment.ms=3600000');
+      expect(d, t).toContain('min.cleanable.dirty.ratio=0.1');
+    }
+  });
+});
+
+describe('waitForTopics', () => {
+  it('returns once every topic, the Flink ones included, is usable', async () => {
+    await ensureTopics(kafka);
+    await expect(waitForTopics(kafka, { timeoutMs: 30_000 })).resolves.toBeUndefined();
   });
 });

@@ -10,7 +10,7 @@ Design: [docs/superpowers/specs/2026-11-18-desal-operator-game-design.md](docs/s
 - `services/simulator` (`@desal/simulator`): the multi-game host, its Kafka wiring (`src/kafka/`) and two CLIs (`src/cli/`: `send`, `watch`).
 - `services/gateway` (`@desal/gateway`): WebSocket gateway between players and Kafka, plus a terminal game client (`play`).
 - `apps/web` (`@desal/web`): the browser control room.
-- `infra/docker-compose.yml`: single-node Kafka (KRaft) and Kafka UI for local development. `deploy/` and `scripts/deploy/`: the production stack, see [docs/hosting.md](docs/hosting.md).
+- `infra/docker-compose.yml`: single-node Kafka (KRaft), Kafka UI and a Flink session cluster for local development. `deploy/` and `scripts/deploy/`: the production stack, see [docs/hosting.md](docs/hosting.md).
 
 Every record on every topic is keyed by `gameId`, which is how many games share one set of topics.
 
@@ -27,7 +27,16 @@ pnpm i
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-Kafka listens on `localhost:9092` and Kafka UI is at http://localhost:8080. Both bind to 127.0.0.1 only; nothing is exposed to the network.
+Kafka listens on `localhost:9092`, Kafka UI is at http://localhost:8080 and the Flink web UI at http://localhost:8082. All bind to 127.0.0.1 only; nothing is exposed to the network. The first `up` builds the Flink image (`services/flink/Dockerfile`, Maven inside the build); after changing the jobs, use `up -d --build`. `up -d kafka kafka-ui` starts Kafka without Flink (about 1.8 GB less memory).
+
+The Flink cluster starts with no jobs. Once the simulator has run once (it creates the topics the jobs read and write), submit both:
+
+```sh
+docker exec desal-flink-jobmanager flink-jobs.sh submit-all /flink-data/savepoints/last.txt
+docker exec desal-flink-jobmanager flink-jobs.sh stop-all /flink-data/savepoints/last.txt   # stop both with savepoints; submit-all resumes from them
+```
+
+`submit-all` takes `--topic-suffix S` to run the jobs on suffixed topics. Flink's checkpoints and savepoints live in the volume `desal-flink-checkpoints`.
 
 Stop the stack:
 
@@ -49,6 +58,16 @@ pnpm --filter @desal/web e2e              # browser tests (Playwright); needs th
 ```
 
 Integration tests set `DESAL_TOPIC_SUFFIX` to a unique value, so they create throwaway topics (and consumer groups such as `desal-sim<suffix>`) and never touch your real games.
+
+End to end through Flink (simulator -> Kafka -> both Flink jobs -> gateway -> a test client; checks a real report card, rank and per-mode leaderboard arrive and that no runId or other game's gameId reaches the client):
+
+```sh
+scripts/e2e-flink.sh    # needs Docker, pnpm and jq; about a minute once the stack is up
+```
+
+It brings up Kafka and Flink, creates topics with a fresh `.e2e-<time>-<pid>` suffix, submits a second copy of both jobs on them and runs `services/gateway/test/flink.int.test.ts` (which `test:int` skips unless `DESAL_E2E_FLINK=1`). The cluster has two task slots, one per job, so if jobs are running it first stops them with savepoints (`flink-jobs.sh stop-all`) and resubmits them from those on exit (a failed resubmit is reported with `!!!` and fails the script); it also cancels its own jobs and deletes its topics on exit. It never rebuilds or recreates the Flink containers (`up -d --no-recreate`; a recreated container drops its running jobs): after changing the jobs, run `up -d --build` and resubmit first.
+
+The Flink jobs (`services/flink`, Java 17 + Maven) need only Docker: `services/flink/mvn.sh` runs Maven in the `maven:3.9.11-eclipse-temurin-17` image with the repo mounted and dependencies cached in the `desal-m2` volume, so no JDK or Maven is installed on the host. `services/flink/mvn.sh test` runs the Java tests, which also rewrite the contract fixtures in `packages/schema/test/fixtures/flink/` that `pnpm --filter @desal/schema test` then validates with the zod schemas. `services/flink/mvn.sh package` builds `services/flink/target/desal-flink.jar`.
 
 ## Running it locally
 

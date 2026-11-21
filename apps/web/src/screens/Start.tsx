@@ -1,10 +1,11 @@
-import type { GameMode } from '@desal/schema';
+import type { GameMode, PublicLeaderboard } from '@desal/schema';
 import { Fragment } from 'react';
 import { demoReadings, demoStatus, demoTarget } from '../demo';
 import { BrineHeater } from '../equipment/BrineHeater';
 import { FlashStages } from '../equipment/FlashStages';
 import { Intake } from '../equipment/Intake';
 import { ProductWater } from '../equipment/ProductWater';
+import { LeaderboardCard } from './LeaderboardCard';
 import './screens.css';
 
 export interface StartProps {
@@ -13,6 +14,8 @@ export interface StartProps {
   starting?: boolean;
   /** Set when the plant refused the game for capacity. */
   capacityMessage?: string | null;
+  /** The leaderboard card's loader (tests); defaults to GET /api/leaderboard. */
+  loadLeaderboard?: (signal: AbortSignal) => Promise<PublicLeaderboard>;
 }
 
 /**
@@ -40,7 +43,7 @@ function PlantStrip() {
   );
 }
 
-export function Start({ onStart, starting = false, capacityMessage = null }: StartProps) {
+export function Start({ onStart, starting = false, capacityMessage = null, loadLeaderboard }: StartProps) {
   return (
     <main className="screen screen--start" data-screen="start">
       <h1 className="start__title">Desal Operator</h1>
@@ -59,6 +62,7 @@ export function Start({ onStart, starting = false, capacityMessage = null }: Sta
         </button>
       </div>
       <p className="start__hardnote">Every shift is a bad one, and disasters strike.</p>
+      <LeaderboardCard load={loadLeaderboard} />
     </main>
   );
 }

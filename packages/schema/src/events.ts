@@ -96,7 +96,8 @@ const base = {
 
 export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('shiftStart'), scenarioId: z.string(), mode: LoopModeSchema, target: ShiftTargetSchema, hell: z.boolean(), orders: ShiftOrdersSchema }),
-  z.object({ ...base, type: z.literal('shiftEnd'), summary: ShiftSummarySchema }),
+  // runId is always present on Kafka; the gateway strips it before a browser sees the event.
+  z.object({ ...base, type: z.literal('shiftEnd'), summary: ShiftSummarySchema, runId: z.uuid().optional() }),
   z.object({ ...base, type: z.literal('trip'), cause: TripCauseSchema }),
   z.object({ ...base, type: z.literal('restartProgress'), step: RestartStepSchema, ok: z.boolean(), reason: z.string().optional() }),
   z.object({ ...base, type: z.literal('online') }),
@@ -106,9 +107,9 @@ export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('deliveryArrived'), tonnes: num, grade: FuelGradeSchema }),
   z.object({ ...base, type: z.literal('commandRejected'), commandId: z.string(), reason: z.string() }),
   z.object({ ...base, type: z.literal('damage'), component: DamageComponentSchema, value: num }),
-  z.object({ ...base, type: z.literal('gameStart'), mode: GameModeSchema.default('normal') }),
+  z.object({ ...base, type: z.literal('gameStart'), callSign: z.string(), mode: GameModeSchema.default('normal') }),
   z.object({ ...base, type: z.literal('gameRejected'), reason: z.enum(['capacity', 'duplicate']) }),
-  z.object({ ...base, type: z.literal('gameEnd'), mode: GameModeSchema.default('normal'), reason: GameEndReasonSchema, score: GameScoreSchema }),
+  z.object({ ...base, type: z.literal('gameEnd'), callSign: z.string(), runId: z.uuid().optional(), mode: GameModeSchema.default('normal'), reason: GameEndReasonSchema, score: GameScoreSchema }),
   z.object({ ...base, type: z.literal('accountChange'), deltaUsd: num, balanceUsd: num, cause: AccountCauseSchema }),
 ]);
 export type PlantEvent = z.infer<typeof PlantEventSchema>;

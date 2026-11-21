@@ -182,6 +182,19 @@ describe('chaos plan lifecycle', () => {
     expect(s.chaos.active).toBeNull();
   });
 
+  it('shiftEnd carries the run id', () => {
+    const RUN = 'cccccccc-cccc-4ccc-8ccc-000000000001';
+    let s: PlantState = startShift(drawPendingPlan(createInitialState(1, T0, GAME_ID, 'normal', RUN)), 'auto').state;
+    const ends: unknown[] = [];
+    for (let i = 0; i < SHIFT_TICKS && s.phase === 'running'; i++) {
+      const t = tick(s, []);
+      s = t.state;
+      ends.push(...t.events.filter((e) => e.type === 'shiftEnd'));
+    }
+    expect(ends).toHaveLength(1);
+    expect(ends[0]).toMatchObject({ type: 'shiftEnd', runId: RUN });
+  });
+
   it('shiftEnd summary reports fired events only, and the plan hell flag', () => {
     const s0 = startShift(fresh(), 'auto').state;
     const active = {

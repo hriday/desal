@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, STATUS_CODES, type IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import type { CommandEnvelope } from '@desal/schema';
+import type { CommandEnvelope, Leaderboard, RunRank, ShiftReport } from '@desal/schema';
 import { WebSocket, WebSocketServer } from 'ws';
 import { clientIdOf, DEFAULT_TRUSTED_PROXIES, trustedProxies } from './clients.js';
 import type { RecordHandler, SeenStatus } from './kafka.js';
@@ -27,6 +27,8 @@ export interface GatewayOptions {
   /** Comma-separated CIDRs whose X-Forwarded-For is trusted (TRUSTED_PROXIES); default DEFAULT_TRUSTED_PROXIES. */
   trustedProxies?: string;
   heartbeatMs?: number;
+  /** Wall clock, ms (default Date.now). Injected so tests control time. */
+  now?: () => number;
   log?: (msg: string) => void;
 }
 
@@ -37,6 +39,11 @@ export interface Gateway {
   close(): Promise<void>;
   /** Feed consumed Kafka records here (GatewayKafka.start's callback). */
   onRecord: RecordHandler;
+  /** Feed FlinkFeeds' records here. */
+  onReport(gameId: string, report: ShiftReport): void;
+  onBoard(board: Leaderboard): void;
+  onRank(rank: RunRank): void;
+  onRankDeleted(runId: string): void;
   socketCount(): number;
 }
 
@@ -51,7 +58,7 @@ function refuse(socket: Duplex, code: number): void {
   setTimeout(() => socket.destroy(), 1000).unref();
 }
 
-/** HTTP (GET /healthz) plus the WebSocket endpoint /ws. */
+/** HTTP (GET /healthz, GET /api/leaderboard) plus the WebSocket endpoint /ws. */
 export function createGateway(opts: GatewayOptions): Gateway {
   const { kafka } = opts;
   const allowed = new Set(opts.allowedOrigins ?? []);
@@ -64,6 +71,7 @@ export function createGateway(opts: GatewayOptions): Gateway {
     latestStatus: (id) => kafka.latestStatus(id),
     gameEnded: (id) => kafka.gameEnded(id),
     limits: perClient,
+    now: opts.now,
     log,
   });
   const alive = new WeakMap<WebSocket, boolean>();
@@ -74,6 +82,22 @@ export function createGateway(opts: GatewayOptions): Gateway {
       // events (consumer.on is not implemented; pinned by test/kafka.test.ts).
       const ok = kafka.connected;
       res.writeHead(ok ? 200 : 503, { 'content-type': 'text/plain' }).end(ok ? 'ok' : 'kafka not connected');
+      return;
+    }
+    // Compared as a string, never parsed (see the upgrade listener).
+    if (req.method === 'GET' && (req.url ?? '').split('?')[0] === '/api/leaderboard') {
+      // The same Origin rule as /ws. An allowed browser Origin is echoed for CORS: in local dev the
+      // web app is served from another port; in production it is same-origin and sends none.
+      const origin = req.headers.origin;
+      if (origin !== undefined && allowed.size > 0 && !allowed.has(origin)) {
+        res.writeHead(403).end();
+        return;
+      }
+      const cors = origin !== undefined ? { 'access-control-allow-origin': origin, vary: 'Origin' } : {};
+      const board = sessions.publicBoard();
+      res
+        .writeHead(board ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store', ...cors })
+        .end(JSON.stringify(board ?? { error: 'leaderboard offline' }));
       return;
     }
     res.writeHead(404).end();
@@ -152,6 +176,10 @@ export function createGateway(opts: GatewayOptions): Gateway {
 
   return {
     onRecord: (topic, gameId, value) => sessions.onRecord(topic, gameId, value),
+    onReport: (gameId, report) => sessions.onReport(gameId, report),
+    onBoard: (board) => sessions.onBoard(board),
+    onRank: (rank) => sessions.onRank(rank),
+    onRankDeleted: (runId) => sessions.forgetRank(runId),
     socketCount: () => sessions.socketCount(),
     listen(port, host) {
       return new Promise((resolve, reject) => {

@@ -11,6 +11,7 @@ import type {
   RestartStep,
   TripCause,
 } from '@desal/schema';
+import { callSignFor } from './callsign.js';
 import {
   BASE_SALINITY_PPM,
   BIO_GROWTH_PER_CHL,
@@ -120,6 +121,10 @@ export interface TsunamiFault {
 /** One game = one run of shifts in one sitting; the operating account lives here. */
 export interface Run {
   gameId: string;
+  /** The run's public name (e.g. `Kestrel-42`), derived from the game seed at creation. */
+  callSign: string;
+  /** Minted by the host when the game starts; keys run.results. Never sent to a browser. */
+  runId: string;
   mode: GameMode;
   balanceUsd: number;
   shiftNumber: number;
@@ -290,7 +295,16 @@ export function noFaults(): PlantState['faults'] {
   };
 }
 
-export function createInitialState(seed: number, startPlantTime: number, gameId: string, mode: GameMode = 'normal'): PlantState {
+/** The runId of a state built outside a GameHost (tests, tools); the host always mints a real one. */
+export const NIL_RUN_ID = '00000000-0000-0000-0000-000000000000';
+
+export function createInitialState(
+  seed: number,
+  startPlantTime: number,
+  gameId: string,
+  mode: GameMode = 'normal',
+  runId: string = NIL_RUN_ID,
+): PlantState {
   const stages: Stage[] = Array.from({ length: STAGE_COUNT }, (_, i) => ({
     tempC: NOMINAL.tbtC - (NOMINAL.tbtC - BOTTOM_C) * ((i + 0.5) / STAGE_COUNT),
     levelM: NOMINAL.levelM,
@@ -353,7 +367,7 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
       nextEventIndex: 0,
       effects: { offgradeOnly: false, deliveryDelayTicks: 0, chlorophyllTarget: 1, chlorophyllRampPerTick: 0 },
     },
-    run: { gameId, mode, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
+    run: { gameId, callSign: callSignFor(seed), runId, mode, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
     chaos: { pending: null, active: null, lastWasHell: false, lastHadDisaster: false },
     crew: null,
     faults: noFaults(),

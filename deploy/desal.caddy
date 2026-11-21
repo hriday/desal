@@ -1,4 +1,5 @@
-# desal.moosha.org: the public game, its gateway, and Kafka UI at /kafka (basic auth).
+# desal.moosha.org: the public game, its gateway and leaderboard, and the admin UIs: Kafka UI at
+# /kafka and the Flink UI at /flink (both behind basic auth).
 # Installed by scripts/deploy/deploy.sh as /etc/caddy/sites/desal.caddy, with
 # __HOST__ / __AUTH_USER__ / __AUTH_HASH__ replaced (credentials in /opt/desal/basic-auth.txt).
 __HOST__ {
@@ -28,6 +29,23 @@ __HOST__ {
 			__AUTH_USER__ __AUTH_HASH__
 		}
 		reverse_proxy 127.0.0.1:8080
+	}
+
+	# Public: the leaderboard as JSON, served by the gateway (no runIds, no gameIds).
+	handle /api/leaderboard {
+		reverse_proxy 127.0.0.1:8081
+	}
+
+	# Admin: the Flink web UI and REST API (jobmanager on 127.0.0.1:8082), never indexed.
+	# Flink serves the UI at its root with relative links, so handle_path strips /flink before
+	# proxying. Jar upload and run from the UI are off (web.submit.enable: false).
+	redir /flink /flink/
+	handle_path /flink/* {
+		header X-Robots-Tag "noindex, nofollow"
+		basic_auth {
+			__AUTH_USER__ __AUTH_HASH__
+		}
+		reverse_proxy 127.0.0.1:8082
 	}
 
 	# The control room: static build shipped to /opt/desal/web (symlink to web-<commit>).

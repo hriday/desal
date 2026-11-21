@@ -215,6 +215,51 @@ describe('GameHost', () => {
     expect(r.perGame.get(gid(1))!.events.at(-1)).toMatchObject({ type: 'gameEnd', mode: 'hard' });
   });
 
+  describe('call sign and runId', () => {
+    const RUN_A = 'bbbbbbbb-bbbb-4bbb-8bbb-000000000001';
+    const RUN_B = 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002';
+    const ids = () => {
+      const queue = [RUN_A, RUN_B];
+      return () => queue.shift()!;
+    };
+
+    it('gameStart, status and gameEnd carry the call sign; gameEnd carries the minted runId', () => {
+      const h = new GameHost({ newRunId: ids() });
+      const r = h.step([cmd(gid(1), { type: 'startGame' })], 0);
+      const run = h.games().get(gid(1))!.state.run;
+      expect(run.callSign).toMatch(/^[A-Z][a-z]+-[1-9][0-9]$/);
+      expect(run.runId).toBe(RUN_A);
+      expect(r.perGame.get(gid(1))!.events[0]).toMatchObject({ type: 'gameStart', callSign: run.callSign });
+      expect(r.perGame.get(gid(1))!.events[0]).not.toHaveProperty('runId');
+      expect(r.perGame.get(gid(1))!.status).toMatchObject({ callSign: run.callSign });
+      const end = h.step([cmd(gid(1), { type: 'quitGame' })], 1000);
+      expect(end.perGame.get(gid(1))!.events.at(-1)).toMatchObject({ type: 'gameEnd', callSign: run.callSign, runId: RUN_A });
+    });
+
+    it('two games get different runIds', () => {
+      const h = new GameHost({ newRunId: ids() });
+      h.step([cmd(gid(1), { type: 'startGame' }), cmd(gid(2), { type: 'startGame' })], 0);
+      expect(h.games().get(gid(1))!.state.run.runId).toBe(RUN_A);
+      expect(h.games().get(gid(2))!.state.run.runId).toBe(RUN_B);
+    });
+
+    it('defaults to random uuids', () => {
+      const h = started([gid(1), gid(2)]);
+      const a = h.games().get(gid(1))!.state.run.runId;
+      const b = h.games().get(gid(2))!.state.run.runId;
+      expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(a).not.toBe(b);
+    });
+
+    it('an abandoned game ends with its call sign and runId', () => {
+      const h = new GameHost({ newRunId: ids(), paced: false });
+      h.step([cmd(gid(1), { type: 'startGame' })], 0);
+      const callSign = h.games().get(gid(1))!.state.run.callSign;
+      const r = h.step([], 200_000);
+      expect(r.perGame.get(gid(1))!.events.at(-1)).toMatchObject({ type: 'gameEnd', reason: 'abandoned', callSign, runId: RUN_A });
+    });
+  });
+
   it('a throwing game ends with reason error; the others continue', () => {
     const h = started([gid(1), gid(2)]);
     h.step(

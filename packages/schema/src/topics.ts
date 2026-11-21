@@ -4,4 +4,8 @@ export const TOPICS = {
   events: 'plant.events',
   status: 'plant.status',
   state: 'plant.state',
+  shiftReports: 'shift.reports',
+  runResults: 'run.results',
+  leaderboard: 'leaderboard',
+  runRanks: 'run.ranks',
 } as const;

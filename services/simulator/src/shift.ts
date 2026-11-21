@@ -195,6 +195,6 @@ export function endShift(s: PlantState): { state: PlantState; events: SimEvent[]
   };
   return {
     state: drawPendingPlan(ended),
-    events: [{ type: 'shiftEnd', tick: s.tick, plantTime: s.plantTime, shiftId: shift.id, summary }],
+    events: [{ type: 'shiftEnd', tick: s.tick, plantTime: s.plantTime, shiftId: shift.id, runId: s.run.runId, summary }],
   };
 }

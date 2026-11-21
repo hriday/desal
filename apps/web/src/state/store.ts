@@ -1,4 +1,4 @@
-import type { Command, GameEndReason, GameMode, GameScore, PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
+import type { Command, GameEndReason, GameMode, GameScore, PlantEvent, PlantStatus, ServerMsg, ShiftReport } from '@desal/schema';
 import { commandKey } from '../commands';
 import type { ConnState } from '../net/socket';
 import { FIX } from '../expanded/labels';
@@ -11,6 +11,18 @@ export type Session = 'start' | 'starting' | 'resuming' | 'handover' | 'room' | 
 /** 'idle': no socket (the Start screen holds none); 'full': the gateway closed it with 1013. */
 export type Conn = 'idle' | ConnState;
 export type Toast = { kind: 'rejected' | 'capacity' | 'error'; message: string };
+/** The run's rank within its mode (sent by the gateway once the run has ended); `today` is null when it did not end in the last 24 h. */
+export type Rank = { allTime: number; today: number | null };
+/**
+ * The handover's wait for Flink's report card: 'waiting' from a shiftEnd until REPORT_WAIT_MS passes
+ * ('expired': the debrief shows alone), null once the next shift starts.
+ */
+export type ReportWait = 'waiting' | 'expired' | null;
+/**
+ * The final report's wait for the run's rank: 'waiting' from the gameEnd until RANK_WAIT_MS passes
+ * ('expired': the rank line is left out, since Flink may be down); a rank that comes later still shows.
+ */
+export type RankWait = 'waiting' | 'expired' | null;
 
 /** A command awaiting confirmation; `age` counts statuses received since it was sent. */
 export interface PendingEntry { command: Command; age: number }
@@ -49,6 +61,11 @@ export interface State {
   seenAlarms: ReadonlySet<string>;
   /** Keys (`shift:eventId:hint`) of the hints already put on the radio, so each shows once. */
   hinted: ReadonlySet<string>;
+  /** Flink's report cards, by shiftId; a later report for the same shift (after a restore) replaces it. */
+  reports: Record<number, ShiftReport>;
+  rank: Rank | null;
+  reportWait: ReportWait;
+  rankWait: RankWait;
 }
 
 export type Action =
@@ -69,7 +86,11 @@ export type Action =
   // No gameStart answer within the start timeout.
   | { type: 'startTimeout' }
   // No status within the watchdog window while connected.
-  | { type: 'telemetryLost' };
+  | { type: 'telemetryLost' }
+  // No report card within REPORT_WAIT_MS of a shiftEnd.
+  | { type: 'reportTimeout' }
+  // No rank within RANK_WAIT_MS of the gameEnd.
+  | { type: 'rankTimeout' };
 
 export const MAX_EVENTS = 200;
 
@@ -86,7 +107,7 @@ export function initialState(resuming = false): State {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
     pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, endMode: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
     epoch: 0, telemetryLost: false, radio: initialRadio, sessionStartPlantTime: null, seenAlarms: new Set(),
-    hinted: new Set(),
+    hinted: new Set(), reports: {}, rank: null, reportWait: null, rankWait: null,
   };
 }
 
@@ -144,8 +165,14 @@ function addEvent(s: State, e: PlantEvent): State {
         next = { ...next, radio: radioReducer(s.radio, { type: 'push', eventId: e.eventId, shiftId: e.shiftId, kind: e.kind, text: e.radio, message: e.message }) };
       }
       break;
+    case 'shiftEnd':
+      next = { ...next, reportWait: 'waiting' };
+      break;
+    case 'shiftStart':
+      next = { ...next, reportWait: null };
+      break;
     case 'gameEnd':
-      next = { ...next, session: 'over', score: e.score, endReason: e.reason, endMode: e.mode };
+      next = { ...next, session: 'over', score: e.score, endReason: e.reason, endMode: e.mode, rankWait: 'waiting' };
       break;
     case 'commandRejected':
       next = { ...next, ...withoutRejected(s, e.commandId), toast: { kind: 'rejected', message: e.reason } };
@@ -213,6 +240,10 @@ function onServer(s: State, msg: ServerMsg): State {
         default:
           return { ...s, toast: { kind: 'error', message: msg.reason } };
       }
+    case 'shiftReport':
+      return { ...s, reports: { ...s.reports, [msg.report.shiftId]: msg.report } };
+    case 'rank':
+      return { ...s, rank: { allTime: msg.allTime, today: msg.today } };
     case 'pong':
       return s;
   }
@@ -266,5 +297,7 @@ export function reducer(s: State, a: Action): State {
     case 'dismissToast': return { ...s, toast: null };
     case 'startTimeout': return s.session === 'starting' ? startFailed(s) : s;
     case 'telemetryLost': return s.telemetryLost ? s : { ...s, telemetryLost: true };
+    case 'reportTimeout': return s.reportWait === 'waiting' ? { ...s, reportWait: 'expired' } : s;
+    case 'rankTimeout': return s.rankWait === 'waiting' ? { ...s, rankWait: 'expired' } : s;
   }
 }
