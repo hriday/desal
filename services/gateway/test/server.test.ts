@@ -5,6 +5,7 @@ import WebSocket from 'ws';
 import { StatusBook } from '../src/kafka.js';
 import type { PerClientLimits } from '../src/limits.js';
 import { createGateway, type Gateway } from '../src/server.js';
+import { BOARD_STALE_MS } from '../src/sessions.js';
 import { board, gameStart, RUN_A, RUN_B, RUN_C } from './fixtures.js';
 
 /** A fake GatewayKafka: records commands, and is "connected" unless told otherwise. */
@@ -36,7 +37,14 @@ afterEach(async () => {
 });
 
 async function start(
-  opts: { connected?: boolean; allowedOrigins?: string[]; maxSockets?: number; perClient?: Partial<PerClientLimits>; trustedProxies?: string } = {},
+  opts: {
+    connected?: boolean;
+    allowedOrigins?: string[];
+    maxSockets?: number;
+    perClient?: Partial<PerClientLimits>;
+    trustedProxies?: string;
+    now?: () => number;
+  } = {},
 ) {
   const kafka = fakeKafka(opts.connected);
   gw = createGateway({
@@ -45,6 +53,7 @@ async function start(
     maxSockets: opts.maxSockets,
     perClient: opts.perClient,
     trustedProxies: opts.trustedProxies,
+    now: opts.now,
   });
   const port = await gw.listen(0);
   return { kafka, port, url: `ws://127.0.0.1:${port}/ws` };
@@ -168,7 +177,7 @@ describe('gateway server', () => {
   });
 
   it('GET /api/leaderboard is 503 until a board arrives, then the public board (no runId)', async () => {
-    const { port } = await start();
+    const { port } = await start({ now: () => board().updatedAt + 1000 });
     const url = `http://127.0.0.1:${port}/api/leaderboard`;
     const offline = await fetch(url);
     expect(offline.status).toBe(503);
@@ -189,8 +198,21 @@ describe('gateway server', () => {
     expect((await fetch(`${url}?x=1`)).status).toBe(200);
   });
 
+  it('GET /api/leaderboard is 503 once the board is older than BOARD_STALE_MS (Flink down)', async () => {
+    let clock = board().updatedAt;
+    const { port } = await start({ now: () => clock });
+    const url = `http://127.0.0.1:${port}/api/leaderboard`;
+    expect((await fetch(url)).status).toBe(503); // none yet
+    gw!.onBoard(board());
+    expect((await fetch(url)).status).toBe(200); // fresh
+    clock += BOARD_STALE_MS + 1;
+    const stale = await fetch(url);
+    expect(stale.status).toBe(503);
+    expect(await stale.json()).toEqual({ error: 'leaderboard offline' });
+  });
+
   it('applies ALLOWED_ORIGINS to /api/leaderboard like /ws, answering CORS for allowed origins', async () => {
-    const { port } = await start({ allowedOrigins: ['https://desal.example'] });
+    const { port } = await start({ allowedOrigins: ['https://desal.example'], now: () => board().updatedAt });
     gw!.onBoard(board());
     const url = `http://127.0.0.1:${port}/api/leaderboard`;
     expect((await fetch(url, { headers: { origin: 'https://evil.example' } })).status).toBe(403);

@@ -76,6 +76,13 @@ interface Socket {
   runId: string | null;
 }
 
+/**
+ * A board older than this is treated as absent (the start screen shows "Leaderboard offline"). The
+ * leaderboard job sends one at least every 60 s (BoardAssembler.HEARTBEAT_MS), so three missed
+ * heartbeats mean the job is down; the compacted topic would otherwise serve its last board forever.
+ */
+export const BOARD_STALE_MS = 180_000;
+
 /** Ranks kept for runs no socket here has ended yet (run.ranks holds every run ever; oldest go first). */
 const MAX_RANKS = 10_000;
 
@@ -296,7 +303,9 @@ export class Sessions {
     }
   }
 
+  /** The latest board, or undefined when there is none or it is stale (BOARD_STALE_MS). */
   publicBoard(): PublicLeaderboard | undefined {
+    if (!this.board || this.now() - this.board.updatedAt > BOARD_STALE_MS) return undefined;
     return this.board;
   }
 

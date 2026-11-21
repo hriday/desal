@@ -2,7 +2,7 @@ import { TOPICS, type CommandEnvelope, type ServerMsg } from '@desal/schema';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { StatusBook, type GatewayTopic } from '../src/kafka.js';
 import { MAX_MSG_BYTES, RESUME_WAIT_MS, START_WAIT_MS } from '../src/protocol.js';
-import { Sessions } from '../src/sessions.js';
+import { BOARD_STALE_MS, Sessions } from '../src/sessions.js';
 import {
   board,
   GAME_A,
@@ -657,5 +657,16 @@ describe('Flink feeds: runId stripping, shift reports and ranks', () => {
     const pub = sessions.publicBoard()!;
     expect(Object.keys(pub).sort()).toEqual(['hard', 'normal', 'online', 'updatedAt']);
     expect(JSON.stringify(pub)).not.toContain('runId');
+  });
+
+  it('treats a board older than BOARD_STALE_MS as absent (Flink down: "Leaderboard offline")', () => {
+    const b = board();
+    clock = b.updatedAt + BOARD_STALE_MS;
+    sessions.onBoard(b);
+    expect(sessions.publicBoard()).toBeDefined(); // exactly at the limit: still fresh
+    clock += 1;
+    expect(sessions.publicBoard()).toBeUndefined();
+    sessions.onBoard({ ...b, updatedAt: clock }); // the next heartbeat brings it back
+    expect(sessions.publicBoard()?.updatedAt).toBe(clock);
   });
 });

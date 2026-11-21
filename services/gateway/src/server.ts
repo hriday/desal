@@ -27,6 +27,8 @@ export interface GatewayOptions {
   /** Comma-separated CIDRs whose X-Forwarded-For is trusted (TRUSTED_PROXIES); default DEFAULT_TRUSTED_PROXIES. */
   trustedProxies?: string;
   heartbeatMs?: number;
+  /** Wall clock, ms (default Date.now). Injected so tests control time. */
+  now?: () => number;
   log?: (msg: string) => void;
 }
 
@@ -69,6 +71,7 @@ export function createGateway(opts: GatewayOptions): Gateway {
     latestStatus: (id) => kafka.latestStatus(id),
     gameEnded: (id) => kafka.gameEnded(id),
     limits: perClient,
+    now: opts.now,
     log,
   });
   const alive = new WeakMap<WebSocket, boolean>();
