@@ -1,6 +1,7 @@
 import { ScenarioKindSchema, type PlantEvent, type PlantStatus } from '@desal/schema';
 import { FIX } from '../src/expanded/labels';
-import { dueHints, HINT_DELAY_MIN } from '../src/state/hints';
+import { divertHint, DIVERT_HINT_MIN, dueHints, HINT_DELAY_MIN } from '../src/state/hints';
+import type { TrendPoint } from '../src/state/trends';
 
 const gameId = '11111111-1111-4111-8111-111111111111';
 const MIN = 60_000;
@@ -101,5 +102,46 @@ describe('dueHints', () => {
   });
   it('never hints an event from a previous shift', () => {
     expect(dueHints([fired('tubeLeak', { shiftId: 2 })], at(60, { shiftId: 3 }), none)).toEqual([]);
+  });
+});
+
+describe('divertHint', () => {
+  const TEXT = "Hint: Product's back in spec — send it to the tank.";
+  const manualDrain = (over: Partial<PlantStatus> = {}) => at(0, { divertMode: 'manual', divertToDrain: true, ...over });
+  /** Salinity points one minute apart from minute `from` to `to`, every one at `v`. */
+  const run = (from: number, to: number, v: number): TrendPoint[] =>
+    Array.from({ length: to - from + 1 }, (_, i) => ({ t: T + (from + i) * MIN, v }));
+
+  it('is due once the product has been in spec for 5 plant minutes, not before', () => {
+    expect(DIVERT_HINT_MIN).toBe(5);
+    expect(divertHint(manualDrain(), [{ t: T, v: 10 }, { t: T + 4.9 * MIN, v: 10 }], none)).toBeNull();
+    expect(divertHint(manualDrain(), [{ t: T, v: 10 }, { t: T + 5 * MIN, v: 10 }], none)).toEqual({ key: `1:divert:${T}`, text: TEXT });
+  });
+  it('uses the shift target limit', () => {
+    const st = manualDrain({ shiftTarget: { productM3: 1, maxSalinityPpm: 8 } as PlantStatus['shiftTarget'] });
+    expect(divertHint(st, run(0, 5, 10), none)).toBeNull();
+    expect(divertHint(st, run(0, 5, 7), none)).not.toBeNull();
+  });
+  it('is null on Hard, in Auto, with the valve to the tank, and outside running', () => {
+    const pts = run(0, 6, 10);
+    expect(divertHint(manualDrain({ mode: 'hard' }), pts, none)).toBeNull();
+    expect(divertHint(manualDrain({ divertMode: 'auto' }), pts, none)).toBeNull();
+    expect(divertHint(manualDrain({ divertToDrain: false }), pts, none)).toBeNull();
+    expect(divertHint(manualDrain({ phase: 'paused' }), pts, none)).toBeNull();
+  });
+  it('is null with an empty or undefined trend', () => {
+    expect(divertHint(manualDrain(), [], none)).toBeNull();
+    expect(divertHint(manualDrain(), undefined, none)).toBeNull();
+  });
+  it('an off-spec point resets the stretch, so a second stretch gets a new key', () => {
+    const pts = [...run(0, 3, 10), { t: T + 4 * MIN, v: 30 }, ...run(5, 9, 10)];
+    expect(divertHint(manualDrain(), pts, none)).toBeNull(); // only 4 min since the spike
+    const more = [...pts, ...run(10, 11, 10)];
+    expect(divertHint(manualDrain(), more, none)).toEqual({ key: `1:divert:${T + 5 * MIN}`, text: TEXT });
+  });
+  it('shows once per stretch: a key already hinted gives null', () => {
+    const pts = run(0, 6, 10);
+    const h = divertHint(manualDrain(), pts, none)!;
+    expect(divertHint(manualDrain(), pts, new Set([h.key]))).toBeNull();
   });
 });

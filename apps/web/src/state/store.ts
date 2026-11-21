@@ -2,7 +2,7 @@ import type { Command, GameEndReason, GameMode, GameScore, PlantEvent, PlantStat
 import { commandKey } from '../commands';
 import type { ConnState } from '../net/socket';
 import { FIX } from '../expanded/labels';
-import { dueHints } from './hints';
+import { divertHint, dueHints } from './hints';
 import { initialRadio, radioReducer, type RadioState } from './radio';
 import { pushFrame, type Trends } from './trends';
 
@@ -123,7 +123,10 @@ function confirmed(cmd: Command, st: PlantStatus): boolean {
     case 'pump': return st.pumps[cmd.pumpId]?.running === (cmd.action === 'start');
     case 'setDose': return close(cmd.chemical === 'chlorine' ? st.doses?.chlorineMgL : st.doses?.antiscalantMgL, cmd.mgL);
     case 'ballCleaning': return st.ballCleaning === cmd.on;
-    case 'divertToDrain': return st.divertToDrain === cmd.on;
+    case 'setDivertMode': return st.divertMode === cmd.mode;
+    case 'standbySteam': return st.standbySteam === cmd.on;
+    // Manual too: the plant answers a press by leaving Auto, so a status still on Auto has not taken it.
+    case 'divertToDrain': return st.divertMode === 'manual' && st.divertToDrain === cmd.on;
     case 'selectFuel': return st.fuel.active === cmd.fuel || st.fuel.changeoverTo === cmd.fuel;
     // Held until the plant leaves handover / ends, so these buttons can't send twice meanwhile.
     case 'startShift': return st.phase !== 'handover';
@@ -197,15 +200,21 @@ function addEvent(s: State, e: PlantEvent): State {
  */
 function withHints(s: State, st: PlantStatus): State {
   const due = dueHints(s.events, st, s.hinted);
-  if (due.length === 0) return s;
+  const divert = divertHint(st, s.trends['product.salinityPpm'], s.hinted);
+  if (due.length === 0 && !divert) return s;
   let radio = s.radio;
+  const keys = due.map((h) => h.key);
+  if (divert) {
+    radio = radioReducer(radio, { type: 'push', key: divert.key, eventId: 0, shiftId: st.shiftId, kind: null, text: divert.text, monitor: 'product' });
+    keys.push(divert.key);
+  }
   for (const h of due) {
     const e = s.events.find((x) => x.type === 'scenario' && x.shiftId === st.shiftId && x.eventId === h.eventId);
     if (e?.type !== 'scenario') continue;
     if (FIX[h.kind].hint === 'atOnce' && s.sessionStartPlantTime !== null && e.plantTime < s.sessionStartPlantTime) continue;
     radio = radioReducer(radio, { type: 'push', key: h.key, eventId: h.eventId, shiftId: e.shiftId, kind: h.kind, text: h.text, message: e.message });
   }
-  return { ...s, radio, hinted: new Set([...s.hinted, ...due.map((h) => h.key)]) };
+  return { ...s, radio, hinted: new Set([...s.hinted, ...keys]) };
 }
 
 function onServer(s: State, msg: ServerMsg): State {

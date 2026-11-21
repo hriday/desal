@@ -74,7 +74,7 @@ export const FIX: Record<ScenarioKind, FixEntry> = {
   controllerFault: { text: 'Put the faulty loop in Manual and set its output by hand.', hint: 'delay' },
   pumpTrip: { text: 'Start a standby intake pump so two are Running.', hint: 'delay' },
   powerDip: { text: 'Start a standby intake pump so two are Running; recirculation comes back when the dip passes.', hint: 'delay' },
-  tubeLeak: { text: `Turn on Divert to drain if the product is off-spec, and ${sendCrew('plugTubes')}.`, hint: 'delay', underway: crewOn('plugTubes') },
+  tubeLeak: { text: `Leave Divert on Auto so off-spec water goes to drain, and ${sendCrew('plugTubes')}.`, hint: 'delay', underway: crewOn('plugTubes') },
   vacuumLoss: { text: `Watch the vacuum and ${sendCrew('repairEjector')}.`, hint: 'delay', underway: crewOn('repairEjector') },
   storm: { text: `Keep two intake pumps Running and ${sendCrew('cleanScreens')}.`, hint: 'delay', underway: crewOn('cleanScreens') },
   sensorFailure: { text: `Find the reading that makes no sense (its loop is safer in Manual), and ${sendCrew('replaceSensor')}.`, hint: 'delay', underway: crewOn('replaceSensor') },

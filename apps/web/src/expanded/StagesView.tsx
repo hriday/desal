@@ -1,6 +1,6 @@
 import type { LoopId } from '@desal/schema';
 import { useState } from 'react';
-import { acidClean, ballCleaning, setpoint } from '../commands';
+import { acidClean, ballCleaning, setpoint, standbySteam } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
 import { canSend, pendingCommand, type ControlCtx } from '../controls/ctx';
 import { CrewButton } from '../controls/CrewButton';
@@ -11,7 +11,7 @@ import { FlashStages, scaleTint } from '../equipment/FlashStages';
 import { DASH, fmt, get, num, stageKey } from '../equipment/format';
 import { ACID_CLEAN_COST_USD, loopRange } from '../limits';
 import { POOL_LOW_BAD_M, POOL_LOW_WARN_M } from '../alarms/rules';
-import { LEVEL_LOOP_COUNT, RECOVERY_STAGES, STAGE_COUNT, TICK_PLANT_S } from '../plantConstants';
+import { EJECTOR_FULL_REACH_BAR, LEVEL_LOOP_COUNT, RECOVERY_STAGES, STAGE_COUNT, STEAM_BAD_BAR, TICK_PLANT_S } from '../plantConstants';
 import { Detail, Row, ViewLayout, type Tone } from './Layout';
 import type { ExpandedProps } from './types';
 
@@ -96,6 +96,8 @@ function LevelControls(ctl: ControlCtx) {
 export function StagesView(props: ExpandedProps) {
   const { status, readings, trends } = props;
   const vac = get(readings, 'vacuum.quality');
+  const steam = get(readings, 'vacuum.motiveSteamBar');
+  const valve = status?.loops?.vacuum?.output;
   const ball = status?.ballCleaning;
   const ctl: ControlCtx = { status, pending: props.pending, send: props.send };
   const ok = canSend(ctl);
@@ -116,12 +118,15 @@ export function StagesView(props: ExpandedProps) {
           <Row k="Cooling water reject" v={fmt(get(readings, 'brine.coolingRejectM3h'), 0, 'm³/h')} />
           <Row k={`Brine pool (S${STAGE_COUNT}) level`} v={fmt(pool, 2, 'm')} tone={poolTone(pool)} />
           <Row k="Vacuum quality" v={fmt(vac, 2)} tone={vac === undefined ? undefined : vac < 0.7 ? 'bad' : vac < 0.8 ? 'warn' : undefined} />
+          <Row k="Motive steam" v={fmt(steam, 1, 'bar')} tone={steam === undefined ? undefined : steam < STEAM_BAD_BAR ? 'bad' : steam < EJECTOR_FULL_REACH_BAR ? 'warn' : undefined} />
+          <Row k="Ejector steam valve" v={fmt(num(valve) ? valve : undefined, 0, '%')} />
           <Row k="Ball cleaning" v={ball === true ? 'On' : ball === false ? 'Off' : DASH} />
         </Detail>
       }
       trends={
         <>
           <Trend label="Vacuum quality" digits={2} data={trends['vacuum.quality']} />
+          <Trend label="Motive steam" unit="bar" digits={1} data={trends['vacuum.motiveSteamBar']} />
           <Trend label="Concentration factor" digits={2} data={trends['brine.concentrationFactor']} />
           <Trend label="Recirculation" unit="m³/h" data={trends['brine.recircM3h']} />
         </>
@@ -130,7 +135,7 @@ export function StagesView(props: ExpandedProps) {
         <>
           <LoopSetpoint loop="recirc" name="Recirc" unit="m³/h" step={50} digits={0} {...ctl} />
           <LoopSetpoint loop="blowdown" name="Blowdown" unit="CF" step={0.01} digits={2} {...ctl} />
-          <LoopSetpoint loop="vacuum" name="Vacuum" unit="quality" step={0.01} digits={2} {...ctl} />
+          <LoopSetpoint loop="vacuum" name="Vacuum" outputName="Ejector steam valve" unit="quality" step={0.01} digits={2} {...ctl} />
           {status?.controlMode === 'auto' && (
             <div className="ctl-group">
               <LoopModeToggle loop="recirc" name="Recirc" {...ctl} />
@@ -160,6 +165,13 @@ export function StagesView(props: ExpandedProps) {
               onAction={() => props.send?.(acidClean())}
             />
           )}
+          <Toggle
+            label="Standby steam line"
+            on={typeof status?.standbySteam === 'boolean' ? status.standbySteam : undefined}
+            pending={pendingCommand(ctl, 'standbySteam') !== undefined}
+            disabled={!ok}
+            onChange={(on) => props.send?.(standbySteam(on))}
+          />
           <CrewButton job="repairEjector" {...ctl} />
           {cleaning && (
             <span className="ctl__meta">

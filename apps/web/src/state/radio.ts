@@ -5,12 +5,13 @@ import { faultMonitor, type MonitorId } from '../alarms/rules';
 export const RADIO_MS = 6000;
 
 /** `key` is shift + eventId (the simulator numbers each shift's events from 1 again), or the push's own key (a hint's). */
-export interface RadioMsg { key: string; eventId: number; kind: ScenarioKind; text: string; monitor: MonitorId }
+export interface RadioMsg { key: string; eventId: number; kind: ScenarioKind | null; text: string; monitor: MonitorId }
 /** `seen` holds RadioMsg keys. */
 export interface RadioState { current: RadioMsg | null; queue: RadioMsg[]; seen: string[] }
 export type RadioAction =
   // `key` overrides the default shift:eventId key, so a hint does not collide with its event's call.
-  | { type: 'push'; eventId: number; shiftId?: number | null; kind: ScenarioKind; text: string; message?: string; key?: string }
+  // A null kind (a hint with no event) must name its `monitor`; otherwise `monitor` overrides monitorFor.
+  | { type: 'push'; eventId: number; shiftId?: number | null; kind: ScenarioKind | null; text: string; message?: string; key?: string; monitor?: MonitorId }
   | { type: 'expire' }
   | { type: 'dismiss' };
 
@@ -34,7 +35,9 @@ export function radioReducer(s: RadioState, a: RadioAction): RadioState {
     case 'push': {
       const key = a.key ?? `${a.shiftId ?? '-'}:${a.eventId}`;
       if (s.seen.includes(key)) return s;
-      const msg: RadioMsg = { key, eventId: a.eventId, kind: a.kind, text: a.text, monitor: monitorFor(a.kind, a.message) };
+      const monitor = a.monitor ?? (a.kind === null ? null : monitorFor(a.kind, a.message));
+      if (monitor === null) return s; // a kind-less push must name its monitor
+      const msg: RadioMsg = { key, eventId: a.eventId, kind: a.kind, text: a.text, monitor };
       const seen = [...s.seen, key];
       return s.current ? { ...s, seen, queue: [...s.queue, msg] } : { ...s, seen, current: msg };
     }

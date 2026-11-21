@@ -90,4 +90,8 @@ describe('store radio wiring', () => {
     expect(s.radio.current?.text).toBe('radio 3.1');
     expect(s.radio.queue.map((m) => m.text)).toEqual(['radio 3.2']);
   });
+  it('a push with no kind opens the monitor it names', () => {
+    const s = radioReducer(initialRadio, { type: 'push', eventId: 0, shiftId: 1, kind: null, text: 'Hint: x', key: '1:divert:0', monitor: 'product' });
+    expect(s.current).toMatchObject({ kind: null, monitor: 'product', key: '1:divert:0' });
+  });
 });
