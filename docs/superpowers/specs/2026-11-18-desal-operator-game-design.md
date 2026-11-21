@@ -22,7 +22,7 @@ A later phase adds a reverse osmosis (RO) unit.
 **Non-goals (for now)**
 - The RO unit (phase 2; the design should make it pluggable, see §10).
 - Multiplayer *within* a plant, user accounts, saving a game to continue later. (It is public on a Linux server, see §7; each visitor runs their own plant.)
-- A tycoon economy or upgrade shop. The player is an operator, not a manager: the operating account only constrains the run (it pays for fuel, repairs and fines and earns for water); it buys no upgrades.
+- A tycoon economy or upgrade shop. The player is an operator, not a manager: the operating budget only constrains the run (allocated per shift, spent on fuel and repairs); it buys no upgrades.
 - High-fidelity engineering accuracy (no CFD, no full heat and mass balance solver).
 - Mobile layouts. The target is a desktop browser.
 
@@ -41,14 +41,19 @@ A later phase adds a reverse osmosis (RO) unit.
 - At the end of the shift, the player gets a **score and debrief**.
 - **A game is a run of shifts in one sitting** (the user's decision, 2026-11-18). A visitor starts a fresh plant and plays shift after shift. Damage, scale, wear and backup fuel carry over within the run. The game ends when they quit or close the tab (after a short reconnect grace period, my call: 60 s), and they get a **final score for the whole run**. **A game can't be saved and continued later.** There is no career across visits.
 - **Each shift is harder than the last, and the run ends when the plant can't go on** (the user's direction, 2026-11-18: "at some point the money has run out, or the fuel has, or something else"). The details are my calls:
-  - **The run has an operating account.** It starts at $40,000. Each shift it earns revenue for water delivered in spec ($3.00/m³), and it pays for fuel burned, backup-fuel deliveries (paid on order), acid cleaning ($6,000), and a pump overhaul ($8,000, which resets a pump's wear, the way the run repairs damage). It is fined for missing the shift target ($4 per m³ short) and for off-spec water delivered ($10 per m³). The fixed per-shift fuel budget is replaced by the account; the shift's fuel allowance becomes guidance shown in the handover.
+  - **The point is water** (the user's direction, 2026-11-18: "water revenue isn't the point. Quantity of water output is."). The plant is a utility, not a business: water earns nothing.
+  - **Operating budget** (numbers are my calls):
+    - The run starts with $15,000.
+    - At each shift start the utility adds an allocation: `$10,000 × (1 − 0.03 × (n − 1))` for shift `n`, multiplied for shift ≥ 2 by `min(1, previous shift's in-spec water ÷ its target)`. So missing the target cuts the next shift's funding.
+    - The budget pays for gas as it burns, backup-fuel deliveries (on order), acid cleaning ($6,000) and pump overhauls ($8,000).
+    - There is no revenue and no fines. Off-spec water simply doesn't count toward the target or the score.
   - **Game over** comes from any of:
     - **Bankrupt:** the account is below $0 at a shift end.
     - **Out of fuel:** no gas is available, the backup tank is empty, and the account can't pay for a delivery.
     - **Plant failure:** the burner condition reaches 0, or no intake pump is usable (wear at 1).
   - When game over is reached mid-shift (fuel or failure), the run ends at once with the reason shown.
   - **Difficulty:** each shift raises the target and draws more and harsher scenario events (blooms, curtailments, price spikes, off-grade fuel, controller faults, warmer seawater), so a run always ends eventually.
-  - **Final score:** shifts completed (the headline), plus total water delivered and the final account balance as tie-breakers.
+  - **Final score:** total in-spec water delivered over the run (the headline), then shifts completed.
 - **Shift handover report:** shown at the start of each shift after the first, like a real operator's handover log. It covers equipment condition, trips and incidents last shift, open alarms, and this shift's target and conditions. Flink generates it from the previous shift's events.
 - Pause is allowed, but it counts toward the reconnect grace: a paused, disconnected game still ends.
 
@@ -105,7 +110,7 @@ Each control is a setpoint in Auto and a direct output in Manual.
 - **Recovery** (my call): acid cleaning, which takes the plant offline for part of a shift and removes hard scale, and a pump swap to standby. Both are operator actions with a production cost. A between-shifts maintenance choice is left for later.
 
 ### 3.6 Scoring
-Per shift: the account movement (revenue minus fuel, repairs and fines), production against target, off-spec time, trips and damage added. These are shown in the debrief. The run's final score is shifts completed, then water delivered, then account balance (§3.1). The simulator owns the account and the game-over checks (they are game rules, not analytics). Flink computes the running KPIs, the debrief and the handover report.
+Per shift: in-spec water against target, off-spec water, spending (fuel, deliveries, repairs), the next shift's allocation, trips and damage added. These are shown in the debrief. The run's final score is total in-spec water, then shifts completed (§3.1). The simulator owns the account and the game-over checks (they are game rules, not analytics). Flink computes the running KPIs, the debrief and the handover report.
 
 ## 4. UI: the control room
 
@@ -158,7 +163,7 @@ Approved via mockup (`.superpowers/brainstorm/.../monitor-wall-v2.html`).
   - *Scaling and trend job:* windowed trend per stage (fouling rate, heat transfer degradation), feeding "HI scaling rate" alarms and the debrief.
   - *KPI and score job:* windowed aggregates (production, GOR, fuel cost per m³, off-spec time) and the running shift score.
   - *Shift report job:* on shift-end events, builds the debrief and the next shift's handover report.
-  - Flink uses **event time = plant time** (each record carries its plant timestamp), with watermarks. This matters because the game can pause and time is compressed.
+  - Flink jobs are **keyed process functions over `gameId`**, driven by each record's `tick` and the per-game `seq`/`epoch`, with **no event-time watermarks on `plantTime`**. Plant time is compressed 40x and stops while a game is paused or in handover, so a watermark on it would stall per game and mean nothing across games; within one game, `tick` already orders everything. Where a job needs wall-clock windows (e.g. activity per minute), it uses the broker's LogAppendTime record timestamp. What consumers may rely on (keys, order, seq/epoch, host events) is in `docs/streaming-notes.md`.
 - **Kafka:** a single broker in KRaft mode. Topics are listed below; keys are chosen so per-unit and per-sensor ordering holds.
 - **Shared types:** one TypeScript package of message schemas (telemetry, command, event, alarm, KPI, report) used by the frontend, gateway, and simulator. The Java Flink side mirrors them. JSON over the wire *(my call; schema registry and Avro are a possible later learning step)*.
 

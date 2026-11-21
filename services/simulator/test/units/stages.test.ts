@@ -3,12 +3,13 @@ import { STAGE_COUNT } from '../../src/constants.js';
 import { createInitialState, type PlantState, type Stage } from '../../src/state.js';
 import { bottomTempC, recoveredTempC, stageEffectiveness, stepStages } from '../../src/units/stages.js';
 import { allFinite } from '../helpers.js';
+import { GAME_ID } from '../envelope.js';
 
 const DT = 40;
 
 /** Nominal plant: TBT 108, seawater 30 C, vacuum 0.95, recirc 4180 m3/h, clean tubes. */
 function nominal(): PlantState {
-  const s = createInitialState(1, 0);
+  const s = createInitialState(1, 0, GAME_ID);
   return {
     ...s,
     seawater: { ...s.seawater, tempC: 30 },

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { nextRandom } from '../src/rng.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
-import { env, nextId } from './envelope.js';
+import { env, nextId, GAME_ID } from './envelope.js';
 import { allFinite } from './helpers.js';
 
 const SEQUENCES = 20;
@@ -80,11 +80,11 @@ function randomCommand(r: Rand, s: PlantState): unknown {
     case 16:
       return env(s, { type: 'startShift', mode: r.pick(['auto', 'manual']) }, null);
     case 17:
-      return r.next() < 0.1 ? env(s, { type: 'newCareer' }) : env(s, { type: 'resume' });
+      return r.next() < 0.1 ? env(s, { type: 'quitGame' }) : env(s, { type: 'resume' });
     case 18:
       return env(s, { type: 'setSetpoint', loop, value: r.pick([NaN, Infinity, -1e308]) });
     case 19:
-      return { commandId: nextId(), issuedAt: 0, shiftId: 99, command: { type: 'manualTrip' } };
+      return { commandId: nextId(), issuedAt: 0, gameId: s.run.gameId, shiftId: 99, command: { type: 'manualTrip' } };
     case 20:
       return r.pick([null, undefined, 'junk', {}, { command: { type: 'restart' } }, [1, 2, 3]]);
     default:
@@ -94,7 +94,7 @@ function randomCommand(r: Rand, s: PlantState): unknown {
 
 /** Start states: nominal, all pumps stopped, and fuel exhausted (no gas, near-empty backup). */
 function startState(i: number): PlantState {
-  const s = createInitialState(1000 + i, 0);
+  const s = createInitialState(1000 + i, 0, GAME_ID);
   if (i % 3 === 1) {
     for (const p of Object.values(s.intake.pumps)) p.running = false;
   } else if (i % 3 === 2) {
@@ -106,7 +106,7 @@ function startState(i: number): PlantState {
 
 describe('fuzz: random command sequences', () => {
   it(`${SEQUENCES} seeded sequences x ${TICKS} ticks stay finite and never throw`, () => {
-    const seen = { running: 0, trip: 0, online: 0, shiftEnd: 0, rejected: 0 };
+    const seen = { running: 0, trip: 0, online: 0, shiftEnd: 0, rejected: 0, gameEnd: 0 };
     for (let seq = 0; seq < SEQUENCES; seq++) {
       const r = new Rand(seq * 7919 + 1);
       let s = startState(seq);
@@ -127,10 +127,13 @@ describe('fuzz: random command sequences', () => {
           if (e.type === 'online') seen.online++;
           if (e.type === 'shiftEnd') seen.shiftEnd++;
           if (e.type === 'commandRejected') seen.rejected++;
+          if (e.type === 'gameEnd') seen.gameEnd++;
         }
         if (!allFinite(s) || !allFinite(out.telemetry) || !allFinite(out.status)) {
           throw new Error(`non-finite state at sequence ${seq}, tick ${t}`);
         }
+        // A game that has ended stays over; carry on with a fresh one, as the host would.
+        if (s.phase === 'over') s = createInitialState(s.seed, s.plantTime, GAME_ID);
       }
       expect(allFinite(s)).toBe(true);
     }
@@ -140,5 +143,6 @@ describe('fuzz: random command sequences', () => {
     expect(seen.online).toBeGreaterThan(0);
     expect(seen.shiftEnd).toBeGreaterThan(0);
     expect(seen.rejected).toBeGreaterThan(0);
+    expect(seen.gameEnd).toBeGreaterThan(0);
   });
 });

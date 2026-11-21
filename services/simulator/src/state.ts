@@ -1,5 +1,7 @@
 import type {
   FuelGrade,
+  GameEndReason,
+  PlantEvent,
   FuelKind,
   Phase,
   PlantStatusKind,
@@ -32,6 +34,7 @@ import {
   RECIRC_NOMINAL_M3H,
   RECIRC_PUMP_MAX_M3H,
   STAGE_COUNT,
+  START_BALANCE_USD,
   VACUUM_QUALITY_MIN,
   VACUUM_QUALITY_NOMINAL,
 } from './constants.js';
@@ -51,6 +54,8 @@ export interface Pump {
   wear: number; // 0..1
   cavitation: number; // 0..1
   bearingWearMult: number;
+  /** Ticks left in an overhaul (0 = not under overhaul). */
+  overhaulRemainingTicks: number;
 }
 export interface Stage {
   tempC: number;
@@ -73,13 +78,35 @@ export interface ShiftState {
   startTick: number;
   mode: 'auto' | 'manual';
   target: ShiftTarget;
-  acc: { productM3: number; offSpecTicks: number; fuelCostUsd: number; trips: number };
+  /**
+   * productM3: in-spec water delivered (the shift's progress); offSpecM3: off-spec water delivered,
+   * which counts for nothing. fuelCostUsd: gas burned plus backup ordered. spentUsd: fuel plus repairs.
+   */
+  acc: { productM3: number; offSpecM3: number; offSpecTicks: number; fuelCostUsd: number; trips: number; spentUsd: number };
 }
 export interface ScenarioEffects {
   offgradeOnly: boolean;
   deliveryDelayTicks: number;
   chlorophyllTarget: number;
   chlorophyllRampPerTick: number;
+}
+
+/** An event as the plant units produce it; tick() stamps gameId, seq, tick and plantTime. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export type SimEvent = DistributiveOmit<PlantEvent, 'gameId' | 'epoch' | 'seq'>;
+
+/** One game = one run of shifts in one sitting; the operating account lives here. */
+export interface Run {
+  gameId: string;
+  balanceUsd: number;
+  shiftNumber: number;
+  totalProductM3: number;
+  shiftsCompleted: number;
+  /** Next event seq to assign (per game, monotonically increasing within an epoch). */
+  eventSeq: number;
+  /** Times this game was restored from a snapshot (GameHost.restore); stamped on every record. */
+  epoch: number;
+  over: { reason: GameEndReason; atTick: number } | null;
 }
 
 export interface PlantState {
@@ -125,7 +152,7 @@ export interface PlantState {
   ballCleaning: boolean;
   shift: ShiftState | null;
   scenario: { id: string; definition: Scenario | null; nextEventIndex: number; effects: ScenarioEffects };
-  careerShiftCount: number;
+  run: Run;
 }
 
 const SEAWATER_C = 30;
@@ -173,10 +200,10 @@ function loop(kind: keyof typeof LOOP_GAINS, setpoint: number, output: number): 
 }
 
 function pump(running: boolean): Pump {
-  return { running, wear: 0, cavitation: 0, bearingWearMult: 1 };
+  return { running, wear: 0, cavitation: 0, bearingWearMult: 1, overhaulRemainingTicks: 0 };
 }
 
-export function createInitialState(seed: number, startPlantTime: number): PlantState {
+export function createInitialState(seed: number, startPlantTime: number, gameId: string): PlantState {
   const stages: Stage[] = Array.from({ length: STAGE_COUNT }, (_, i) => ({
     tempC: NOMINAL.tbtC - (NOMINAL.tbtC - BOTTOM_C) * ((i + 0.5) / STAGE_COUNT),
     levelM: NOMINAL.levelM,
@@ -235,6 +262,6 @@ export function createInitialState(seed: number, startPlantTime: number): PlantS
       nextEventIndex: 0,
       effects: { offgradeOnly: false, deliveryDelayTicks: 0, chlorophyllTarget: 1, chlorophyllRampPerTick: 0 },
     },
-    careerShiftCount: 0,
+    run: { gameId, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
   };
 }

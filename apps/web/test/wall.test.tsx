@@ -1,0 +1,196 @@
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import type { PlantStatus } from '@desal/schema';
+import type { ComponentType } from 'react';
+import type { Alarm } from '../src/alarms/rules';
+import { demoReadings, demoStatus, demoTarget } from '../src/demo';
+import { BrineHeater } from '../src/equipment/BrineHeater';
+import { FlashStages } from '../src/equipment/FlashStages';
+import { Fuel } from '../src/equipment/Fuel';
+import { Intake } from '../src/equipment/Intake';
+import { ProductWater } from '../src/equipment/ProductWater';
+import { ShiftAccount } from '../src/equipment/ShiftAccount';
+import type { EquipmentProps } from '../src/equipment/types';
+import { AlarmStrip } from '../src/wall/AlarmStrip';
+import { Monitor } from '../src/wall/Monitor';
+import { Wall } from '../src/wall/Wall';
+
+afterEach(cleanup);
+
+const EQUIPMENT: [string, ComponentType<EquipmentProps>, string[]][] = [
+  ['Intake', Intake, ['5,800 m³/h', 'Chl-a 4.1', 'P-101', 'P-103']],
+  ['BrineHeater', BrineHeater, ['108.0 °C', '72 %', 'burner health 93 %']],
+  ['FlashStages', FlashStages, ['20 stages', 'Vac 0.94']],
+  ['ProductWater', ProductWater, ['512 m³/h', '18 ppm', 'in spec']],
+  ['Fuel', Fuel, ['60 MW', '$8.00/GJ', '128 t', 'standard', 'on gas']],
+  ['ShiftAccount', ShiftAccount, ['Shift 3', '3h 40m left', '2,380 / 3,900 m³', '$12,450']],
+];
+
+describe('equipment drawings', () => {
+  it.each(EQUIPMENT)('%s renders "—" without throwing when readings and status are missing', (_n, C) => {
+    const { container } = render(<C status={null} readings={{}} target={null} />);
+    expect(container.querySelector('svg')).not.toBeNull();
+    expect(container.textContent).toContain('—');
+  });
+
+  // Readings and status as they might arrive malformed: non-finite or null values, unknown enum values.
+  const weirdReadings = (v: unknown) =>
+    Object.fromEntries(Object.keys(demoReadings()).map((k) => [k, v])) as unknown as Record<string, number>;
+  const weirdStatus = {
+    ...demoStatus(),
+    status: 'melting', controlMode: 'hybrid', balanceUsd: null, shiftNumber: null, shiftTicksRemaining: NaN,
+    fuel: { active: 'coal', changeoverTo: null, backupGrade: 'sludge', gasCurtailmentNotice: null },
+  } as unknown as PlantStatus;
+
+  it.each(EQUIPMENT.flatMap(([n, C]) => [NaN, Infinity, null].map((v) => [n, C, v] as const)))(
+    '%s renders "—" and no NaN/undefined/null for %s readings and unknown status values',
+    (_n, C, v) => {
+      const { container } = render(<C status={weirdStatus} readings={weirdReadings(v)} target={{ ...demoTarget, productM3: 0 }} />);
+      expect(container.textContent).toContain('—');
+      expect(container.innerHTML).not.toMatch(/NaN|undefined|null|Infinity/);
+    },
+  );
+
+  it.each(EQUIPMENT)('%s shows no NaN/undefined/null with nothing known', (_n, C) => {
+    const { container } = render(<C status={null} readings={{}} target={null} />);
+    expect(container.innerHTML).not.toMatch(/NaN|undefined|null|Infinity/);
+  });
+
+  it.each(EQUIPMENT)('%s draws no NaN with a zero target', (_n, C) => {
+    const { container } = render(<C status={demoStatus()} readings={demoReadings()} target={{ ...demoTarget, productM3: 0 }} />);
+    expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('unknown status, mode and fuel values render "—", not raw or blank', () => {
+    const shift = render(<ShiftAccount status={weirdStatus} readings={demoReadings()} target={demoTarget} />).container.textContent;
+    expect(shift).not.toMatch(/melting|hybrid|Manual mode|Auto mode/);
+    expect(shift).toContain('Balance—');
+    cleanup();
+    const fuel = render(<Fuel status={weirdStatus} readings={demoReadings()} target={null} />).container.textContent;
+    expect(fuel).not.toMatch(/coal|sludge/);
+    expect(fuel).toContain('on —');
+  });
+
+  it('prototype keys as enum values render "—", not inherited properties', () => {
+    const proto = {
+      ...demoStatus(),
+      status: 'constructor', controlMode: 'toString',
+      fuel: { active: '__proto__', changeoverTo: null, backupGrade: 'hasOwnProperty', gasCurtailmentNotice: null },
+    } as unknown as PlantStatus;
+    const shift = render(<ShiftAccount status={proto} readings={demoReadings()} target={demoTarget} />).container;
+    expect(shift.innerHTML).not.toMatch(/function|native code|\[object/);
+    expect(shift.textContent).not.toMatch(/ONLINE|TRIPPED|Auto mode|Manual mode/);
+    cleanup();
+    const fuel = render(<Fuel status={proto} readings={demoReadings()} target={null} />).container;
+    expect(fuel.innerHTML).not.toMatch(/function|native code|\[object/);
+    expect(fuel.textContent).toContain('on —');
+  });
+
+  it('an unknown changeoverTo shows "→ —" in warn colour', () => {
+    const st = { ...demoStatus(), fuel: { ...demoStatus().fuel, changeoverTo: 'coal' } } as unknown as PlantStatus;
+    const { container } = render(<Fuel status={st} readings={demoReadings()} target={null} />);
+    const t = [...container.querySelectorAll('text')].find((e) => e.textContent === '→ —');
+    expect(t?.getAttribute('fill')).toBe('var(--warn)');
+  });
+
+  it('ProductWater falls back to the default limit for a NaN target limit', () => {
+    const { container } = render(<ProductWater status={demoStatus()} readings={demoReadings()} target={{ ...demoTarget, maxSalinityPpm: NaN }} />);
+    expect(container.textContent).toContain('limit 25 ppm');
+  });
+
+  it.each(EQUIPMENT)('%s shows its key values from a sample frame', (_n, C, expected) => {
+    const { container } = render(<C status={demoStatus()} readings={demoReadings()} target={demoTarget} />);
+    for (const text of expected) expect(container.textContent).toContain(text);
+  });
+
+  it('tints each stage by its hard scale', () => {
+    const r = demoReadings({ 'stages.s03.hardScaleMm': 0.3, 'stages.s04.hardScaleMm': 0.299 });
+    const { container } = render(<FlashStages status={demoStatus()} readings={r} target={null} />);
+    const tint = (n: number) => container.querySelector(`[data-stage="${n}"]`)?.getAttribute('data-scale');
+    expect([tint(1), tint(2), tint(3), tint(4)]).toEqual(['ok', 'bad', 'warn', 'ok']);
+  });
+
+  it('fills a stage by its brine level', () => {
+    const { container } = render(<FlashStages status={demoStatus()} readings={demoReadings({ 'stages.s01.levelM': 0.5 })} target={null} />);
+    const h = (n: number) => Number(container.querySelector(`[data-stage="${n}"] .brine`)?.getAttribute('height'));
+    expect(h(1)).toBeGreaterThan(h(2));
+  });
+
+  it('shows pumps running or stopped', () => {
+    const { container } = render(<Intake status={demoStatus()} readings={demoReadings()} target={null} />);
+    const state = (id: string) => container.querySelector(`[data-pump="${id}"]`)?.getAttribute('data-running');
+    expect([state('P-101'), state('P-102'), state('P-103')]).toEqual(['true', 'true', 'false']);
+  });
+
+  it('draws more algae as chlorophyll rises', () => {
+    const algae = (chl: number) => {
+      const { container, unmount } = render(<Intake status={demoStatus()} readings={demoReadings({ 'pretreat.chlorophyllUgL': chl })} target={null} />);
+      const n = container.querySelectorAll('.algae circle').length;
+      unmount();
+      return n;
+    };
+    expect(algae(0)).toBe(0);
+    expect(algae(2)).toBeGreaterThan(0);
+    expect(algae(8)).toBeGreaterThan(algae(2));
+  });
+
+  it('scales the flame with firing', () => {
+    const scale = (firing: number) => {
+      const { container, unmount } = render(<BrineHeater status={demoStatus()} readings={demoReadings({ 'heater.firingPct': firing })} target={null} />);
+      const s = Number(container.querySelector('[data-flame]')?.getAttribute('data-flame'));
+      unmount();
+      return s;
+    };
+    expect(scale(0)).toBe(0);
+    expect(scale(100)).toBeGreaterThan(scale(30));
+  });
+});
+
+const alarm = (monitor: Alarm['monitor'], level: Alarm['level'], id = `${monitor}-${level}`): Alarm => ({ id, monitor, level, text: `${monitor} ${level}` });
+
+describe('Monitor', () => {
+  const props = { status: demoStatus(), readings: demoReadings(), target: demoTarget };
+
+  it.each([
+    [[], 'monitor--ok'],
+    [[alarm('heater', 'warn')], 'monitor--warn'],
+    [[alarm('heater', 'warn'), alarm('heater', 'bad')], 'monitor--bad'],
+    [[alarm('stages', 'bad')], 'monitor--ok'],
+  ] as [Alarm[], string][])('border follows the worst alarm on the monitor', (alarms, cls) => {
+    const { getByRole } = render(<Monitor id="heater" {...props} alarms={alarms} onOpen={() => {}} />);
+    expect(getByRole('button').className).toContain(cls);
+  });
+
+  it('is a button that opens its monitor', () => {
+    const onOpen = vi.fn();
+    const { getByRole } = render(<Monitor id="fuel" {...props} alarms={[]} onOpen={onOpen} />);
+    fireEvent.click(getByRole('button', { name: /fuel/i }));
+    expect(onOpen).toHaveBeenCalledWith('fuel');
+  });
+});
+
+describe('Wall', () => {
+  it('lays out the six monitors in order', () => {
+    const { getAllByRole } = render(<Wall status={demoStatus()} readings={demoReadings()} target={demoTarget} alarms={[]} onOpen={() => {}} />);
+    expect(getAllByRole('button').map((b) => b.getAttribute('data-monitor'))).toEqual(['intake', 'heater', 'stages', 'product', 'fuel', 'shift']);
+  });
+
+  it('renders with nothing known yet', () => {
+    expect(() => render(<Wall status={null} readings={{}} target={null} alarms={[]} onOpen={() => {}} />)).not.toThrow();
+  });
+});
+
+describe('AlarmStrip', () => {
+  it('lists every alarm, worst first, and opens its monitor on click', () => {
+    const onOpen = vi.fn();
+    const { getAllByRole } = render(<AlarmStrip alarms={[alarm('intake', 'warn'), alarm('stages', 'bad')]} onOpen={onOpen} />);
+    const items = getAllByRole('button');
+    expect(items.map((b) => b.textContent)).toEqual([expect.stringContaining('stages bad'), expect.stringContaining('intake warn')]);
+    fireEvent.click(items[1]!);
+    expect(onOpen).toHaveBeenCalledWith('intake');
+  });
+
+  it('says so when there are no alarms', () => {
+    const { container } = render(<AlarmStrip alarms={[]} onOpen={() => {}} />);
+    expect(container.textContent).toMatch(/no active alarms/i);
+  });
+});

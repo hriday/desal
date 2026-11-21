@@ -1,8 +1,9 @@
 # Production stack on the shared server: compose project "desal" in /opt/desal
 # (docs/hosting.md). scripts/deploy/deploy.sh copies this file there and writes
-# .env with SIMULATOR_IMAGE. Every container is capped: the server has 2 GB RAM.
-# Nothing is published publicly: Caddy on the host reaches Kafka UI on
-# 127.0.0.1:8080, and Kafka's 127.0.0.1:9092 is for SSH tunnels from the laptop.
+# .env with SIMULATOR_IMAGE and GATEWAY_IMAGE. Every container is capped: the server
+# has 2 GB RAM. Nothing is published publicly: Caddy on the host reaches the gateway
+# on 127.0.0.1:8081 and Kafka UI on 127.0.0.1:8080, and Kafka's 127.0.0.1:9092 is
+# for SSH tunnels from the laptop.
 name: desal
 
 services:
@@ -31,8 +32,8 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_HEAP_OPTS: "-Xmx384m -Xms384m"
-      # Topic data lives in the volume: the compacted plant.state topic in here is
-      # the career save game (docs/hosting.md, "Backups").
+      # Topic data lives in the volume: the compacted plant.state topic in here holds
+      # every game's save, one per gameId (docs/hosting.md, "Backups").
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
       - kafka-data:/var/lib/kafka/data
@@ -58,6 +59,33 @@ services:
     environment:
       KAFKA_BROKERS: kafka:29092
 
+  gateway:
+    image: ${GATEWAY_IMAGE:?set by deploy.sh}
+    container_name: desal-gateway
+    restart: unless-stopped
+    init: true
+    mem_limit: 192m
+    pids_limit: 128
+    stop_grace_period: 15s
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      PORT: 8081
+      ALLOWED_ORIGINS: https://desal.moosha.org
+      # Peers whose X-Forwarded-For names the real player (per-client limits). Caddy reaches
+      # this container through docker-proxy/NAT, so the peer is the bridge gateway (172.x.0.1),
+      # not loopback. The port is published only on 127.0.0.1, so any private peer is that host
+      # proxy path. These are the gateway's defaults, spelled out here on purpose.
+      TRUSTED_PROXIES: 127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+      # Per client (IPv4 address or IPv6 /64); these are the defaults.
+      MAX_SOCKETS_PER_CLIENT: 3
+      MAX_GAMES_PER_CLIENT: 3
+      NEW_GAME_INTERVAL_MS: 10000
+
   kafka-ui:
     image: kafbat/kafka-ui:v1.3.0
     container_name: desal-kafka-ui
@@ -72,6 +100,8 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: desal
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      # Served under /kafka behind Caddy basic auth (deploy/desal.caddy).
+      SERVER_SERVLET_CONTEXT_PATH: /kafka
       JAVA_OPTS: "-Xmx192m"
 
 volumes:

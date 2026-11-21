@@ -1,0 +1,57 @@
+import type { AccountCause } from '@desal/schema';
+import { ALLOC_BASE_USD, ALLOC_DECAY_PER_SHIFT, LHV_OFFGRADE_MJkg, LHV_STANDARD_MJkg } from './constants.js';
+import type { PlantState, SimEvent } from './state.js';
+
+/**
+ * Operating allocation for shift `n`, credited at its start: ALLOC_BASE_USD x (1 - 0.03(n - 1)),
+ * and from shift 2 also x min(1, previous shift's in-spec m3 / its target). Floored at 0. With no
+ * previous shift on record the performance factor is 1.
+ */
+export function allocationUsd(n: number, prev: { productM3: number; targetM3: number } | null): number {
+  const base = ALLOC_BASE_USD * Math.max(0, 1 - ALLOC_DECAY_PER_SHIFT * (n - 1));
+  if (n < 2 || !prev || prev.targetM3 <= 0) return base;
+  return base * Math.min(1, Math.max(0, prev.productM3 / prev.targetM3));
+}
+
+/**
+ * Price of `tonnes` of backup fuel of the grade currently offered, paid in full on order:
+ * tonnes x LHV (GJ/t, numerically the MJ/kg value) x backup price (USD/GJ).
+ */
+export function backupOrderCostUsd(s: PlantState, tonnes: number): number {
+  const lhvGJt = s.scenario.effects.offgradeOnly ? LHV_OFFGRADE_MJkg : LHV_STANDARD_MJkg;
+  return tonnes * lhvGJt * s.fuel.backup.priceUsdPerGJ;
+}
+
+export const canAfford = (s: PlantState, usd: number): boolean => s.run.balanceUsd >= usd;
+
+/** Take spending off the balance and add it to the running shift's spentUsd. */
+function spend(s: PlantState, usd: number): PlantState {
+  const run = { ...s.run, balanceUsd: s.run.balanceUsd - usd };
+  if (!s.shift) return { ...s, run };
+  return { ...s, run, shift: { ...s.shift, acc: { ...s.shift.acc, spentUsd: s.shift.acc.spentUsd + usd } } };
+}
+
+/** Pay for gas burned this tick. Per-tick spending emits no event (the balance shows in status). */
+export const spendPerTick = (s: PlantState, usd: number): PlantState => (usd === 0 ? s : spend(s, usd));
+
+const accountChange = (s: PlantState, deltaUsd: number, cause: AccountCause): SimEvent => ({
+  type: 'accountChange',
+  tick: s.tick,
+  plantTime: s.plantTime,
+  shiftId: s.shift?.id ?? null,
+  deltaUsd,
+  balanceUsd: s.run.balanceUsd,
+  cause,
+});
+
+/** Debit a discrete charge (delivery, repair), count it as shift spending, and report it. */
+export function charge(s: PlantState, usd: number, cause: AccountCause): { state: PlantState; event: SimEvent } {
+  const state = spend(s, usd);
+  return { state, event: accountChange(state, -usd, cause) };
+}
+
+/** Credit an allocation and report it. */
+export function credit(s: PlantState, usd: number, cause: AccountCause): { state: PlantState; event: SimEvent } {
+  const state: PlantState = { ...s, run: { ...s.run, balanceUsd: s.run.balanceUsd + usd } };
+  return { state, event: accountChange(state, usd, cause) };
+}

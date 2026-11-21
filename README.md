@@ -1,14 +1,18 @@
 # Desal Operator
 
-A desalination-plant operator game. A deterministic plant simulator runs in real time and publishes its sensors, status and events to Apache Kafka; the operator sends commands back over Kafka. The project is also a vehicle for learning Kafka (now) and Flink (later), see [docs/streaming-notes.md](docs/streaming-notes.md).
+A desalination-plant operator game. One simulator process runs many games at once (up to 10) in real time and publishes each game's sensors, status and events to Apache Kafka; players send commands back over Kafka, through a WebSocket gateway. The public game is at https://desal.moosha.org (hosting: [docs/hosting.md](docs/hosting.md)). The project is also a vehicle for learning Kafka (now) and Flink (later), see [docs/streaming-notes.md](docs/streaming-notes.md).
 
 Design: [docs/superpowers/specs/2026-11-18-desal-operator-game-design.md](docs/superpowers/specs/2026-11-18-desal-operator-game-design.md).
 
 ## Layout
 
-- `packages/schema`: shared zod schemas, topic names (`TOPICS`) and the plant key (`PLANT_KEY`).
-- `services/simulator` (`@desal/simulator`): the simulator, its Kafka wiring (`src/kafka/`) and two CLIs (`src/cli/`).
-- `infra/docker-compose.yml`: single-node Kafka (KRaft) and Kafka UI.
+- `packages/schema`: shared zod schemas (commands, events, status, telemetry, the WebSocket protocol in `ws.ts`) and topic names (`TOPICS`).
+- `services/simulator` (`@desal/simulator`): the multi-game host, its Kafka wiring (`src/kafka/`) and two CLIs (`src/cli/`: `send`, `watch`).
+- `services/gateway` (`@desal/gateway`): WebSocket gateway between players and Kafka, plus a terminal game client (`play`).
+- `apps/web` (`@desal/web`): the browser control room.
+- `infra/docker-compose.yml`: single-node Kafka (KRaft) and Kafka UI for local development. `deploy/` and `scripts/deploy/`: the production stack, see [docs/hosting.md](docs/hosting.md).
+
+Every record on every topic is keyed by `gameId`, which is how many games share one set of topics.
 
 ## Prerequisites
 
@@ -29,10 +33,10 @@ Stop the stack:
 
 ```sh
 docker compose -f infra/docker-compose.yml down        # keeps data
-docker compose -f infra/docker-compose.yml down -v     # also wipes data, i.e. the career save
+docker compose -f infra/docker-compose.yml down -v     # also wipes data, i.e. every game's save
 ```
 
-Kafka's data (`log.dirs`, set by `KAFKA_LOG_DIRS`, plus the KRaft metadata) lives in the named volume `desal-kafka-data` at `/var/lib/kafka/data`, so `down` / `up` and container recreates keep the career. Only `down -v` (or `docker volume rm desal-kafka-data`) deletes it.
+Kafka's data (`log.dirs`, set by `KAFKA_LOG_DIRS`, plus the KRaft metadata) lives in the named volume `desal-kafka-data` at `/var/lib/kafka/data`, so `down` / `up` and container recreates keep the saves. Only `down -v` (or `docker volume rm desal-kafka-data`) deletes it.
 
 ## Tests
 
@@ -40,43 +44,56 @@ Kafka's data (`log.dirs`, set by `KAFKA_LOG_DIRS`, plus the KRaft metadata) live
 pnpm test                                 # unit tests, no Kafka needed
 pnpm typecheck
 pnpm --filter @desal/simulator test:int   # integration tests, need the Docker stack running
+pnpm --filter @desal/gateway test:int
+pnpm --filter @desal/web e2e              # browser tests (Playwright); needs the simulator + gateway running, see apps/web/e2e/README.md
 ```
 
-Integration tests set `DESAL_TOPIC_SUFFIX` to a unique value, so they create throwaway topics (and a consumer group `desal-sim<suffix>`) and never touch your real career.
+Integration tests set `DESAL_TOPIC_SUFFIX` to a unique value, so they create throwaway topics (and consumer groups such as `desal-sim<suffix>`) and never touch your real games.
 
-## Running the simulator
+## Running it locally
+
+With Kafka up (see Setup), in separate terminals:
 
 ```sh
-pnpm --filter @desal/simulator start                 # resume the saved career, or start a fresh one
-pnpm --filter @desal/simulator start --new-career    # discard the save and start over
+pnpm --filter @desal/simulator start    # the simulator: creates topics, resumes saved games, ticks once per second
+pnpm --filter @desal/gateway start      # WebSocket gateway on :8081 (/ws, /healthz); env PORT, KAFKA_BROKERS, ALLOWED_ORIGINS
+pnpm --filter @desal/gateway play       # terminal game: starts a new game, prints a status line per second, type commands (optional --url ws://host/ws)
+VITE_WS_URL=ws://localhost:8081/ws pnpm --filter @desal/web dev   # browser control room
 ```
 
-One tick runs per second and is 40 plant seconds. Ctrl-C saves a final snapshot and exits.
+Set `KAFKA_BROKERS` (comma-separated) to use a broker other than `localhost:9092`.
 
-The career save is the latest record (key `plant-1`) of the compacted `plant.state` topic. Every snapshot is validated before it is written; a state that would not restore (e.g. a NaN) is never written, and the simulator halts instead (`FATAL ... refusing to save`), leaving the previous save in place. On start, if the newest save is invalid the simulator falls back to the newest valid one still in the topic and logs which saves it skipped. Only if none is valid does it refuse to start and tell you to use `--new-career`; older saves may still be in the topic until compaction removes them.
+### The simulator
 
-If Kafka goes down mid-run, the plant freezes and retries the failed tick until Kafka acknowledges it again. Errors that retrying cannot fix halt the simulator instead: an exception inside the plant model, or a produce error the broker will never accept (message too large, invalid record, authorization or authentication failure). It logs `FATAL`, writes a final snapshot of the last good state, and exits with status 1.
+One tick runs per second per game and is 40 plant seconds. The simulator runs at most 10 games at once; a game is created by a `startGame` command and ended by a `quitGame`, a game over, or 90 s without a heartbeat (the gateway sends heartbeats for each connected game). Ctrl-C writes a final snapshot of every live game and exits.
+
+Saves live in the compacted `plant.state` topic, keyed by `gameId`: each game's latest record is its save. On start the simulator reads the topic to the end and resumes every game whose newest save restores (`loadGames`/`pickGames`). Every snapshot is validated before it is written; a state that would not restore (e.g. a NaN) is never written for that game (a warning is logged), so its previous save stays. If a game's newest save is invalid, the simulator falls back to its newest valid one and logs which saves it skipped. When a game ends, a tombstone (null value) is written for its key, so it is not resumed and compaction later removes its saves. Old single-career (v1) saves are keyed `plant-1` and have save version 1; they are skipped with a log line, never loaded.
+
+If Kafka goes down mid-run, all games freeze and the failed tick is retried until Kafka acknowledges it again. Errors that retrying cannot fix halt the simulator instead: an exception inside the host itself, or a produce error the broker will never accept (message too large, invalid record, authorization or authentication failure). It logs `FATAL`, writes a final snapshot of every game, and exits with status 1. An exception inside one game's plant model only ends that game.
 
 An Auto (one-button) restart gives up on a step that makes no progress for 90 ticks (1 plant hour; in the ramp, progress means TBT still climbing): it emits `restartProgress` with `ok: false` and a reason, and the plant goes back to `tripped` without trip damage, so you can fix the cause and restart again. Putting the firing (`tbt`) loop in manual during an Auto ramp hands the firing to you, policed by the same ramp-rate limits as a Manual restart.
 
 Each shift starts with fresh supply conditions and healthy controllers: gas back at 60 MW and the base price with no pending curtailment, and no loop faults. Physical damage (scale, pump and burner wear, bearing wear, the backup tank level) carries over. A restart still in progress at handover is abandoned when the next shift starts: the plant is back to `tripped` (no damage) and can be restarted in the new shift's mode.
 
-Set `KAFKA_BROKERS` (comma-separated) to use a broker other than `localhost:9092`.
+### The gateway
 
-## CLI
+Each gateway process consumes telemetry, status and events for all games with its own consumer group (`desal-gateway-<random id>`, deleted on exit), forwards each game's records to the sockets bound to it, and produces client commands to `plant.commands`. Per client (IP address) it allows one new game per 10 s and 3 live games.
 
-Send a command (it is wrapped in an envelope addressed to the current shift, read from the latest `plant.status`; the simulator validates it and answers invalid ones with a `commandRejected` event):
+## CLI (talking to Kafka directly)
+
+Start a game (prints the new game id), then send commands to it. A command is wrapped in an envelope addressed to the game's current shift, read from its latest `plant.status`; the simulator validates it and answers invalid ones with a `commandRejected` event:
 
 ```sh
-pnpm --filter @desal/simulator send '{"type":"startShift","mode":"auto"}'
+pnpm --filter @desal/simulator send --new
+pnpm --filter @desal/simulator send --game <gameId> '{"type":"startShift","mode":"auto"}'
 ```
 
-Live-tail a topic, pretty-printed (Ctrl-C to quit):
+Live-tail a topic, pretty-printed, optionally for one game (Ctrl-C to quit):
 
 ```sh
-pnpm --filter @desal/simulator watch                          # events (default)
-pnpm --filter @desal/simulator watch status
-pnpm --filter @desal/simulator watch telemetry <sensorId>
+pnpm --filter @desal/simulator watch                                  # events of all games (default)
+pnpm --filter @desal/simulator watch status --game <gameId>
+pnpm --filter @desal/simulator watch telemetry <sensorId> --game <gameId>
 ```
 
 ## Troubleshooting

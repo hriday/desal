@@ -1,0 +1,31 @@
+.screen { max-width: 640px; margin: 0 auto; padding: 48px 24px; }
+.screen h1 { margin: 0 0 16px; font-size: 28px; }
+.screen h2 { margin: 24px 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.screen p { line-height: 1.5; }
+.screen dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 0; font-family: var(--mono); font-size: 14px; }
+.screen dd { margin: 0; text-align: right; }
+.screen__big { font-size: 64px; font-weight: 700; font-family: var(--mono); margin: 8px 0 0; }
+.screen__unit { color: var(--muted); margin: 0 0 16px; }
+.screen__actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+.screen button {
+  padding: 10px 18px; font: inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
+}
+.screen button.primary { border-color: var(--water); }
+.screen button:disabled { opacity: .6; cursor: default; }
+.screen button:focus-visible, .screen input:focus-visible { outline: 2px solid var(--water); outline-offset: 2px; }
+.screen fieldset { border: 1px solid var(--line); border-radius: 4px; margin: 16px 0 0; padding: 8px 12px; }
+.screen label { display: block; padding: 4px 0; }
+.screen__note { color: var(--warn); }
+.overlay { position: fixed; inset: 0; background: rgba(11, 16, 22, .85); display: grid; place-items: center; font-size: 20px; z-index: 20; }
+.overlay__body { display: grid; gap: 12px; justify-items: center; text-align: center; }
+.overlay button {
+  padding: 10px 18px; font: inherit; font-size: 16px; color: var(--text); background: var(--panel);
+  border: 1px solid var(--water); border-radius: 4px; cursor: pointer;
+}
+.overlay button:focus-visible { outline: 2px solid var(--water); outline-offset: 2px; }
+.banner {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 15;
+  padding: 8px 16px; background: var(--panel); color: var(--text);
+  border: 1px solid var(--bad); border-left-width: 4px; border-radius: 4px; font-weight: 600;
+}

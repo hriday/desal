@@ -225,3 +225,27 @@ export const RAMP_SCALE_MM = 0.005;
 export const ONLINE_MARGIN_C = 2;
 /** Acid clean duration (ticks): 2 plant hours. */
 export const ACID_CLEAN_TICKS = 180;
+
+// Operating account (spec 3.1): tunable placeholders. Water output is the point; the account only
+// limits spending. There is no revenue and there are no fines.
+/** Balance a new game starts with (USD). */
+export const START_BALANCE_USD = 15000;
+/** Shift 1's operating allocation, credited at startShift (USD). */
+export const ALLOC_BASE_USD = 10000;
+/** Cut of the base allocation per shift: shift n gets 1 - ALLOC_DECAY_PER_SHIFT x (n - 1) of it. */
+export const ALLOC_DECAY_PER_SHIFT = 0.03;
+/** Cost of an acid clean, charged when it starts (USD). */
+export const ACID_CLEAN_COST_USD = 6000;
+/** Cost of a pump overhaul, charged when it starts (USD). */
+export const PUMP_OVERHAUL_COST_USD = 8000;
+/** Product target of shift 1 (m3); later shifts scale it by 1 + TARGET_GROWTH_PER_SHIFT x (n - 1). */
+export const BASE_TARGET_M3 = 3900;
+/** Fractional target growth per shift (uncapped): each shift of a run is harder than the last. */
+export const TARGET_GROWTH_PER_SHIFT = 0.04;
+/** Fuel guidance for shift 1 (USD), shown at handover; scales with the target. */
+export const BASE_FUEL_BUDGET_USD = 12000;
+/** Ticks a pump overhaul lasts (1 plant hour); counted only while the shift runs. */
+export const PUMP_OVERHAUL_TICKS = 90;
+
+/** Concurrency cap: live games per simulator; over it, startGame is answered with gameRejected capacity. */
+export const MAX_GAMES = 10;

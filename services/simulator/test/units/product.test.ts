@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../../src/state.js';
 import { stepProduct } from '../../src/units/product.js';
 import { allFinite } from '../helpers.js';
+import { GAME_ID } from '../envelope.js';
 
 const DT = 40;
 const base = () => {
-  const s = createInitialState(1, 0);
+  const s = createInitialState(1, 0, GAME_ID);
   return { ...s, brine: { ...s.brine, concentrationFactor: 1.45 } };
 };
 

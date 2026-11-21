@@ -3,6 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./host": "./src/host.ts",
+    "./kafka/client": "./src/kafka/client.ts",
+    "./kafka/runner": "./src/kafka/runner.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "test:int": "vitest run --config vitest.int.config.ts",

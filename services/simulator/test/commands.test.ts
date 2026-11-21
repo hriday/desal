@@ -1,20 +1,22 @@
-import type { Command, PlantEvent } from '@desal/schema';
+import type { Command } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
 import { applyCommand, DELIVERY_TICKS } from '../src/commands.js';
 import { startShift } from '../src/shift.js';
-import { createInitialState, type PlantState } from '../src/state.js';
+import { createInitialState, type PlantState, type SimEvent } from '../src/state.js';
 import { allFinite } from './helpers.js';
+import { GAME_ID } from './envelope.js';
 
 const ID = '123e4567-e89b-42d3-a456-426614174000';
 const env = (command: Command | Record<string, unknown>, shiftId: number | null = 1) => ({
   commandId: ID,
   issuedAt: 0,
+  gameId: GAME_ID,
   shiftId,
   command,
 });
 
-const running = (mode: 'auto' | 'manual' = 'auto'): PlantState => startShift(createInitialState(1, 0), mode).state;
-const rejection = (events: PlantEvent[]): string => {
+const running = (mode: 'auto' | 'manual' = 'auto'): PlantState => startShift(createInitialState(1, 0, GAME_ID), mode).state;
+const rejection = (events: SimEvent[]): string => {
   expect(events).toHaveLength(1);
   const e = events[0]!;
   if (e.type !== 'commandRejected') throw new Error(`expected commandRejected, got ${e.type}`);
@@ -97,14 +99,14 @@ describe('applyCommand', () => {
   });
 
   it('rejects any non-start command during handover', () => {
-    const h = createInitialState(1, 0);
+    const h = createInitialState(1, 0, GAME_ID);
     const r = applyCommand(h, env({ type: 'setSetpoint', loop: 'tbt', value: 110 }, null));
     expect(r.state).toBe(h);
     expect(rejection(r.events)).toContain('handover');
   });
 
-  it('startShift works only in handover; newCareer works anywhere', () => {
-    const h = createInitialState(1, 0);
+  it('startShift works only in handover', () => {
+    const h = createInitialState(1, 0, GAME_ID);
     const r = applyCommand(h, env({ type: 'startShift', mode: 'manual' }, null));
     expect(r.state.phase).toBe('running');
     expect(r.state.shift?.id).toBe(1);
@@ -116,10 +118,6 @@ describe('applyCommand', () => {
     const again = applyCommand(r.state, env({ type: 'startShift', mode: 'auto' }, 1));
     expect(again.state).toBe(r.state);
     rejection(again.events);
-    const nc = applyCommand(r.state, env({ type: 'newCareer' }, null));
-    expect(nc.state.careerShiftCount).toBe(0);
-    expect(nc.state.phase).toBe('handover');
-    expect(nc.state.shift).toBeNull();
   });
 
   it('double selectFuel is rejected', () => {
@@ -136,7 +134,9 @@ describe('applyCommand', () => {
   });
 
   it('orderFuel schedules an off-grade delivery at tick + 90 under offgradeOnly', () => {
-    const s = running();
+    // 100 t costs $53,200 (off-grade) or $59,500 (standard), more than the starting balance.
+    const r0 = running();
+    const s: PlantState = { ...r0, run: { ...r0.run, balanceUsd: 100000 } };
     const o: PlantState = {
       ...s,
       tick: 10,

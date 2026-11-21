@@ -1,7 +1,7 @@
-import type { PlantEvent, PumpId, ScenarioKind } from '@desal/schema';
+import type { PumpId, ScenarioKind } from '@desal/schema';
 import { GAS_BASE_PRICE_USD_PER_GJ, GAS_CAP_MW, TICK_PLANT_S } from '../constants.js';
 import { nextRandom } from '../rng.js';
-import type { Loop, PlantState } from '../state.js';
+import type { Loop, PlantState, SimEvent } from '../state.js';
 import { drawEvent } from './library.js';
 import type { Scenario } from './types.js';
 
@@ -137,11 +137,11 @@ function applyEffect(s: PlantState, kind: ScenarioKind, p: Record<string, number
  * Fire due scheduled events (once each), roll random events, then move chlorophyll toward its target.
  * Does nothing outside a running shift that has a loaded scenario.
  */
-export function stepScenario(s: PlantState): { state: PlantState; events: PlantEvent[] } {
+export function stepScenario(s: PlantState): { state: PlantState; events: SimEvent[] } {
   const def = s.scenario.definition;
   if (s.phase !== 'running' || !s.shift || !def) return { state: s, events: [] };
   const base = { tick: s.tick, plantTime: s.plantTime, shiftId: s.shift.id };
-  const events: PlantEvent[] = [];
+  const events: SimEvent[] = [];
   const elapsedMin = ((s.tick - s.shift.startTick) * TICK_PLANT_S) / 60;
   let state = s;
 
@@ -158,7 +158,7 @@ export function stepScenario(s: PlantState): { state: PlantState; events: PlantE
     let v: number;
     [v, seed] = nextRandom(seed);
     if (v < (p * TICK_PLANT_S) / 3600) {
-      const [e, next] = drawEvent(kind, elapsedMin, seed);
+      const [e, next] = drawEvent(kind, elapsedMin, seed, state.run.shiftNumber);
       seed = next;
       state = applyEffect(state, e.kind, e.params);
       events.push({ ...base, type: 'scenario', kind: e.kind, message: e.message });

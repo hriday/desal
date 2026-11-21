@@ -3,6 +3,7 @@ import { startShift } from '../src/shift.js';
 import { restore, serialize } from '../src/snapshot.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
+import { GAME_ID } from './envelope.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 
@@ -17,14 +18,14 @@ function run(s: PlantState, n: number) {
 }
 
 function midShift2(): PlantState {
-  const s0 = { ...createInitialState(7, T0), careerShiftCount: 1 };
+  const s0 = { ...createInitialState(7, T0, GAME_ID), run: { ...createInitialState(7, T0, GAME_ID).run, shiftNumber: 1 } };
   return run(startShift(s0, 'auto').state, 300).state;
 }
 
-const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0)));
+const clone = (): any => JSON.parse(JSON.stringify(createInitialState(1, T0, GAME_ID)));
 
 function wrap(state: unknown, over: Record<string, unknown> = {}): string {
-  return JSON.stringify({ format: 'desal-snapshot', version: 1, savedAt: 0, state, ...over });
+  return JSON.stringify({ format: 'desal-snapshot', version: 2, savedAt: 0, state, ...over });
 }
 
 describe('snapshots', () => {
@@ -38,9 +39,17 @@ describe('snapshots', () => {
     expect(run(r.state, 100).telemetry).toEqual(run(s, 100).telemetry);
   });
 
+  it('a save from before run.epoch existed restores with epoch 0', () => {
+    const old = clone();
+    delete old.run.epoch;
+    const r = restore(wrap(old));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.state.run.epoch).toBe(0);
+  });
+
   it('rejects garbage, wrong format and unknown version', () => {
-    const s = createInitialState(1, T0);
-    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 2 })]) {
+    const s = createInitialState(1, T0, GAME_ID);
+    for (const bad of ['not json{', 'null', wrap(s, { format: 'other' }), wrap(s, { version: 1 }), wrap(s, { version: 3 })]) {
       const r = restore(bad);
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.reason.length).toBeGreaterThan(0);

@@ -1,5 +1,6 @@
 import {
   FuelGradeSchema,
+  GameEndReasonSchema,
   FuelKindSchema,
   LoopModeSchema,
   PhaseSchema,
@@ -22,7 +23,7 @@ const LoopSchema = z.object({
   prevError: num,
   fault: z.object({ kind: z.enum(['stuck', 'drift', 'oscillate']), bias: num }).nullable(),
 });
-const PumpSchema = z.object({ running: z.boolean(), wear: num, cavitation: num, bearingWearMult: num });
+const PumpSchema = z.object({ running: z.boolean(), wear: num, cavitation: num, bearingWearMult: num, overhaulRemainingTicks: num });
 const StageSchema = z.object({ tempC: num, levelM: num, softScaleMm: num, hardScaleMm: num });
 const TargetSchema = z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num });
 const ScenarioSchema = z.object({
@@ -108,7 +109,7 @@ export const PlantStateSchema = z.object({
       startTick: num,
       mode: LoopModeSchema,
       target: TargetSchema,
-      acc: z.object({ productM3: num, offSpecTicks: num, fuelCostUsd: num, trips: num }),
+      acc: z.object({ productM3: num, offSpecM3: num, offSpecTicks: num, fuelCostUsd: num, trips: num, spentUsd: num }),
     })
     .nullable(),
   scenario: z.object({
@@ -122,7 +123,17 @@ export const PlantStateSchema = z.object({
       chlorophyllRampPerTick: num,
     }),
   }),
-  careerShiftCount: num,
+  run: z.object({
+    gameId: z.uuid(),
+    balanceUsd: num,
+    shiftNumber: num,
+    totalProductM3: num,
+    shiftsCompleted: num,
+    eventSeq: num,
+    // Saves written before epochs existed have none: they start at 0.
+    epoch: z.number().int().min(0).default(0),
+    over: z.object({ reason: GameEndReasonSchema, atTick: num }).nullable(),
+  }),
 });
 
 // Compile-time drift guard: the schema's type and PlantState must be mutually assignable.
@@ -131,7 +142,11 @@ export const _schemaToState = (x: Inferred): PlantState => x;
 export const _stateToSchema = (x: PlantState): Inferred => x;
 
 const FORMAT = 'desal-snapshot';
-const VERSION = 1;
+/**
+ * 2 = the multi-game era (economy and game-over state, one save per gameId). Version 1 saves are
+ * single-career saves from before games existed; they are rejected and skipped on load.
+ */
+const VERSION = 2;
 
 export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });

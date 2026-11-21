@@ -66,6 +66,8 @@ export const SENSOR_IDS: readonly string[] = Object.freeze(SENSORS.map((x) => x.
 export function toTelemetry(s: PlantState): TelemetryReading[] {
   const shiftId = s.shift?.id ?? 0;
   return SENSORS.map(({ id, unitId, read }) => ({
+    gameId: s.run.gameId,
+    epoch: s.run.epoch,
     sensorId: id,
     unitId,
     shiftId,
@@ -75,7 +77,11 @@ export function toTelemetry(s: PlantState): TelemetryReading[] {
   }));
 }
 
-const loopView = (l: Loop) => ({ mode: l.mode, setpoint: l.setpoint, output: l.output });
+const loopView = (l: Loop) => ({ mode: l.mode, setpoint: l.setpoint, output: l.output, fault: l.fault?.kind ?? null });
+
+/** Pending fuel deliveries as the player sees them: time until arrival, never absolute ticks. */
+const deliveryView = (s: PlantState) =>
+  s.fuel.deliveries.map((d) => ({ arrivesInTicks: Math.max(0, d.arrivesAtTick - s.tick), tonnes: d.tonnes, grade: d.grade }));
 
 export function toStatus(s: PlantState): PlantStatus {
   const loops: Partial<Record<LoopId, ReturnType<typeof loopView>>> = {
@@ -89,8 +95,14 @@ export function toStatus(s: PlantState): PlantStatus {
     loops[`level${i + 1}`] = loopView(l);
   });
   const notice = s.fuel.gas.curtailmentNotice;
-  const inShift = s.shift !== null && s.phase !== 'handover';
+  // endShift keeps s.shift (the finished shift's record) until the next startShift, so the phase
+  // decides: in handover or over there is no live shift, hence no target and no ticks remaining.
+  const inShift = s.shift !== null && (s.phase === 'running' || s.phase === 'paused');
   return {
+    gameId: s.run.gameId,
+    epoch: s.run.epoch,
+    shiftNumber: s.run.shiftNumber,
+    balanceUsd: s.run.balanceUsd,
     tick: s.tick,
     plantTime: s.plantTime,
     shiftId: s.shift?.id ?? null,
@@ -100,15 +112,25 @@ export function toStatus(s: PlantState): PlantStatus {
     tripCause: s.trip?.cause ?? null,
     restartStep: s.restart?.step ?? null,
     loops: loops as PlantStatus['loops'],
-    pumps: Object.fromEntries(PUMP_IDS.map((id) => [id, { running: s.intake.pumps[id].running }])) as PlantStatus['pumps'],
+    pumps: Object.fromEntries(PUMP_IDS.map((id) => [id, { running: s.intake.pumps[id].running, overhaulRemainingTicks: s.intake.pumps[id].overhaulRemainingTicks }])) as PlantStatus['pumps'],
     fuel: {
       active: s.fuel.active,
       changeoverTo: s.fuel.changeover?.to ?? null,
+      changeoverRemainingTicks: s.fuel.changeover?.remainingTicks ?? null,
       backupGrade: s.fuel.backup.grade,
       gasCurtailmentNotice: notice ? `Gas capped at ${notice.capMW} MW from tick ${notice.atTick}` : null,
+      gasPriceUsdPerGJ: s.fuel.gas.priceUsdPerGJ,
+      gasCapMW: s.fuel.gas.capMW,
+      backupPriceUsdPerGJ: s.fuel.backup.priceUsdPerGJ,
     },
+    doses: { chlorineMgL: s.pretreat.chlorineMgL, antiscalantMgL: s.pretreat.antiscalantMgL },
+    shiftTarget: inShift ? { ...s.shift!.target } : null,
     ballCleaning: s.ballCleaning,
     divertToDrain: s.product.divertToDrain,
     shiftTicksRemaining: inShift ? Math.max(0, SHIFT_TICKS - (s.tick - s.shift!.startTick)) : 0,
+    deliveries: deliveryView(s),
+    acidCleanRemainingTicks: s.acidCleanRemainingTicks,
+    restartAuto: s.restart?.auto ?? null,
+    offeredGrade: s.scenario.effects.offgradeOnly ? 'offgrade' : 'standard',
   };
 }

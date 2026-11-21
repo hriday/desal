@@ -1,4 +1,4 @@
-import type { PlantEvent, RestartStep } from '@desal/schema';
+import type { RestartStep } from '@desal/schema';
 import {
   ACID_CLEAN_TICKS,
   AUTO_RAMP_PCT_PER_TICK,
@@ -19,10 +19,10 @@ import {
   TRIP_SCALE_STAGES,
 } from '../constants.js';
 import { pidStep } from '../control/pid.js';
-import { BALANCE, type PlantState } from '../state.js';
+import { BALANCE, type PlantState, type SimEvent } from '../state.js';
 import { applyTrip } from './interlocks.js';
 
-export type Result = { state: PlantState; events: PlantEvent[] } | { rejected: string };
+export type Result = { state: PlantState; events: SimEvent[] } | { rejected: string };
 
 const STEPS: readonly RestartStep[] = ['vacuum', 'recirc', 'ignition', 'ramp'];
 
@@ -53,7 +53,7 @@ function unmetPrecondition(s: PlantState, step: RestartStep): string | null {
  * Start a step: the restart sequence owns the vacuum, recirc and tbt (firing) actuators and sets
  * them here. Emits restartProgress ok:true.
  */
-function enterStep(s: PlantState, step: RestartStep, auto: boolean): { state: PlantState; events: PlantEvent[] } {
+function enterStep(s: PlantState, step: RestartStep, auto: boolean): { state: PlantState; events: SimEvent[] } {
   let loops = s.loops;
   if (step === 'vacuum') loops = { ...loops, vacuum: { ...loops.vacuum, output: BALANCE.vacuumPct } };
   if (step === 'recirc') loops = { ...loops, recirc: { ...loops.recirc, output: BALANCE.recircPct } };
@@ -96,7 +96,7 @@ export function restartStep(s: PlantState, step: RestartStep): Result {
 }
 
 /** Extra burner wear and hot-stage scale from one tick of an over-fast manual firing rise. */
-function rampPenalty(s: PlantState): { state: PlantState; events: PlantEvent[] } {
+function rampPenalty(s: PlantState): { state: PlantState; events: SimEvent[] } {
   const state: PlantState = {
     ...s,
     heater: { ...s.heater, burnerCondition: Math.max(0, s.heater.burnerCondition - RAMP_BURNER_WEAR) },
@@ -118,7 +118,7 @@ function rampPenalty(s: PlantState): { state: PlantState; events: PlantEvent[] }
  * Give up a stalled Auto restart: report the step as failed and return to tripped with the burner
  * off. No applyTrip, so no trip damage: the operator can fix the cause and restart again.
  */
-function abandonRestart(s: PlantState, step: RestartStep, reason: string): { state: PlantState; events: PlantEvent[] } {
+function abandonRestart(s: PlantState, step: RestartStep, reason: string): { state: PlantState; events: SimEvent[] } {
   const state: PlantState = {
     ...s,
     status: 'tripped',
@@ -129,7 +129,7 @@ function abandonRestart(s: PlantState, step: RestartStep, reason: string): { sta
 }
 
 /** Police one tick of an operator-driven firing rise: penalty above the warning rate, flame-out above the trip rate. */
-function policeFiringRise(s: PlantState, prevFiringPct: number): { state: PlantState; events: PlantEvent[] } {
+function policeFiringRise(s: PlantState, prevFiringPct: number): { state: PlantState; events: SimEvent[] } {
   const risePct = s.loops.tbt.output - prevFiringPct;
   if (risePct > RAMP_TRIP_PCT_PER_TICK) return applyTrip(s, 'flameOut');
   if (risePct > RAMP_WARN_PCT_PER_TICK) return rampPenalty(s);
@@ -149,14 +149,14 @@ function policeFiringRise(s: PlantState, prevFiringPct: number): { state: PlantS
  *   the burner flames out and the plant re-trips.
  * TBT within ONLINE_MARGIN_C of setpoint during the ramp brings the plant online.
  */
-export function stepRestart(s: PlantState): { state: PlantState; events: PlantEvent[] } {
+export function stepRestart(s: PlantState): { state: PlantState; events: SimEvent[] } {
   const r = s.restart;
   if (s.status !== 'restarting' || !r) return { state: s, events: [] };
   const withPrev = (st: PlantState): PlantState =>
     st.restart ? { ...st, restart: { ...st.restart, prevFiringPct: st.loops.tbt.output } } : st;
 
   let state = s;
-  const events: PlantEvent[] = [];
+  const events: SimEvent[] = [];
   if (r.step === 'vacuum' || r.step === 'recirc') {
     // Burner locked out before ignition: hold firing at 0 whatever the operator set.
     state = { ...s, loops: { ...s.loops, tbt: { ...s.loops.tbt, output: 0 } } };

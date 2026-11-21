@@ -1,17 +1,19 @@
 import { randomUUID } from 'node:crypto';
-import { PLANT_KEY, TOPICS } from '@desal/schema';
+import { TOPICS } from '@desal/schema';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { GameHost } from '../../src/host.js';
+import { serialize } from '../../src/snapshot.js';
 import { createInitialState } from '../../src/state.js';
 
 // Each test gets its own topic suffix (set before anything calls topicName, which
 // reads the env var at call time), so tests never see each other's records or the
-// real career topics.
+// real game topics.
 const RUN = `.test-${Date.now()}`;
 let n = 0;
 process.env.DESAL_TOPIC_SUFFIX = RUN;
 
-const { createKafka, ensureTopics, topicName } = await import('../../src/kafka/client.js');
-const { SimRunner, loadCareer } = await import('../../src/kafka/runner.js');
+const { createKafka, ensureTopics, topicName, waitForTopics } = await import('../../src/kafka/client.js');
+const { SimRunner, loadGames } = await import('../../src/kafka/runner.js');
 
 const kafka = createKafka();
 const admin = kafka.admin();
@@ -30,6 +32,8 @@ beforeEach(async () => {
   // Record first, so a half-failed creation still gets cleaned up.
   created.push(...Object.values(TOPICS).map(topicName));
   await ensureTopics(kafka);
+  // Brand-new topics: wait for their metadata, as main() does (R3 startup race).
+  await waitForTopics(kafka);
 });
 
 afterAll(async () => {
@@ -44,9 +48,14 @@ afterAll(async () => {
   await admin.disconnect();
 });
 
+interface Rec<T> {
+  key: string | null;
+  value: T | null;
+}
+
 /** Collects every record of a topic (from the beginning) into an array that fills in the background. */
-async function collect<T = Record<string, unknown>>(base: string): Promise<T[]> {
-  const out: T[] = [];
+async function collect<T = Record<string, unknown>>(base: string): Promise<Rec<T>[]> {
+  const out: Rec<T>[] = [];
   // Throwaway group + fromBeginning: read the whole topic without disturbing anyone's offsets.
   // autoCommit off: the group stores no offsets (it is deleted in afterAll).
   const groupId = `test-collect-${randomUUID()}`;
@@ -57,7 +66,10 @@ async function collect<T = Record<string, unknown>>(base: string): Promise<T[]> 
   await consumer.subscribe({ topics: [topicName(base)] });
   await consumer.run({
     eachMessage: async ({ message }) => {
-      out.push(JSON.parse(String(message.value)) as T);
+      out.push({
+        key: message.key?.toString() ?? null,
+        value: message.value === null ? null : (JSON.parse(String(message.value)) as T),
+      });
     },
   });
   return out;
@@ -71,110 +83,118 @@ async function waitFor(cond: () => boolean, timeoutMs: number, what: string): Pr
   }
 }
 
-async function sendCommand(value: string): Promise<void> {
-  await producer.send({ topic: topicName(TOPICS.commands), messages: [{ key: PLANT_KEY, value }] });
+async function send(gameId: string, command: Record<string, unknown>, shiftId: number | null = null): Promise<void> {
+  const value = JSON.stringify({ commandId: randomUUID(), issuedAt: Date.now(), gameId, shiftId, command });
+  // Keyed by gameId, like the gateway and the send CLI do.
+  await producer.send({ topic: topicName(TOPICS.commands), messages: [{ key: gameId, value }] });
 }
 
-const startShift = (shiftId: number | null = null) =>
-  JSON.stringify({ commandId: randomUUID(), issuedAt: Date.now(), shiftId, command: { type: 'startShift', mode: 'auto' } });
+async function sendRaw(value: string): Promise<void> {
+  await producer.send({ topic: topicName(TOPICS.commands), messages: [{ key: null, value }] });
+}
 
-type Status = { phase: string; tick: number; shiftId: number | null };
-type Event = { type: string; reason?: string };
-type Reading = { sensorId: string };
+type Status = { gameId: string; phase: string; tick: number; shiftId: number | null };
+type Event = { gameId: string; type: string; reason?: string };
 
-describe('SimRunner + Kafka', () => {
-  it('fresh start: startShift auto → running status, heater.tbtC telemetry, one shiftStart within 5 s', async () => {
+const quiet = { log: () => {}, warn: () => {} };
+
+describe('SimRunner + GameHost + Kafka', () => {
+  it('two games: keyed by gameId, resume after restart, quit tombstones, quit game not restored', async () => {
+    const A = randomUUID();
+    const B = randomUUID();
     const status = await collect<Status>(TOPICS.status);
-    const telemetry = await collect<Reading>(TOPICS.telemetry);
     const events = await collect<Event>(TOPICS.events);
-    const runner = new SimRunner(kafka, createInitialState(42, Date.now()), { log: () => {} });
-    await runner.start();
+    const state = await collect<unknown>(TOPICS.state);
+
+    // Run 1: start both games and their shifts.
+    const h1 = new GameHost();
+    const r1 = new SimRunner(kafka, h1, { tickMs: 100, ...quiet });
+    await r1.start();
+    await send(A, { type: 'startGame' });
+    await send(B, { type: 'startGame' });
+    await waitFor(() => [A, B].every((id) => status.some((s) => s.key === id)), 10_000, 'status for both games');
+    for (const r of status) expect(r.key).toBe(r.value!.gameId);
+    await send(A, { type: 'startShift', mode: 'auto' });
+    await send(B, { type: 'startShift', mode: 'auto' });
+    await waitFor(() => [A, B].every((id) => (h1.games().get(id)?.state.tick ?? 0) >= 5), 10_000, 'both games ticking');
+    await r1.stop(); // final snapshot of both
+    const saved = { a: h1.games().get(A)!.state.tick, b: h1.games().get(B)!.state.tick };
+
+    // Run 2: both resume where they were.
+    const loaded = await loadGames(kafka);
+    expect(Object.fromEntries(loaded.map((g) => [g.run.gameId, g.tick]))).toEqual({ [A]: saved.a, [B]: saved.b });
+    const h2 = new GameHost();
+    const r2 = new SimRunner(kafka, h2, { tickMs: 100, ...quiet });
+    await r2.start(loaded);
     try {
-      await sendCommand(startShift());
-      const t0 = Date.now();
+      await waitFor(
+        () => [A, B].every((id) => status.some((s) => s.key === id && s.value!.tick > (id === A ? saved.a : saved.b))),
+        10_000,
+        'both games resumed',
+      );
+      expect(events.filter((e) => e.value?.type === 'shiftStart')).toHaveLength(2);
+
+      // Quit A: gameEnd, then a tombstone for A on plant.state.
+      await send(A, { type: 'quitGame' });
       await waitFor(
         () =>
-          status.some((s) => s.phase === 'running') &&
-          telemetry.some((r) => r.sensorId === 'heater.tbtC') &&
-          events.some((e) => e.type === 'shiftStart'),
-        5000,
-        'running status, heater.tbtC reading and shiftStart',
+          events.some((e) => e.key === A && e.value?.type === 'gameEnd') &&
+          state.some((r) => r.key === A && r.value === null),
+        10_000,
+        "A's gameEnd and tombstone",
       );
-      expect(Date.now() - t0).toBeLessThan(5000);
-      expect(events.filter((e) => e.type === 'shiftStart')).toHaveLength(1);
-    } finally {
-      await runner.stop();
-    }
-  });
-
-  it('resume: a new runner continues from the last snapshot with the same shift and no second shiftStart', async () => {
-    const events = await collect<Event>(TOPICS.events);
-    const status = await collect<Status>(TOPICS.status);
-    const r1 = new SimRunner(kafka, createInitialState(7, Date.now()), { tickMs: 50, log: () => {} });
-    await r1.start();
-    await sendCommand(startShift());
-    await waitFor(() => r1.state.tick >= 40, 30_000, '40 ticks');
-    const shiftId = r1.state.shift?.id;
-    // No final snapshot: simulate a crash, so the career resumes from the periodic snapshot.
-    await r1.stop({ finalSnapshot: false });
-
-    const career = await loadCareer(kafka);
-    expect(career.kind).toBe('found');
-    if (career.kind !== 'found') return;
-    expect(career.state.tick).toBeGreaterThanOrEqual(30);
-    expect(career.state.shift?.id).toBe(shiftId);
-
-    const r2 = new SimRunner(kafka, career.state, { tickMs: 50, log: () => {} });
-    await r2.start();
-    try {
-      await waitFor(() => r2.state.tick >= career.state.tick + 5, 10_000, 'r2 ticking');
-      await waitFor(() => status.some((s) => s.tick >= career.state.tick + 5), 10_000, 'r2 status');
+      expect(events.find((e) => e.key === A && e.value?.type === 'gameEnd')!.value!.reason).toBe('quit');
+      expect(h2.games().has(A)).toBe(false);
     } finally {
       await r2.stop();
     }
-    expect(r2.state.shift?.id).toBe(shiftId);
-    expect(status.filter((s) => s.tick > career.state.tick).every((s) => s.shiftId === shiftId)).toBe(true);
-    expect(events.filter((e) => e.type === 'shiftStart')).toHaveLength(1);
+    // Nothing after the tombstone revives A.
+    const lastA = state.filter((r) => r.key === A).at(-1);
+    expect(lastA?.value).toBeNull();
+
+    // Run 3: only B comes back.
+    const again = await loadGames(kafka);
+    expect(again.map((g) => g.run.gameId)).toEqual([B]);
+    const h3 = new GameHost();
+    const r3 = new SimRunner(kafka, h3, { tickMs: 100, ...quiet });
+    await r3.start(again);
+    await r3.stop();
+    expect([...h3.games().keys()]).toEqual([B]);
   });
 
-  it('loadCareer: empty plant.state → none, quickly', async () => {
+  it('loadGames: empty plant.state → [], quickly', async () => {
     const t0 = Date.now();
-    expect(await loadCareer(kafka)).toEqual({ kind: 'none' });
+    expect(await loadGames(kafka)).toEqual([]);
     expect(Date.now() - t0).toBeLessThan(3000);
   });
 
-  it('corrupt: garbage on plant.state for the plant key → loadCareer returns corrupt', async () => {
-    await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: '{not json' }] });
-    const career = await loadCareer(kafka);
-    expect(career.kind).toBe('corrupt');
-    if (career.kind === 'corrupt') expect(career.reason).toMatch(/invalid JSON/);
+  it('loadGames: a good save followed by garbage for the same game → the good save, the skip logged', async () => {
+    const id = randomUUID();
+    const good = { ...createInitialState(5, Date.now(), id), tick: 42 };
+    await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: id, value: serialize(good) }] });
+    await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: id, value: '{not json' }] });
+    const logs: string[] = [];
+    const games = await loadGames(kafka, (m) => logs.push(m));
+    expect(games.map((g) => g.tick)).toEqual([42]);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatch(/invalid JSON/);
   });
 
-  it('fallback: a good save followed by garbage → loadCareer returns the good save and reports the skip', async () => {
-    const good = { ...createInitialState(5, Date.now()), tick: 42 };
-    const { serialize } = await import('../../src/snapshot.js');
-    await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: serialize(good) }] });
-    await producer.send({ topic: topicName(TOPICS.state), messages: [{ key: PLANT_KEY, value: '{not json' }] });
-    const career = await loadCareer(kafka);
-    expect(career.kind).toBe('found');
-    if (career.kind !== 'found') return;
-    expect(career.state.tick).toBe(42);
-    expect(career.skipped).toHaveLength(1);
-    expect(career.skipped[0]!.reason).toMatch(/invalid JSON/);
-  });
-
-  it('bad command: {"nonsense":true} → commandRejected, and the runner keeps ticking', async () => {
+  it('bad commands → commandRejected, and the runner keeps ticking', async () => {
+    const id = randomUUID();
     const events = await collect<Event>(TOPICS.events);
-    const runner = new SimRunner(kafka, createInitialState(3, Date.now()), { tickMs: 100, log: () => {} });
+    const host = new GameHost();
+    const runner = new SimRunner(kafka, host, { tickMs: 100, ...quiet });
     await runner.start();
     try {
-      await sendCommand(startShift());
-      await waitFor(() => runner.state.phase === 'running', 10_000, 'shift start');
-      await sendCommand('{"nonsense":true}');
-      await sendCommand('not json at all');
-      await waitFor(() => events.filter((e) => e.type === 'commandRejected').length >= 2, 10_000, 'commandRejected');
-      const tick = runner.state.tick;
-      await waitFor(() => runner.state.tick >= tick + 5, 10_000, 'more ticks');
+      await send(id, { type: 'startGame' });
+      await send(id, { type: 'startShift', mode: 'auto' });
+      await waitFor(() => host.games().get(id)?.state.phase === 'running', 10_000, 'shift start');
+      await sendRaw('{"nonsense":true}');
+      await sendRaw('not json at all');
+      await waitFor(() => events.filter((e) => e.value?.type === 'commandRejected').length >= 2, 10_000, 'commandRejected');
+      const tick = host.games().get(id)!.state.tick;
+      await waitFor(() => host.games().get(id)!.state.tick >= tick + 5, 10_000, 'more ticks');
       expect(runner.kafkaDown).toBe(false);
     } finally {
       await runner.stop();

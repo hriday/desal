@@ -14,13 +14,22 @@ export const TripCauseSchema = z.enum([
 ]);
 export type TripCause = z.infer<typeof TripCauseSchema>;
 
-export const PhaseSchema = z.enum(['handover', 'running', 'paused']);
+export const PhaseSchema = z.enum(['handover', 'running', 'paused', 'over']);
 export type Phase = z.infer<typeof PhaseSchema>;
+
+/** A scenario's controller fault on a loop; it lasts until the next shift starts. */
+export const LoopFaultKindSchema = z.enum(['stuck', 'drift', 'oscillate']);
+export type LoopFaultKind = z.infer<typeof LoopFaultKindSchema>;
 
 export const PlantStatusKindSchema = z.enum(['online', 'tripped', 'restarting', 'acidCleaning']);
 export type PlantStatusKind = z.infer<typeof PlantStatusKindSchema>;
 
 export const PlantStatusSchema = z.object({
+  gameId: z.uuid(),
+  /** Restores from a snapshot so far (see the events' epoch); tick can rewind when it goes up. */
+  epoch: z.number().int().min(0),
+  shiftNumber: num,
+  balanceUsd: num,
   tick: num,
   plantTime: num,
   shiftId: num.nullable(),
@@ -29,16 +38,33 @@ export const PlantStatusSchema = z.object({
   controlMode: LoopModeSchema,
   tripCause: TripCauseSchema.nullable(),
   restartStep: RestartStepSchema.nullable(),
-  loops: z.record(LoopIdSchema, z.object({ mode: LoopModeSchema, setpoint: num, output: num })),
-  pumps: z.record(PumpIdSchema, z.object({ running: z.boolean() })),
+  /** fault: the loop's controller fault, null when healthy (optional: older simulators did not report it). */
+  loops: z.record(
+    LoopIdSchema,
+    z.object({ mode: LoopModeSchema, setpoint: num, output: num, fault: LoopFaultKindSchema.nullable().optional() }),
+  ),
+  pumps: z.record(PumpIdSchema, z.object({ running: z.boolean(), overhaulRemainingTicks: num })),
   fuel: z.object({
     active: FuelKindSchema,
     changeoverTo: FuelKindSchema.nullable(),
+    /** Ticks left in the current changeover; null when none is in progress. */
+    changeoverRemainingTicks: num.nullable(),
     backupGrade: FuelGradeSchema,
     gasCurtailmentNotice: z.string().nullable(),
+    gasPriceUsdPerGJ: num,
+    gasCapMW: num,
+    /** Price of backup fuel (USD/GJ); orders cost tonnes x LHV x this. */
+    backupPriceUsdPerGJ: num,
   }),
+  doses: z.object({ chlorineMgL: num, antiscalantMgL: num }),
+  /** The live shift target (reflects a mid-shift demandChange); null outside a shift. */
+  shiftTarget: z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num }).nullable(),
   ballCleaning: z.boolean(),
   divertToDrain: z.boolean(),
   shiftTicksRemaining: num,
+  deliveries: z.array(z.object({ arrivesInTicks: num, tonnes: num, grade: FuelGradeSchema })),
+  acidCleanRemainingTicks: num,
+  restartAuto: z.boolean().nullable(),
+  offeredGrade: FuelGradeSchema,
 });
 export type PlantStatus = z.infer<typeof PlantStatusSchema>;

@@ -4,10 +4,11 @@ import { DISTILLATE_DENSITY, LATENT_J_kg, SHIFT_TICKS, TICK_PLANT_S } from '../s
 import { startShift } from '../src/shift.js';
 import { createInitialState } from '../src/state.js';
 import { tick } from '../src/tick.js';
+import { GAME_ID } from './envelope.js';
 
 /** An untouched shift 1 in Auto: no commands for the whole shift. */
 function untouchedShift() {
-  let s = startShift(createInitialState(1, 0), 'auto').state;
+  let s = startShift(createInitialState(1, 0, GAME_ID), 'auto').state;
   const events: PlantEvent[] = [];
   let maxSalinity = 0;
   let minLevel = Infinity;

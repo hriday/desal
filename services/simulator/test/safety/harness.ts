@@ -1,14 +1,14 @@
-import type { PlantEvent } from '@desal/schema';
 import { TICK_PLANT_S } from '../../src/constants.js';
 import type { PlantState } from '../../src/state.js';
 import { stepPlant } from '../../src/tick.js';
+import type { SimEvent } from '../../src/state.js';
 
 /**
  * One plant step through the real orchestrator (src/tick.ts stepPlant), then advance the clock.
  * Unlike tick(), it runs regardless of phase and keeps no shift accumulators, so the safety tests
  * can drive a bare initial state.
  */
-export function tickOnce(s0: PlantState): { state: PlantState; events: PlantEvent[] } {
+export function tickOnce(s0: PlantState): { state: PlantState; events: SimEvent[] } {
   const { state, events } = stepPlant(s0);
   return { state: { ...state, tick: state.tick + 1, plantTime: state.plantTime + TICK_PLANT_S * 1000 }, events };
 }
@@ -18,9 +18,9 @@ export function runUntil(
   s0: PlantState,
   limit: number,
   done: (s: PlantState) => boolean = () => false,
-): { state: PlantState; events: PlantEvent[]; ticks: number } {
+): { state: PlantState; events: SimEvent[]; ticks: number } {
   let s = s0;
-  const events: PlantEvent[] = [];
+  const events: SimEvent[] = [];
   let ticks = 0;
   while (ticks < limit && !done(s)) {
     const r = tickOnce(s);

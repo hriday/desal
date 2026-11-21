@@ -64,3 +64,23 @@ export function stepIntake(s: PlantState, dtS: number): PlantState {
     intake: { pumps, screenFouling, flowM3h, requiredM3h },
   };
 }
+
+/**
+ * Count down pump overhauls by one tick. A pump under overhaul is stopped, so it takes no wear;
+ * on completion it is as new (no wear, no cavitation, normal bearings).
+ */
+export function stepOverhauls(s: PlantState): PlantState {
+  const ids = Object.keys(s.intake.pumps) as (keyof PlantState['intake']['pumps'])[];
+  if (ids.every((id) => s.intake.pumps[id].overhaulRemainingTicks <= 0)) return s;
+  const pumps = { ...s.intake.pumps };
+  for (const id of ids) {
+    const p = pumps[id];
+    if (p.overhaulRemainingTicks <= 0) continue;
+    const left = p.overhaulRemainingTicks - 1;
+    pumps[id] =
+      left > 0
+        ? { ...p, overhaulRemainingTicks: left }
+        : { ...p, wear: 0, cavitation: 0, bearingWearMult: 1, overhaulRemainingTicks: 0 };
+  }
+  return { ...s, intake: { ...s.intake, pumps } };
+}

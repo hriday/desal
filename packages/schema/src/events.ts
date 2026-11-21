@@ -7,13 +7,20 @@ const num = z.number().finite();
 export const ShiftTargetSchema = z.object({ productM3: num, maxSalinityPpm: num, fuelBudgetUsd: num });
 export type ShiftTarget = z.infer<typeof ShiftTargetSchema>;
 
+// Water first: productM3 is in-spec water only (off-spec is offSpecM3 and counts for nothing).
+// spentUsd = gas burned + backup ordered + repairs this shift; nextAllocationUsd is what the next
+// shift will be allocated given this shift's in-spec water against its target.
 export const ShiftSummarySchema = z.object({
   productM3: num,
   targetM3: num,
   offSpecMinutes: num,
+  offSpecM3: num,
   fuelCostUsd: num,
   fuelBudgetUsd: num,
   trips: num,
+  spentUsd: num,
+  nextAllocationUsd: num,
+  balanceUsd: num,
   damage: z.object({
     maxHardScaleMm: num,
     pumpWear: z.record(PumpIdSchema, num),
@@ -21,6 +28,18 @@ export const ShiftSummarySchema = z.object({
   }),
 });
 export type ShiftSummary = z.infer<typeof ShiftSummarySchema>;
+
+export const GameEndReasonSchema = z.enum(['bankrupt', 'outOfFuel', 'burnerFailed', 'noIntakePumps', 'quit', 'abandoned', 'error']);
+export type GameEndReason = z.infer<typeof GameEndReasonSchema>;
+
+// Ranked by totalProductM3 (in-spec water), then shiftsCompleted; balanceUsd is informational.
+// totalProductM3 includes the water of a shift still in progress when the game ended; that shift
+// does not count in shiftsCompleted.
+export const GameScoreSchema = z.object({ shiftsCompleted: num, totalProductM3: num, balanceUsd: num });
+export type GameScore = z.infer<typeof GameScoreSchema>;
+
+export const AccountCauseSchema = z.enum(['allocation', 'fuel', 'delivery', 'acidClean', 'overhaul']);
+export type AccountCause = z.infer<typeof AccountCauseSchema>;
 
 export const ScenarioKindSchema = z.enum([
   'bloom',
@@ -39,7 +58,21 @@ export const DamageComponentSchema = z.enum(['stageScale', 'pump', 'burner']);
 export type DamageComponent = z.infer<typeof DamageComponentSchema>;
 
 // shiftId is null outside a shift (e.g. a commandRejected during handover).
-const base = { tick: num, plantTime: num, shiftId: num.nullable() };
+// seq is a per-game monotonically increasing counter so consumers can de-duplicate at-least-once deliveries.
+// epoch counts how often the game was restored from a snapshot. A restore can rewind seq (and tick) to
+// the snapshot's, so consumers de-duplicate on (gameId, epoch, seq), and a higher epoch resets their marks.
+// host: true marks a host-level event (the simulator's GameHost answering for a game it does not hold, e.g.
+// a commandRejected 'no such game' or a gameRejected): seq 0, epoch 0, tick 0, wall-clock plantTime. It is
+// not part of the game's seq order, so consumers must never de-duplicate host events.
+const base = {
+  gameId: z.uuid(),
+  epoch: z.number().int().min(0),
+  seq: z.number().int().min(0),
+  tick: num,
+  plantTime: num,
+  shiftId: num.nullable(),
+  host: z.boolean().optional(),
+};
 
 export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('shiftStart'), scenarioId: z.string(), mode: LoopModeSchema, target: ShiftTargetSchema }),
@@ -52,5 +85,9 @@ export const PlantEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('deliveryArrived'), tonnes: num, grade: FuelGradeSchema }),
   z.object({ ...base, type: z.literal('commandRejected'), commandId: z.string(), reason: z.string() }),
   z.object({ ...base, type: z.literal('damage'), component: DamageComponentSchema, value: num }),
+  z.object({ ...base, type: z.literal('gameStart') }),
+  z.object({ ...base, type: z.literal('gameRejected'), reason: z.enum(['capacity', 'duplicate']) }),
+  z.object({ ...base, type: z.literal('gameEnd'), reason: GameEndReasonSchema, score: GameScoreSchema }),
+  z.object({ ...base, type: z.literal('accountChange'), deltaUsd: num, balanceUsd: num, cause: AccountCauseSchema }),
 ]);
 export type PlantEvent = z.infer<typeof PlantEventSchema>;

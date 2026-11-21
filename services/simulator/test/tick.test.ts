@@ -1,16 +1,16 @@
-import { PlantEventSchema, PlantStatusSchema, TelemetryReadingSchema, type PlantEvent } from '@desal/schema';
+import { PlantEventSchema, PlantStatusSchema, TELEMETRY_SENSOR_COUNT, TelemetryReadingSchema, type PlantEvent } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
 import { SHIFT_TICKS, TICK_PLANT_S } from '../src/constants.js';
 import { SENSOR_IDS } from '../src/emit.js';
 import { startShift } from '../src/shift.js';
 import { createInitialState, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
-import { env } from './envelope.js';
+import { env, GAME_ID } from './envelope.js';
 import { allFinite } from './helpers.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 
-const running = (mode: 'auto' | 'manual' = 'auto'): PlantState => startShift(createInitialState(1, T0), mode).state;
+const running = (mode: 'auto' | 'manual' = 'auto'): PlantState => startShift(createInitialState(1, T0, GAME_ID), mode).state;
 
 function runTicks(s: PlantState, n: number): { state: PlantState; events: PlantEvent[] } {
   const events: PlantEvent[] = [];
@@ -24,7 +24,7 @@ function runTicks(s: PlantState, n: number): { state: PlantState; events: PlantE
 
 describe('non-running phases', () => {
   it('in handover, ticks emit status only and do not advance the plant', () => {
-    const s = createInitialState(1, T0);
+    const s = createInitialState(1, T0, GAME_ID);
     const r = tick(s, []);
     expect(r.state.tick).toBe(0);
     expect(r.state.plantTime).toBe(T0);
@@ -49,7 +49,7 @@ describe('non-running phases', () => {
   });
 
   it('applies commands in handover and runs the first tick once a shift starts', () => {
-    const s = createInitialState(1, T0);
+    const s = createInitialState(1, T0, GAME_ID);
     const r = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]);
     expect(r.events[0]).toMatchObject({ type: 'shiftStart', shiftId: 1 });
     expect(r.state.phase).toBe('running');
@@ -169,7 +169,7 @@ describe('record stamps', () => {
   });
 
   it('shiftStart is stamped like the first tick of the shift it starts', () => {
-    const s = createInitialState(1, T0);
+    const s = createInitialState(1, T0, GAME_ID);
     const r = tick(s, [env(s, { type: 'startShift', mode: 'auto' }, null)]);
     expect(r.events[0]).toMatchObject({ type: 'shiftStart', tick: 1, plantTime: T0 + TICK_PLANT_S * 1000 });
     expect(new Set(stamps(r).map((x) => x.join()))).toEqual(new Set([`1,${T0 + TICK_PLANT_S * 1000}`]));
@@ -194,6 +194,71 @@ describe('emission', () => {
       if (r.snapshotDue) due.push(s.tick);
     }
     expect(due).toEqual([30, 60]);
+  });
+
+  it('flags snapshotDue outside a running shift when a command was accepted, or any event was emitted', () => {
+    const handover = createInitialState(1, T0, GAME_ID);
+    expect(tick(handover, []).snapshotDue).toBe(false);
+    // A rejection leaves the state as it was, but its event advanced seq: saved, so seq never rewinds.
+    expect(tick(handover, [env(handover, { type: 'setDose', chemical: 'chlorine', mgL: 3 })]).snapshotDue).toBe(true);
+    expect(tick(handover, [env(handover, { type: 'startShift', mode: 'auto' })]).snapshotDue).toBe(true);
+
+    const paused = tick(running(), [env(running(), { type: 'pause' })]).state;
+    expect(paused.phase).toBe('paused');
+    expect(tick(paused, []).snapshotDue).toBe(false);
+    expect(tick(paused, [env(paused, { type: 'setDose', chemical: 'chlorine', mgL: 3 })]).snapshotDue).toBe(true);
+  });
+
+  it('flags snapshotDue when a running game is paused', () => {
+    const s = runTicks(running(), 3).state;
+    const paused = tick(s, [env(s, { type: 'pause' })]);
+    expect(paused.state.phase).toBe('paused');
+    expect(paused.events).toEqual([]);
+    expect(paused.snapshotDue).toBe(true);
+    expect(tick(paused.state, []).snapshotDue).toBe(false);
+  });
+
+  it('flags snapshotDue on any running tick that emits an event (seq must not rewind after a crash)', () => {
+    const s = runTicks(running(), 3).state; // tick 3: no periodic snapshot due
+    const quiet = tick(s, []);
+    expect(quiet.events).toEqual([]);
+    expect(quiet.snapshotDue).toBe(false);
+    const rejected = tick(s, [env(s, { type: 'setOutput', loop: 'tbt', value: 50 })]); // Auto mode: rejected
+    expect(rejected.events.map((e) => e.type)).toEqual(['commandRejected']);
+    expect(rejected.snapshotDue).toBe(true);
+  });
+
+  it('stamps the run epoch on every event, reading and status', () => {
+    const s0 = { ...running(), run: { ...running().run, epoch: 4 } };
+    const r = tick(s0, [env(s0, { type: 'setOutput', loop: 'tbt', value: 50 })]);
+    expect(r.events.length).toBeGreaterThan(0);
+    for (const e of r.events) expect(e.epoch).toBe(4);
+    expect(r.telemetry.every((t) => t.epoch === 4)).toBe(true);
+    expect(r.status.epoch).toBe(4);
+  });
+
+  it('emits TELEMETRY_SENSOR_COUNT readings per tick (the gateway assembles frames of that size)', () => {
+    expect(SENSOR_IDS.length).toBe(TELEMETRY_SENSOR_COUNT);
+  });
+
+  it('reports each loop\'s controller fault in the status (null when healthy), so the UI alarm clears with it', () => {
+    const s0 = running();
+    const healthy = tick(s0, []).status;
+    expect(healthy.loops.vacuum!.fault).toBeNull();
+    expect(healthy.loops.level3!.fault).toBeNull();
+    const faulty: PlantState = {
+      ...s0,
+      loops: {
+        ...s0.loops,
+        vacuum: { ...s0.loops.vacuum, fault: { kind: 'stuck', bias: 0 } },
+        levels: s0.loops.levels.map((l, i) => (i === 2 ? { ...l, fault: { kind: 'drift', bias: 0 } } : l)),
+      },
+    };
+    const st = tick(faulty, []).status;
+    expect(PlantStatusSchema.safeParse(st).success).toBe(true);
+    expect(st.loops.vacuum!.fault).toBe('stuck');
+    expect(st.loops.level3!.fault).toBe('drift');
+    expect(st.loops.tbt!.fault).toBeNull();
   });
 
   it('emits every SENSOR_IDS entry exactly once per tick, as valid readings', () => {
@@ -226,5 +291,21 @@ describe('emission', () => {
     expect(Object.keys(r.status.loops)).toHaveLength(25);
     expect(r.status.shiftTicksRemaining).toBe(SHIFT_TICKS - 1);
     expect(allFinite(r.status)).toBe(true);
+  });
+
+  it('reports doses, backup/gas prices, live shift target and changeover progress in status', () => {
+    const st = running();
+    st.fuel.changeover = { to: 'backup', remainingTicks: 7 };
+    st.shift!.target = { productM3: 123, maxSalinityPpm: 45, fuelBudgetUsd: 6789 };
+    const r = tick(st, []);
+    const f = r.status.fuel;
+    expect(f.backupPriceUsdPerGJ).toBe(r.state.fuel.backup.priceUsdPerGJ);
+    expect(f.gasPriceUsdPerGJ).toBe(r.state.fuel.gas.priceUsdPerGJ);
+    expect(f.gasCapMW).toBe(r.state.fuel.gas.capMW);
+    expect(f.changeoverTo).toBe('backup');
+    expect(f.changeoverRemainingTicks).toBe(r.state.fuel.changeover!.remainingTicks);
+    expect(r.status.doses).toEqual({ chlorineMgL: r.state.pretreat.chlorineMgL, antiscalantMgL: r.state.pretreat.antiscalantMgL });
+    expect(r.status.shiftTarget).toEqual({ productM3: 123, maxSalinityPpm: 45, fuelBudgetUsd: 6789 });
+    expect(PlantStatusSchema.parse(r.status)).toEqual(r.status);
   });
 });
