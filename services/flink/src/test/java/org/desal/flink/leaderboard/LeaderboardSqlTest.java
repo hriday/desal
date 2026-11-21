@@ -150,6 +150,19 @@ class LeaderboardSqlTest {
     assertTrue(plan.contains("HOP"), plan);
   }
 
+  @Test
+  void theRunsTableSkipsUnparsableRecords() {
+    StreamTableEnvironment t = StreamTableEnvironment.create(StreamExecutionEnvironment.getExecutionEnvironment());
+    LeaderboardSql.kafkaTables(t, "localhost:9092", "");
+    StringBuilder ddl = new StringBuilder();
+    try (CloseableIterator<Row> it = t.executeSql("SHOW CREATE TABLE runs").collect()) {
+      it.forEachRemaining(r -> ddl.append(r.getField(0)));
+    } catch (Exception e) {
+      throw new AssertionError(e);
+    }
+    assertTrue(ddl.toString().contains("'value.json.ignore-parse-errors' = 'true'"), ddl.toString());
+  }
+
   // --- helpers ---
 
   private void assertCounts(Row r, long operators, long firstWell) {

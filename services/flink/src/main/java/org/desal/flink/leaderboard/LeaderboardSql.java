@@ -57,8 +57,12 @@ public final class LeaderboardSql {
         + "  'topic' = '" + Topics.name(Topics.RUN_RESULTS, suffix) + "',\n"
         + "  'properties.bootstrap.servers' = '" + brokers + "',\n"
         + "  'key.format' = 'raw',\n"
-        + "  'value.format' = 'json'\n"
+        + "  'value.format' = 'json',\n"
+        + "  'value.json.ignore-parse-errors' = 'true'\n"
         + ")");
+    // A run.results record that cannot be parsed is skipped (only that run is lost) instead of
+    // failing the job: the topic is compacted and kept forever, so a failure would repeat on every
+    // restart.
     // plant.status is read as a plain append-only stream. Only gameId is needed; the JSON format
     // skips every other field, and a record it cannot parse is dropped instead of failing the job.
     // pt is a processing-time attribute: the wall-clock time at which Flink handles the record.

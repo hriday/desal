@@ -236,6 +236,24 @@ class ReportCardFunctionTest {
   }
 
   @Test
+  void aHardGameSeenOnlyFromItsGameEndIsFiledAsHard() throws Exception {
+    // The job starts reading at the very end: no gameStart, and the status handler finishes the
+    // game before it would copy the status's mode.
+    ObjectNode end = event(0, 1510, "gameEnd");
+    end.put("callSign", "Kestrel-42");
+    end.put("runId", RUN);
+    end.put("mode", "hard");
+    end.put("reason", "bankrupt");
+    end.set("score", score(2, 7300));
+    send(end, 1_790_000_000_000L);
+    sendStatus(harness, statusRecord(0, 1510, "over", 3, 0, 0, 2.0).put("mode", "hard"));
+
+    List<RunResult> results = runResults();
+    assertEquals(1, results.size());
+    assertEquals("hard", results.get(0).mode);
+  }
+
+  @Test
   void aHardGameCarriesItsModeAndNotesTheEarthquake() throws Exception {
     gameStart(0, "hard");
     shiftStart(0, SHIFT2_START, 2);

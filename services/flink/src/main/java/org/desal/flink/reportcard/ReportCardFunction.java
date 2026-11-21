@@ -390,6 +390,9 @@ public class ReportCardFunction extends KeyedCoProcessFunction<String, Input, In
     }
     g.runId = text(e, "runId", g.runId);
     g.callSign = text(e, "callSign", g.callSign);
+    // gameEnd carries the mode too: the job's first records for a game may be its gameEnd, so a
+    // Hard run must not fall back to the "normal" default and land on the Normal board.
+    g.mode = text(e, "mode", g.mode);
     g.ended = true;
     if (g.runId == null) {
       return;
