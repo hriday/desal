@@ -20,6 +20,8 @@ export const RESUME_TIMEOUT_MS = 5000;
 export const START_TIMEOUT_MS = 10_000;
 /** In the room or handover, no status for this long while connected shows "Telemetry lost". */
 export const WATCHDOG_MS = 5000;
+/** After a shiftEnd, the handover waits this long for Flink's report card before showing the debrief alone. */
+export const REPORT_WAIT_MS = 10_000;
 
 const Ctx = createContext<Game | null>(null);
 
@@ -114,6 +116,14 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
     const t = setTimeout(() => rawDispatch({ type: 'telemetryLost' }), WATCHDOG_MS);
     return () => clearTimeout(t);
   }, [watching, state.status]);
+
+  // The report card's wait: a shiftEnd sets 'waiting'; this gives up on it (Flink may be down or slow).
+  const reportWaiting = state.reportWait === 'waiting';
+  useEffect(() => {
+    if (!reportWaiting) return;
+    const t = setTimeout(() => rawDispatch({ type: 'reportTimeout' }), REPORT_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [reportWaiting]);
 
   const send = useCallback((command: Command) => {
     const { msg, commandId } = cmdMsg(command);

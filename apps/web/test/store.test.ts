@@ -3,12 +3,13 @@ import { commandKey, setpoint } from '../src/commands';
 import { FIX } from '../src/expanded/labels';
 import { initialState, reducer, type State } from '../src/state/store';
 import { MAX_POINTS } from '../src/state/trends';
+import { report } from './fixtures';
 
 const gameId = '11111111-1111-4111-8111-111111111111';
 
 function status(over: Partial<PlantStatus> = {}): PlantStatus {
   return {
-    gameId, epoch: 0, shiftNumber: 1, balanceUsd: 1000, tick: 0, plantTime: 0, shiftId: 1,
+    gameId, callSign: 'Kestrel-42', epoch: 0, shiftNumber: 1, balanceUsd: 1000, tick: 0, plantTime: 0, shiftId: 1,
     phase: 'running', mode: 'normal', pace: 'calm', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
     loops: { tbt: { mode: 'auto', setpoint: 100, output: 50 } } as PlantStatus['loops'],
     pumps: { 'P-101': { running: true, overhaulRemainingTicks: 0 }, 'P-102': { running: false, overhaulRemainingTicks: 0 }, 'P-103': { running: false, overhaulRemainingTicks: 0 } },
@@ -326,5 +327,49 @@ describe('store reducer', () => {
     s = server(s, eventMsg({ type: 'scenario', seq: 1, eventId: 1, kind: 'earthquake', message: 'm', radio: 'quake', plantTime: 0 }));
     s = server(s, statusMsg({ plantTime: 11 * 60_000 }));
     expect(s.radio.current).toBeNull();
+  });
+});
+
+describe('report cards and rank', () => {
+  it('stores a shiftReport by its shiftId; a later one for the same shift replaces it', () => {
+    let s = server(initialState(), { t: 'shiftReport', report: report({ shiftId: 1, grade: 'C' }) });
+    s = server(s, { t: 'shiftReport', report: report({ shiftId: 2, grade: 'B' }) });
+    expect(s.reports[1]!.grade).toBe('C');
+    expect(s.reports[2]!.grade).toBe('B');
+    s = server(s, { t: 'shiftReport', report: report({ shiftId: 1, grade: 'A', epoch: 1 }) });
+    expect(s.reports[1]!.grade).toBe('A');
+    expect(Object.keys(s.reports)).toHaveLength(2);
+  });
+
+  it('rank sets the rank', () => {
+    expect(initialState().rank).toBeNull();
+    const s = server(initialState(), { t: 'rank', allTime: 57, today: 3 });
+    expect(s.rank).toEqual({ allTime: 57, today: 3 });
+    expect(server(s, { t: 'rank', allTime: 58, today: null }).rank).toEqual({ allTime: 58, today: null });
+  });
+
+  it('shiftEnd starts the wait for the report, the timeout expires it, shiftStart clears it', () => {
+    let s = initialState();
+    expect(s.reportWait).toBeNull();
+    s = reducer(s, { type: 'reportTimeout' });
+    expect(s.reportWait).toBeNull(); // nothing to wait for
+    s = server(s, eventMsg({ type: 'shiftEnd', seq: 1, summary: {} }));
+    expect(s.reportWait).toBe('waiting');
+    s = reducer(s, { type: 'reportTimeout' });
+    expect(s.reportWait).toBe('expired');
+    s = server(s, eventMsg({ type: 'shiftStart', seq: 2, shiftId: 2 }));
+    expect(s.reportWait).toBeNull();
+    s = server(s, eventMsg({ type: 'shiftEnd', seq: 3, shiftId: 2, summary: {} }));
+    s = server(s, eventMsg({ type: 'shiftStart', seq: 4, shiftId: 3 }));
+    expect(s.reportWait).toBeNull();
+  });
+
+  it('a new run forgets the old reports and rank', () => {
+    let s = server(initialState(), { t: 'shiftReport', report: report() });
+    s = server(s, { t: 'rank', allTime: 5, today: 1 });
+    s = reducer(s, { type: 'startClicked' });
+    expect(s.reports).toEqual({});
+    expect(s.rank).toBeNull();
+    expect(s.reportWait).toBeNull();
   });
 });

@@ -1,9 +1,11 @@
-import type { LoopMode, PlantEvent, PlantStatus, ShiftSummary } from '@desal/schema';
+import type { LoopMode, PlantEvent, PlantStatus, ShiftReport, ShiftSummary } from '@desal/schema';
 import { useId, useState } from 'react';
 import { fmt, get, label, num, stageKey, usd } from '../equipment/format';
 import { FIX, HOW_TEXT, KIND_TEXT } from '../expanded/labels';
 import { nextTargetEstimateM3 } from '../limits';
 import { STAGE_COUNT } from '../plantConstants';
+import type { ReportWait } from '../state/store';
+import { ReportCard } from './ReportCard';
 import { SheetHead } from './Sheet';
 import './screens.css';
 
@@ -15,6 +17,9 @@ export interface HandoverProps {
   onQuit: () => void;
   /** A start or quit is in flight: both buttons stay disabled until the plant answers. */
   busy?: boolean;
+  /** Flink's report cards by shiftId; the one for the shift just ended shows above "Last shift". */
+  reports?: Readonly<Record<number, ShiftReport>>;
+  reportWait?: ReportWait;
 }
 
 export function lastSummary(events: readonly PlantEvent[]): ShiftSummary | null {
@@ -28,22 +33,30 @@ export function lastSummary(events: readonly PlantEvent[]): ShiftSummary | null 
 const PUMPS = ['P-101', 'P-102', 'P-103'] as const;
 const pct = (v: number | undefined) => (num(v) ? `${Math.round(v * 100)} %` : fmt(undefined));
 
+/** Plant minutes into the shift as "02:10". */
+export function clockAt(atMinute: number): string {
+  const m = Number.isFinite(atMinute) ? Math.max(0, Math.floor(atMinute)) : 0;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
 /** "02:10 Pump trip — cleared by you". A noted (informational) event has no time; an uncleared one says so. */
 export function debriefLine(e: ShiftSummary['events'][number]): string {
   const kind = label(KIND_TEXT, e.kind) ?? 'Plant event';
   if (e.how === 'noted') return `${kind} — noted`;
-  const m = Number.isFinite(e.atMinute) ? Math.max(0, Math.floor(e.atMinute)) : 0;
-  const at = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-  return `${at} ${kind} — ${(e.how && label(HOW_TEXT, e.how)) || 'not cleared'}`;
+  return `${clockAt(e.atMinute)} ${kind} — ${(e.how && label(HOW_TEXT, e.how)) || 'not cleared'}`;
 }
 
-/** "What to do: ..." for an event the player left uncleared; null when it was cleared or this client has no fix for its kind. */
-export function whatToDo(e: ShiftSummary['events'][number]): string | null {
+/**
+ * "What to do: ..." (the FIX text) for an event the player left uncleared; null when it was cleared or
+ * this client has no fix for its kind. The report card asks it for every slow or missed verdict.
+ */
+export function whatToDo(e: Pick<ShiftSummary['events'][number], 'kind' | 'cleared'>): string | null {
   if (e.cleared || !Object.hasOwn(FIX, e.kind)) return null;
   return `What to do: ${FIX[e.kind].text}`;
 }
 
-function Summary({ s }: { s: ShiftSummary }) {
+/** `fixes`: show "What to do" under uncleared events (off when a report card above already gives them). */
+function Summary({ s, fixes }: { s: ShiftSummary; fixes: boolean }) {
   return (
     <section aria-label="Last shift">
       <h2>Last shift{s.hell && <> <span className="tone--bad" data-hell>HELL SHIFT</span></>}</h2>
@@ -58,7 +71,7 @@ function Summary({ s }: { s: ShiftSummary }) {
       {s.events.length > 0 && (
         <ul aria-label="Shift events">
           {s.events.map((e) => {
-            const todo = whatToDo(e);
+            const todo = fixes ? whatToDo(e) : null;
             return (
               <li key={e.eventId}>
                 {debriefLine(e)}
@@ -98,13 +111,15 @@ function Condition({ readings, summary }: { readings: Record<string, number>; su
   );
 }
 
-export function Handover({ status, readings, events, onStartShift, onQuit, busy = false }: HandoverProps) {
+export function Handover({ status, readings, events, onStartShift, onQuit, busy = false, reports = {}, reportWait = null }: HandoverProps) {
   const [mode, setMode] = useState<LoopMode>('auto');
   const titleId = useId();
   const ordersId = useId();
   const summary = lastSummary(events);
   // status.shiftNumber is the last STARTED shift (0 before the first), so the shift about to start is one more.
   const n = (status?.shiftNumber ?? 0) + 1;
+  // shiftId is the shift number, so the shift just ended is the last one started.
+  const report = status && status.shiftNumber > 0 ? reports[status.shiftNumber] : undefined;
   // status.shiftTarget is null outside a shift, so before it starts we show the estimate.
   const orders = status?.orders ?? null;
   const target = orders
@@ -113,7 +128,7 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
   return (
     <main className="screen screen--board" data-screen="handover">
       <article className="sheet" aria-labelledby={titleId}>
-        <SheetHead kicker="Shift log" title={`Shift ${n} handover`} id={titleId} />
+        <SheetHead kicker="Shift log" title={`Shift ${n} handover`} id={titleId} sign={status?.callSign} />
         <section aria-labelledby={ordersId}>
           <h2 id={ordersId}>Orders for shift {n}</h2>
           <dl>
@@ -136,7 +151,8 @@ export function Handover({ status, readings, events, onStartShift, onQuit, busy 
             </>
           )}
         </section>
-        {summary && <Summary s={summary} />}
+        <ReportCard report={report} wait={reportWait} />
+        {summary && <Summary s={summary} fixes={!report} />}
         <Condition readings={readings} summary={summary} />
         <fieldset>
           <legend>Control mode</legend>

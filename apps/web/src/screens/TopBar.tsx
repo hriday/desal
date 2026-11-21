@@ -15,13 +15,14 @@ export interface TopBarProps {
   onQuit: () => void;
 }
 
-/** Shift, plant clock, time left, pace (while running), balance, mode, connection light, and Quit run (with a confirm step). */
+/** Call sign, shift, plant clock, time left, pace (while running), balance, mode, connection light, and Quit run (with a confirm step). */
 export function TopBar({ status, conn, quitting, onQuit }: TopBarProps) {
   const [confirming, setConfirming] = useState(false);
   const bal = status?.balanceUsd;
   const balTone = typeof bal === 'number' ? (bal < 0 ? 'bad' : bal < 5000 ? 'warn' : undefined) : undefined;
   return (
     <header className="topbar">
+      {status?.callSign && <span className="topbar__item topbar__sign" title="Your call sign">{status.callSign}</span>}
       <span className="topbar__item topbar__shift">Shift {fmt(status?.shiftNumber)}</span>
       {status?.mode === 'hard' && <span className="topbar__item topbar__hard tone--bad">HARD</span>}
       <span className="topbar__item" title="Plant clock">

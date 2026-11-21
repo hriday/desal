@@ -9,7 +9,8 @@ import { Handover } from '../src/screens/Handover';
 import { Start } from '../src/screens/Start';
 import { TopBar } from '../src/screens/TopBar';
 import { FIX } from '../src/expanded/labels';
-import { GameProvider } from '../src/state/GameProvider';
+import { GameProvider, REPORT_WAIT_MS } from '../src/state/GameProvider';
+import { board, report } from './fixtures';
 
 afterEach(cleanup);
 
@@ -24,6 +25,9 @@ const shiftEnd = {
 } as unknown as PlantEvent;
 
 describe('Start', () => {
+  // The leaderboard card's default loader: never answers (its own tests cover it).
+  beforeEach(() => { vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {}))); });
+  afterEach(() => vi.unstubAllGlobals());
   it('shows the title, the pitch and starts a run', () => {
     const onStart = vi.fn();
     const { getByText, getByRole } = render(<Start onStart={onStart} />);
@@ -45,6 +49,13 @@ describe('Start', () => {
   it('the plant picture shows all 24 flash stages', () => {
     const { container } = render(<Start onStart={vi.fn()} />);
     expect(container.querySelectorAll('.start__plant [data-stage]')).toHaveLength(24);
+  });
+  it('shows the leaderboard card under the Start buttons', async () => {
+    const { getByRole } = render(<Start onStart={vi.fn()} loadLeaderboard={() => Promise.resolve(board())} />);
+    await act(async () => { await Promise.resolve(); });
+    const card = getByRole('region', { name: 'Leaderboard' });
+    expect(card.textContent).toContain('Kestrel-42 · 19 Nov');
+    expect(getByRole('button', { name: 'Start a Hard run' }).compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
   it('capacity shows the message and a retry button', () => {
     const onStart = vi.fn();
@@ -132,6 +143,41 @@ describe('Handover', () => {
       });
     }
   });
+  describe('report card', () => {
+    const withEvents = (events: object[]) => {
+      const s = (shiftEnd as unknown as { summary: object }).summary;
+      return { ...shiftEnd, shiftId: 2, summary: { ...s, events } } as unknown as PlantEvent;
+    };
+    const evs = [
+      { eventId: 3, kind: 'vacuumLoss', atMinute: 300, cleared: true, how: 'crew' },
+      { eventId: 4, kind: 'storm', atMinute: 400, cleared: false, how: null },
+    ];
+    const status = demoStatus({ phase: 'handover', shiftNumber: 2, shiftId: null, shiftTarget: null });
+    it("shows the previous shift's report card above Last shift", () => {
+      const { getByRole } = render(<Handover {...base} status={status} events={[withEvents(evs)]}
+        reports={{ 1: report({ shiftId: 1, grade: 'D' }), 2: report({ grade: 'B' }) }} reportWait="waiting" />);
+      const card = getByRole('region', { name: 'Report card' });
+      expect(card.querySelector('[data-grade]')!.textContent).toBe('B');
+      expect(card.compareDocumentPosition(getByRole('region', { name: 'Last shift' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+    it('with a report card, Last shift does not repeat the What to do lines', () => {
+      const { getByRole } = render(<Handover {...base} status={status} events={[withEvents(evs)]} reports={{ 2: report() }} reportWait="waiting" />);
+      expect(getByRole('region', { name: 'Last shift' }).textContent).not.toContain('What to do');
+      expect(getByRole('region', { name: 'Report card' }).textContent).toContain(`What to do: ${FIX.storm.text}`);
+    });
+    it('without one (Flink down, after the 10 s wait) Last shift shows them as before', () => {
+      for (const reportWait of ['waiting', 'expired'] as const) {
+        const { getByRole, container, unmount } = render(<Handover {...base} status={status} events={[withEvents(evs)]} reports={{}} reportWait={reportWait} />);
+        expect(getByRole('region', { name: 'Last shift' }).textContent).toContain(`What to do: ${FIX.storm.text}`);
+        expect(container.textContent!.includes('Grading…')).toBe(reportWait === 'waiting');
+        unmount();
+      }
+    });
+    it('shows the call sign on the sheet', () => {
+      const { getByRole } = render(<Handover {...base} status={status} events={[]} />);
+      expect(getByRole('article', { name: 'Shift 3 handover' }).textContent).toContain('Kestrel-42');
+    });
+  });
   it('shows no HELL SHIFT tag on a normal shift', () => {
     const { container } = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null })} events={[shiftEnd]} />);
     expect(container.textContent).not.toContain('HELL SHIFT');
@@ -203,6 +249,36 @@ describe('TopBar HARD tag', () => {
   });
 });
 
+describe('TopBar call sign', () => {
+  it('shows the call sign', () => {
+    const { container } = render(<TopBar status={demoStatus({ callSign: 'Heron-17' })} conn="open" quitting={false} onQuit={vi.fn()} />);
+    expect(container.textContent).toContain('Heron-17');
+  });
+});
+
+describe('GameOver call sign and rank', () => {
+  const props = { reason: 'quit' as const, score: null, onPlayAgain: vi.fn(), callSign: 'Kestrel-42' };
+  it('shows the call sign and the rank', () => {
+    const { container } = render(<GameOver {...props} rank={{ allTime: 57, today: 3 }} />);
+    expect(container.textContent).toContain('Kestrel-42');
+    expect(container.textContent).toContain('Rank #57 all time · #3 today');
+    expect(container.textContent).not.toContain('Hard');
+  });
+  it("labels a Hard run's rank with its mode", () => {
+    const { getByText } = render(<GameOver {...props} mode="hard" rank={{ allTime: 57, today: 3 }} />);
+    expect(getByText(/Rank #57 all time · #3 today/).textContent).toContain('Hard');
+  });
+  it('shows only the all-time rank when the run is not ranked today', () => {
+    const { container } = render(<GameOver {...props} rank={{ allTime: 57, today: null }} />);
+    expect(container.textContent).toContain('Rank #57 all time');
+    expect(container.textContent).not.toContain('today');
+  });
+  it('shows "Ranking…" until the rank comes', () => {
+    const { container } = render(<GameOver {...props} rank={null} />);
+    expect(container.textContent).toContain('Ranking…');
+  });
+});
+
 describe('GameOver mode', () => {
   it.each([['hard', 'Hard'], ['normal', 'Normal']] as const)('shows %s', (mode, text) => {
     const { getByText } = render(<GameOver reason="quit" mode={mode} score={null} onPlayAgain={vi.fn()} />);
@@ -221,7 +297,13 @@ describe('Screens with provider', () => {
     constructor() { socks.push(this); }
     open() { this.readyState = 1; act(() => this.onopen?.()); }
   }
-  beforeEach(() => { socks.length = 0; sessionStorage.clear(); });
+  beforeEach(() => {
+    socks.length = 0;
+    sessionStorage.clear();
+    // The Start screen's leaderboard card: never answers (the card's own tests cover it).
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+  });
+  afterEach(() => vi.unstubAllGlobals());
   const mount = () => render(
     <GameProvider url="ws://x" factory={() => new FakeWS() as unknown as WebSocket}><Screens /></GameProvider>,
   );
@@ -261,5 +343,39 @@ describe('Screens with provider', () => {
     act(() => (socks[0]!.onmessage as (e: { data: string }) => void)({ data: JSON.stringify({ t: 'error', reason: 'no game' }) }));
     expect(container.querySelector('[data-screen="start"]')).not.toBeNull();
     expect(socks[0]!.closed).toBe(true);
+  });
+
+  describe('the handover report card', () => {
+    afterEach(() => vi.useRealTimers());
+    const push = (msg: object) => act(() => (socks[0]!.onmessage as (e: { data: string }) => void)({ data: JSON.stringify(msg) }));
+    const handover = () => {
+      vi.useFakeTimers();
+      sessionStorage.setItem(GAME_ID_KEY, '11111111-1111-4111-8111-111111111111');
+      const r = mount();
+      socks[0]!.open();
+      const status = demoStatus({ phase: 'handover', shiftNumber: 2, shiftId: null, shiftTarget: null });
+      push({ t: 'status', status });
+      const s = (shiftEnd as unknown as { summary: object }).summary;
+      push({ t: 'event', event: { ...shiftEnd, gameId: status.gameId, epoch: 0, tick: 1440, plantTime: 1, shiftId: 2,
+        summary: { ...s, events: [{ eventId: 4, kind: 'storm', atMinute: 400, cleared: false, how: null }] } } });
+      return { ...r, status };
+    };
+
+    it('shows "Grading…" after a shiftEnd and gives up after 10 s, leaving the debrief and its fixes', () => {
+      const { container, getByRole } = handover();
+      expect(container.textContent).toContain('Grading…');
+      act(() => { vi.advanceTimersByTime(REPORT_WAIT_MS - 1); });
+      expect(container.textContent).toContain('Grading…');
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(container.textContent).not.toContain('Grading…');
+      expect(getByRole('region', { name: 'Last shift' }).textContent).toContain(`What to do: ${FIX.storm.text}`);
+    });
+
+    it('a report that comes shows above Last shift, which drops its fixes', () => {
+      const { getByRole } = handover();
+      push({ t: 'shiftReport', report: report() });
+      expect(getByRole('region', { name: 'Report card' }).querySelector('[data-grade]')!.textContent).toBe('B');
+      expect(getByRole('region', { name: 'Last shift' }).textContent).not.toContain('What to do');
+    });
   });
 });
