@@ -27,6 +27,7 @@ import { heaterDemandMW, stepHeater } from './units/heater.js';
 import { stepIntake, stepOverhauls } from './units/intake.js';
 import { stepProduct } from './units/product.js';
 import { recoveredTempC, stepStages } from './units/stages.js';
+import { stepSteam } from './units/steam.js';
 
 export interface TickResult {
   state: PlantState;
@@ -79,7 +80,7 @@ function stepLoops(s: PlantState): PlantState {
 }
 
 /**
- * Advance the plant one step: scenario, loops, intake, fuel, heater, stages, product,
+ * Advance the plant one step: scenario, loops, intake, fuel, heater, motive steam, stages, product,
  * restart/acid clean, then interlocks. A manual-mode flame-out reported by the fuel system trips
  * the plant (unless it is already down). Does not touch accumulators, tick or plant time.
  */
@@ -107,6 +108,7 @@ export function stepPlant(s0: PlantState): PlantStep {
   events.push(...fuel.events.filter((e) => burnerUp || !(e.type === 'fuelChangeover' && e.phase === 'flameOut')));
 
   s = stepHeater(s, fuel.deliveredMW, recoveredTempC(s), dt);
+  s = stepSteam(s, dt);
   const st = stepStages(s, dt);
   const online = st.state.status === 'online';
   const product = stepProduct(st.state, online ? st.distillateM3h : 0, st.carryover, dt);

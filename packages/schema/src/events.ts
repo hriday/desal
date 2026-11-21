@@ -26,6 +26,7 @@ export const ScenarioKindSchema = z.enum([
   'fuelContamination',
   'earthquake',
   'tsunami',
+  'lowSteam',
 ]);
 export type ScenarioKind = z.infer<typeof ScenarioKindSchema>;
 

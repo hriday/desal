@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DISASTER_MINUTE, DISASTER_SALT, PROFILES } from '../../src/scenario/difficulty.js';
+import { DISASTER_MINUTE, DISASTER_SALT, LOW_STEAM_MINUTE, LOW_STEAM_SALT, PROFILES } from '../../src/scenario/difficulty.js';
 import { drawEvent, scenarioForShift } from '../../src/scenario/library.js';
 import { allFinite } from '../helpers.js';
 
@@ -7,10 +7,16 @@ const target = (n: number) => Math.round(3900 * (1 + 0.04 * (n - 1)));
 
 describe('difficulty profiles', () => {
   it('has the Normal and Hard values', () => {
-    expect(PROFILES.normal).toEqual({ hellEveryShift: false, disasterChance: 0.08, disasterFromShift: 3 });
-    expect(PROFILES.hard).toEqual({ hellEveryShift: true, disasterChance: 0.4, disasterFromShift: 2 });
+    expect(PROFILES.normal).toEqual({
+      hellEveryShift: false, disasterChance: 0.08, disasterFromShift: 3, lowSteamChance: 0.15, lowSteamFromShift: 2,
+    });
+    expect(PROFILES.hard).toEqual({
+      hellEveryShift: true, disasterChance: 0.4, disasterFromShift: 2, lowSteamChance: 0.3, lowSteamFromShift: 2,
+    });
     expect(DISASTER_SALT).toBe(0xd15a5);
     expect(DISASTER_MINUTE).toEqual([90, 300]);
+    expect(LOW_STEAM_SALT).toBe(0x57ea3);
+    expect(LOW_STEAM_MINUTE).toEqual([60, 360]);
   });
 });
 

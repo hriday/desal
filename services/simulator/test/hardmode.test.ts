@@ -135,7 +135,8 @@ describe('each disaster forced into shift 2', () => {
 });
 
 // Plan 7 Review Focus 2: a failed or stuck makeup loop (the stage-24 pool) is a loop fault like any other.
-describe('makeup loop faults forced into shift 2', () => {
+// Plan 8: so is low motive steam, forced the same way.
+describe('makeup loop faults and low steam forced into shift 2', () => {
   /** Put `kind` with exactly `params` at the head of shift 2's plan (due at minute 60), replacing any of that kind. */
   const forceExact =
     (kind: ScenarioKind, params: Record<string, string>) =>
@@ -150,6 +151,8 @@ describe('makeup loop faults forced into shift 2', () => {
     ['sensorFailure', { loop: 'makeup', mode: 'freeze' }],
     ['sensorFailure', { loop: 'makeup', mode: 'noise' }],
     ['controllerFault', { loop: 'makeup', kind: 'stuck' }],
+    // Plan 8: low motive steam, answered on the standby steam line.
+    ['lowSteam', {}],
   ];
   for (const [kind, params] of cases) {
     it(`${kind} ${JSON.stringify(params)}: the engaged bot ends shift 2 alive`, () => {

@@ -48,7 +48,7 @@ export const KIND_TEXT: Record<string, string> = {
   gasPriceSpike: 'Gas price spike', offgradeOnly: 'Off-grade fuel only', deliveryDelay: 'Fuel delivery delay', demandChange: 'Demand change',
   controllerFault: 'Controller fault', pumpTrip: 'Pump trip', tubeLeak: 'Tube leak', vacuumLoss: 'Vacuum loss', powerDip: 'Power dip',
   storm: 'Storm', sensorFailure: 'Instrument failure',
-  fuelContamination: 'Contaminated fuel', earthquake: 'Earthquake', tsunami: 'Tsunami',
+  fuelContamination: 'Contaminated fuel', earthquake: 'Earthquake', tsunami: 'Tsunami', lowSteam: 'Low motive steam',
 };
 
 /**
@@ -90,6 +90,7 @@ export const FIX: Record<ScenarioKind, FixEntry> = {
     text: 'When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens and run two pumps again.',
     hint: 'delay',
   },
+  lowSteam: { text: 'Switch on the standby steam line on the Stages screen.', hint: 'delay', underway: (st) => st.standbySteam === true },
 };
 
 /** How an event ended, as the debrief and the event log say it. */

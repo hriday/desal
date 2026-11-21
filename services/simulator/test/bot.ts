@@ -44,6 +44,7 @@ export interface BotOptions {
  * - a tripped plant: restart it (the Auto sequence does the rest);
  * - a failed ejector: cut the TBT setpoint to slow the vacuum loss until the crew has repaired it;
  * - a controller fault: put that loop in Manual;
+ * - low motive steam: switch on the standby steam line;
  * - a bloom: raise the chlorine dose (back to normal at the next shift);
  * - a tube leak, failed ejector, failed sensor or storm: dispatch the matching crew job;
  * - contaminated fuel: switch to the other fuel, have the crew flush the contaminated one, then
@@ -94,6 +95,7 @@ export function engagedCommands(s: PlantState, ticks: number, opts: BotOptions =
   for (const e of fired) {
     if (e.cleared) continue;
     if (e.kind === 'controllerFault') cmd({ type: 'setLoopMode', loop: String(e.params.loop), mode: 'manual' });
+    if (e.kind === 'lowSteam' && !s.steam.standby) cmd({ type: 'standbySteam', on: true });
     if (e.kind === 'bloom' && s.pretreat.chlorineMgL < BLOOM_CHLORINE_MGL) {
       cmd({ type: 'setDose', chemical: 'chlorine', mgL: BLOOM_CHLORINE_MGL });
     }

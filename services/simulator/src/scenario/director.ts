@@ -7,6 +7,7 @@ import { earthquakeFollowUps } from './disaster/earthquake.js';
 import { applyEffect } from './effects.js';
 import { fuelContaminationViable } from './disaster/fuelContamination.js';
 import { drawEvent, eventMessage } from './library.js';
+import { lowSteamParamsAtFire } from './lowSteam.js';
 import { radioLine } from './orders.js';
 import { pumpAvailability } from './sharp.js';
 
@@ -108,6 +109,8 @@ export function isCleared(s: PlantState, e: FiredEvent): ClearHow | null {
       return f.tsunami?.surgeDone && f.tsunami.cleanedAfterSurge && runningPumps(s) >= 2 ? 'player' : null;
     case 'earthquake':
       return null;
+    case 'lowSteam':
+      return s.steam.standby || f.lowSteam === null ? 'player' : null;
   }
 }
 
@@ -127,9 +130,11 @@ export function isSettled(s: PlantState): boolean {
  * and when no running pump has a spare to replace it, the next sharp kind in SHARP_KINDS order that
  * is valid fires instead, with freshly drawn params. Contaminated fuel hits the fuel the burner is on
  * now, and is dropped (null) when that is no longer viable; an earthquake's aftershock dip that no
- * running pump with a spare can take is dropped too (spec 4.4), never substituted.
+ * running pump with a spare can take is dropped too (spec 4.4), never substituted. Low steam draws
+ * its floor now, on its own substream, and passes the game seed through unchanged.
  */
 function resolve(s: PlantState, e: QueuedEvent, minute: number, seed: number, n: number): [ScenarioKind, Params, number] | null {
+  if (e.kind === 'lowSteam') return [e.kind, lowSteamParamsAtFire(s), seed];
   if (e.kind === 'fuelContamination') return fuelContaminationViable(s) ? [e.kind, { fuel: s.fuel.active }, seed] : null;
   if (e.kind !== 'pumpTrip' && e.kind !== 'powerDip') return [e.kind, e.params, seed];
   const { running, spares } = pumpAvailability(s);
@@ -149,8 +154,15 @@ function resolve(s: PlantState, e: QueuedEvent, minute: number, seed: number, n:
   return [e.kind, e.params, seed]; // unreachable: SHARP_KINDS holds non-pump kinds
 }
 
-/** Events that count toward the shift's cap: disasters and their children do not. */
-const countsTowardCap = (events: readonly { disaster: boolean }[]): number => events.filter((e) => !e.disaster).length;
+/**
+ * Events on their own clock: disasters, their children and low steam fire when their minute comes,
+ * outside the gap and settling rules, move nobody's timing, and do not count toward the cap.
+ */
+const onOwnClock = (e: { disaster: boolean; kind: ScenarioKind }): boolean => e.disaster || e.kind === 'lowSteam';
+
+/** Events that count toward the shift's cap: those on their own clock do not. */
+const countsTowardCap = (events: readonly { disaster: boolean; kind: ScenarioKind }[]): number =>
+  events.filter((e) => !onOwnClock(e)).length;
 
 /** A hell-shift cascade that `kind` may trigger: the follow-up, its chance, and its delay window. */
 const CASCADES: Partial<Record<ScenarioKind, { kind: ScenarioKind; p: number; delayMin: readonly [number, number] }>> = {
@@ -161,11 +173,12 @@ const CASCADES: Partial<Record<ScenarioKind, { kind: ScenarioKind; p: number; de
 
 /**
  * Run the chaos director for one tick of a running shift: mark fired events that have cleared,
- * then fire what is due. A disaster or one of its follow-ups (`disaster: true`) fires as soon as its
- * minute comes, wherever it sits in the queue and whatever the gap or settling rules, and leaves the
- * other events' timing alone. Otherwise the first other event fires when its time has come (normal:
- * once the plant has settled, or the 180-minute override; hell: in a burst, rolling cascades).
- * Emits `eventCleared` and `scenario` events. All randomness comes from `state.seed`.
+ * then fire what is due. A disaster or one of its follow-ups (`disaster: true`), or low steam, fires
+ * as soon as its minute comes, wherever it sits in the queue and whatever the gap or settling rules,
+ * and leaves the other events' timing alone. Otherwise the first other event fires when its time has
+ * come (normal: once the plant has settled, or the 180-minute override; hell: in a burst, rolling
+ * cascades). Emits `eventCleared` and `scenario` events. All randomness comes from `state.seed`,
+ * except low steam's floor, which has its own substream (lowSteamParamsAtFire).
  */
 export function stepDirector(s0: PlantState): { state: PlantState; events: SimEvent[] } {
   const a0 = s0.chaos.active;
@@ -185,9 +198,9 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     return { ...e, cleared: true, how };
   });
   let queue = plan.queue;
-  // The first non-disaster event is unscheduled (earliestMinute 0) until the shift's first tick
-  // draws its fire minute.
-  const first = queue.findIndex((e) => !e.disaster);
+  // The first event not on its own clock is unscheduled (earliestMinute 0) until the shift's first
+  // tick draws its fire minute.
+  const first = queue.findIndex((e) => !onOwnClock(e));
   const head0 = queue[first];
   if (a0.lastFiredMinute === null && head0 && head0.earliestMinute === 0) {
     const [lo, hi] = plan.hell ? HELL_FIRST_MIN : NORMAL_FIRST_MIN;
@@ -204,10 +217,10 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     return { state: { ...s, chaos: { ...s.chaos, active } }, events };
   }
 
-  // 3. Pick what fires: a due disaster (or follow-up) first, else the first other event when its time has come.
-  let at = dueDisaster(queue, minute);
+  // 3. Pick what fires: a due event on its own clock first, else the first other event when its time has come.
+  let at = dueOwnClock(queue, minute);
   if (at === -1) {
-    at = queue.findIndex((e) => !e.disaster);
+    at = queue.findIndex((e) => !onOwnClock(e));
     const next = queue[at];
     if (!next || minute < next.earliestMinute) return { state: s, events };
     const last = a0.lastFiredMinute;
@@ -225,7 +238,7 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     // Unviable now: dropped, nothing fires and no timing changes.
     const kept = [...queue.slice(0, at), ...queue.slice(at + 1)];
     const dropped: PlantState = { ...s, chaos: { ...s.chaos, active: { ...active, plan: { ...plan, queue: kept } } } };
-    if (dueDisaster(kept, minute) !== -1) {
+    if (dueOwnClock(kept, minute) !== -1) {
       const more = stepDirector(dropped);
       return { state: more.state, events: [...events, ...more.events] };
     }
@@ -255,11 +268,11 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
     disaster: head.disaster,
   };
 
-  // Schedule the next other event: never earlier than its own minimum. A disaster changes nobody's timing.
+  // Schedule the next other event: never earlier than its own minimum. An event on its own clock changes nobody's timing.
   let rest = [...queue.slice(0, at), ...queue.slice(at + 1)];
-  const after = rest.findIndex((e) => !e.disaster);
+  const after = rest.findIndex((e) => !onOwnClock(e));
   const next = rest[after];
-  if (next && !head.disaster) {
+  if (next && !onOwnClock(head)) {
     let gap = plan.shiftNumber === 1 && !plan.hell ? Math.max(NORMAL_GAP_MIN, SHIFT_ONE_GAP_MIN) : NORMAL_GAP_MIN;
     if (plan.hell) [gap, seed] = randInt(seed, HELL_GAP_MIN[0], HELL_GAP_MIN[1]);
     rest = rest.map((e, i) => (i === after ? { ...next, earliestMinute: Math.max(next.earliestMinute, minute + gap) } : e));
@@ -296,18 +309,18 @@ export function stepDirector(s0: PlantState): { state: PlantState; events: SimEv
   active = {
     plan: { ...plan, queue: rest },
     fired: [...fired, record],
-    // The gap clock runs from the last other event: a disaster pushes back nothing.
-    lastFiredMinute: head.disaster ? a0.lastFiredMinute : minute,
+    // The gap clock runs from the last other event: an event on its own clock pushes back nothing.
+    lastFiredMinute: onOwnClock(head) ? a0.lastFiredMinute : minute,
     nextEventId,
   };
   const state: PlantState = { ...s, seed, chaos: { ...s.chaos, active } };
-  if (dueDisaster(rest, minute) !== -1) {
+  if (dueOwnClock(rest, minute) !== -1) {
     const more = stepDirector(state);
     return { state: more.state, events: [...events, ...more.events] };
   }
   return { state, events };
 }
 
-/** The index of the first disaster or disaster follow-up in `queue` whose minute has come, or -1. */
-const dueDisaster = (queue: readonly QueuedEvent[], minute: number): number =>
-  queue.findIndex((e) => e.disaster && e.earliestMinute <= minute);
+/** The index of the first event on its own clock in `queue` whose minute has come, or -1. */
+const dueOwnClock = (queue: readonly QueuedEvent[], minute: number): number =>
+  queue.findIndex((e) => onOwnClock(e) && e.earliestMinute <= minute);

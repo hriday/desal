@@ -430,3 +430,68 @@ describe('director: replay', () => {
     expect.unreachable('no seed split its events around tick 120');
   });
 });
+
+describe('director: lowSteam runs on its own clock', () => {
+  const leakThenSteam: Q[] = [
+    { kind: 'tubeLeak', params: LEAK, earliestMinute: 40 },
+    { kind: 'lowSteam', earliestMinute: 60 },
+  ];
+
+  it('fires at its minute, inside the gap and with the plant unsettled, without moving lastFiredMinute', () => {
+    const s = until(running(leakThenSteam, false), (x) => fired(x).length > 1, holdLeak);
+    const [leak, steam] = fired(s);
+    expect(leak).toMatchObject({ kind: 'tubeLeak', cleared: false });
+    expect(leak!.atMinute).toBeGreaterThanOrEqual(40);
+    expect(leak!.atMinute).toBeLessThan(41);
+    expect(steam!.kind).toBe('lowSteam');
+    expect(steam!.atMinute).toBeGreaterThanOrEqual(60);
+    expect(steam!.atMinute).toBeLessThan(61);
+    expect(steam!.atMinute - leak!.atMinute).toBeLessThan(60); // inside NORMAL_GAP_MIN
+    expect(s.chaos.active!.lastFiredMinute).toBe(leak!.atMinute);
+    expect(s.faults.lowSteam).toEqual({ floorBar: steam!.params.floorBar });
+  });
+
+  it('fires with a floorBar on the 10.0-11.0 grid', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const s = until(running([{ kind: 'lowSteam', earliestMinute: 5 + seed }], false, seed), (x) => fired(x).length > 0);
+      const floor = Number(fired(s)[0]!.params.floorBar);
+      expect(floor).toBeGreaterThanOrEqual(10);
+      expect(floor).toBeLessThanOrEqual(11);
+      expect(Math.abs(floor * 10 - Math.round(floor * 10))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('firing it leaves the game seed alone', () => {
+    let a = running([{ kind: 'lowSteam', earliestMinute: 5 }], false);
+    let b = running([], false);
+    for (let i = 0; i < 30; i++) {
+      a = tick(a, []).state;
+      b = tick(b, []).state;
+      expect(a.seed).toBe(b.seed);
+    }
+    expect(fired(a)).toHaveLength(1);
+  });
+
+  it('does not count toward the event cap', () => {
+    // Six cleared events before a hell pump trip: its cascade needs room under the cap of 7 (fired
+    // and queued). A lowSteam as the sixth leaves that room; any other event does not.
+    const done = (kind: ScenarioKind, eventId: number): FiredEvent => ({
+      eventId, kind, params: {}, atMinute: 1, cleared: true, how: 'player', disaster: false,
+    });
+    const cascades = (sixth: ScenarioKind): number => {
+      let n = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const s0 = running([{ kind: 'pumpTrip', params: { pumpId: 'P-101' }, earliestMinute: 1 }], true, seed);
+        const a = s0.chaos.active!;
+        const prior = [1, 2, 3, 4, 5].map((i) => done('demandChange', i)).concat(done(sixth, 6));
+        const queue = a.plan.queue.map((e) => ({ ...e, eventId: 7 }));
+        const active = { ...a, plan: { ...a.plan, queue }, fired: prior, lastFiredMinute: 0, nextEventId: 8 };
+        const s = until({ ...s0, chaos: { ...s0.chaos, active } }, (x) => fired(x).length > 6);
+        if (s.chaos.active!.plan.queue.some((e) => e.cascade)) n++;
+      }
+      return n;
+    };
+    expect(cascades('lowSteam')).toBeGreaterThan(0);
+    expect(cascades('demandChange')).toBe(0);
+  });
+});

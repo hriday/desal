@@ -37,6 +37,12 @@ describe('FIX', () => {
     expect(FIX.earthquake.text).toBe('Everything breaks at once; fix what hurts most first.');
     expect(FIX.tsunami.text).toBe('When the siren sounds, run on your healthiest intake pump until the surge passes, then clean the screens and run two pumps again.');
   });
+  it('sends lowSteam to the standby steam line, held back while it is on', () => {
+    expect(FIX.lowSteam.text).toBe('Switch on the standby steam line on the Stages screen.');
+    expect(FIX.lowSteam.hint).toBe('delay');
+    expect(FIX.lowSteam.underway!(status({ standbySteam: true }))).toBe(true);
+    expect(FIX.lowSteam.underway!(status({ standbySteam: false }))).toBe(false);
+  });
   it('gives informational kinds no hint and the earthquake one at once', () => {
     for (const k of ['seawaterTemp', 'gasCurtailNotice', 'gasPriceSpike', 'offgradeOnly', 'deliveryDelay', 'demandChange', 'pumpBearing'] as const) {
       expect(FIX[k].hint, k).toBe('none');

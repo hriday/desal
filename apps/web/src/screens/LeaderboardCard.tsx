@@ -15,7 +15,7 @@ const MAX_STATS = 3;
 /** The noun in "handled their first <noun> well". Earthquake is noted, not graded, so it has no stats line. */
 const KIND_NOUN: Partial<Record<ScenarioKind, string>> = {
   pumpTrip: 'pump trip', tubeLeak: 'tube leak', vacuumLoss: 'vacuum loss', powerDip: 'power dip', storm: 'storm',
-  sensorFailure: 'sensor failure', fuelContamination: 'fuel contamination', tsunami: 'tsunami',
+  sensorFailure: 'sensor failure', fuelContamination: 'fuel contamination', tsunami: 'tsunami', lowSteam: 'low steam',
 };
 
 export const statLine = (s: KindBoardStat): string =>

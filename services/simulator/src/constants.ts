@@ -205,6 +205,14 @@ export const VACUUM_QUALITY_MIN = 0.3;
 export const VACUUM_QUALITY_NOMINAL = 0.95;
 /** Nominal ejector motive steam pressure (bar). */
 export const MOTIVE_STEAM_NOMINAL_BAR = 14.5;
+/** Motive steam at and above which the ejectors reach full vacuum (bar). */
+export const EJECTOR_FULL_REACH_BAR = 13;
+/** Motive steam at and below which the ejectors pull no vacuum at all (bar; ruling R1). */
+export const EJECTOR_NO_REACH_BAR = 10;
+/** How fast motive steam sags under the lowSteam fault, with the standby line off (bar per plant minute). */
+export const LOW_STEAM_SAG_BAR_PER_MIN = 0.25;
+/** The lowSteam floor is drawn from this range (bar), in 0.1 bar steps. */
+export const LOW_STEAM_FLOOR_BAR = [10, 11] as const;
 /** Vacuum quality time constant (s). */
 export const VACUUM_TAU_S = 600;
 /** Highest concentration factor (the salt-balance target's upper clamp; blowdown shut). */
