@@ -135,9 +135,9 @@ function ShiftControls(ctl: ControlCtx) {
 }
 
 /**
- * This shift's allocation, repair charges, crew charges, standing cost and standby steam line cost, from its
- * accountChange events. The standing and standby steam costs are reported once per plant hour, so they lag by up
- * to an hour.
+ * This shift's allocation, repair charges, crew charges, standing cost, standby steam line cost and standby
+ * ejectors cost, from its accountChange events. The standing, standby steam and standby ejectors costs are
+ * reported once per plant hour, so they lag by up to an hour.
  */
 export function shiftAccount(events: readonly PlantEvent[], shiftId: number | null | undefined) {
   let allocationUsd: number | undefined;

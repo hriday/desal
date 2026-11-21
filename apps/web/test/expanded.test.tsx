@@ -271,6 +271,14 @@ describe('divert and steam controls', () => {
     expect(cls('vacuum.ventAirKgH', 'Vent air', 7)).toBe('');
   });
 
+  it('StagesView groups the four ejector rows under an "Ejector train" heading', () => {
+    const { container } = render(<StagesView {...sample()} />);
+    const sec = [...container.querySelectorAll('section.detail')].find((x) => x.querySelector('.detail__title')?.textContent === 'Ejector train')!;
+    expect(sec).toBeTruthy();
+    const keys = [...sec.querySelectorAll('dt')].map((d) => d.textContent);
+    expect(keys).toEqual(['Stage 24 pressure', 'Intercondenser', 'Condenser cooling out', 'Vent air']);
+  });
+
   it('StagesView: the Standby ejectors toggle sends standbyEjectors, and the strainer and leak crew buttons are there', () => {
     const { container, sent } = withSend(StagesView, sample());
     fireEvent.click(within(container).getByRole('button', { name: 'Standby ejectors' }));

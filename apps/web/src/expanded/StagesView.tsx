@@ -115,6 +115,7 @@ export function StagesView(props: ExpandedProps) {
     <ViewLayout
       drawing={<FlashStages {...props} />}
       detail={
+        <>
         <Detail title="Flash stages">
           <Row k="Brine recycle (recirc)" v={fmt(get(readings, 'brine.recircM3h'), 0, 'm³/h')} />
           <Row k="Distillate trough" v={fmt(get(readings, 'product.flowM3h'), 0, 'm³/h')} />
@@ -126,13 +127,16 @@ export function StagesView(props: ExpandedProps) {
           <Row k="Vacuum quality" v={fmt(vac, 2)} tone={vac === undefined ? undefined : vac < 0.7 ? 'bad' : vac < 0.8 ? 'warn' : undefined} />
           <Row k="Motive steam" v={fmt(steam, 1, 'bar')} tone={steam === undefined ? undefined : steam < STEAM_BAD_BAR ? 'bad' : steam < EJECTOR_FULL_REACH_BAR ? 'warn' : undefined} />
           <Row k="Ejector steam valve" v={fmt(num(valve) ? valve : undefined, 0, '%')} />
+          <Row k="Ball cleaning" v={ball === true ? 'On' : ball === false ? 'Off' : DASH} />
+        </Detail>
+        <Detail title="Ejector train">
           <Row k="Stage 24 pressure" v={fmt(lastStage, 0, 'mbar')} tone={warnIf(lastStage !== undefined && lastStage >= 100)} />
           <Row k="Intercondenser" v={fmt(interc, 0, 'mbar')} tone={warnIf(interc !== undefined && (interc >= 350 || interc <= 160))} />
           <Row k="Condenser cooling out" v={fmt(coolOut, 1, '°C')} tone={warnIf(coolOut !== undefined && seaT !== undefined && coolOut >= seaT + 10)} />
           <Row k="Vent air" v={fmt(ventAir, 0, 'kg/h')} tone={warnIf(ventAir !== undefined && (ventAir >= 18 || ventAir <= 6))} />
-          <p className="ctl__meta">Hot cooling water → strainer. High vent air → air leak. Low intercondenser → failed ejector. Low motive steam → standby steam line.</p>
-          <Row k="Ball cleaning" v={ball === true ? 'On' : ball === false ? 'Off' : DASH} />
         </Detail>
+        <p className="ctl__meta">Hot cooling water → strainer. High vent air → air leak. Low intercondenser → failed ejector. Low motive steam → standby steam line.</p>
+        </>
       }
       trends={
         <>
