@@ -1,9 +1,12 @@
 import { DEFAULT_TRUSTED_PROXIES } from './clients.js';
+import { FlinkFeeds } from './flinkFeeds.js';
 import { createKafka, GatewayKafka } from './kafka.js';
 import { DEFAULT_PER_CLIENT } from './limits.js';
 import { createGateway } from './server.js';
 
 const log = (m: string) => console.log(`[gateway] ${m}`);
+/** How long to wait before retrying a failed FlinkFeeds start. */
+const FEEDS_RETRY_MS = 30_000;
 
 /** A non-negative integer from the environment, or the default when unset; throws when malformed. */
 function envInt(name: string, fallback: number): number {
@@ -34,19 +37,47 @@ async function main(): Promise<void> {
   // Throws on a malformed CIDR: better to fail at startup than to mis-identify every player.
   const trustedProxies = process.env.TRUSTED_PROXIES ?? DEFAULT_TRUSTED_PROXIES;
 
-  const kafka = new GatewayKafka(createKafka(), { log });
+  const client = createKafka();
+  const kafka = new GatewayKafka(client, { log });
   const gateway = createGateway({ kafka, allowedOrigins, perClient, trustedProxies });
   log(`per client: ${JSON.stringify(perClient)}; trusted proxies: ${trustedProxies}`);
 
   // Registered before Kafka starts: a SIGTERM during startup still closes Kafka and deletes the group.
   let stopping = false;
+  let feeds: FlinkFeeds | undefined;
+  let feedsRetry: NodeJS.Timeout | undefined;
   const shutdown = async (signal: string) => {
     if (stopping) return;
     stopping = true;
     log(`${signal}: closing sockets and Kafka`);
+    clearTimeout(feedsRetry);
     await gateway.close();
+    await feeds?.stop();
     await kafka.stop();
     process.exit(0);
+  };
+
+  // Flink's records (report cards, leaderboard, ranks) are optional: a failed start is logged and
+  // retried, and never stops the gateway, /ws or /healthz.
+  const startFeeds = async (): Promise<void> => {
+    if (stopping) return;
+    const f = new FlinkFeeds(client, {
+      onReport: gateway.onReport,
+      onBoard: gateway.onBoard,
+      onRank: gateway.onRank,
+      onRankDeleted: gateway.onRankDeleted,
+      log,
+    });
+    feeds = f;
+    try {
+      await f.start();
+      log(`flink feeds: consumer group ${f.groupId}`);
+    } catch (e) {
+      log(`flink feeds failed to start, retrying in ${FEEDS_RETRY_MS / 1000} s: ${e instanceof Error ? e.message : String(e)}`);
+      await f.stop(); // start may have failed after joining: delete the group
+      if (feeds === f) feeds = undefined;
+      if (!stopping) feedsRetry = setTimeout(() => void startFeeds(), FEEDS_RETRY_MS);
+    }
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
@@ -60,8 +91,9 @@ async function main(): Promise<void> {
     await kafka.stop(); // start may have failed after joining: delete the group
     throw e;
   }
-  log(`listening on :${port} (/ws, /healthz); origins: ${allowedOrigins.length ? allowedOrigins.join(', ') : 'any'}`);
+  log(`listening on :${port} (/ws, /healthz, /api/leaderboard); origins: ${allowedOrigins.length ? allowedOrigins.join(', ') : 'any'}`);
   log(`consumer group ${kafka.groupId}`);
+  void startFeeds();
 }
 
 main().catch((e: unknown) => {

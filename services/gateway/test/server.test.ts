@@ -5,7 +5,7 @@ import WebSocket from 'ws';
 import { StatusBook } from '../src/kafka.js';
 import type { PerClientLimits } from '../src/limits.js';
 import { createGateway, type Gateway } from '../src/server.js';
-import { gameStart } from './fixtures.js';
+import { board, gameStart, RUN_A, RUN_B, RUN_C } from './fixtures.js';
 
 /** A fake GatewayKafka: records commands, and is "connected" unless told otherwise. */
 function fakeKafka(connected = true) {
@@ -165,6 +165,47 @@ describe('gateway server', () => {
   it('allows every origin when ALLOWED_ORIGINS is empty', async () => {
     const { url } = await start();
     await opened(connect(url, 'http://localhost:5173'));
+  });
+
+  it('GET /api/leaderboard is 503 until a board arrives, then the public board (no runId)', async () => {
+    const { port } = await start();
+    const url = `http://127.0.0.1:${port}/api/leaderboard`;
+    const offline = await fetch(url);
+    expect(offline.status).toBe(503);
+    expect(await offline.json()).toEqual({ error: 'leaderboard offline' });
+
+    gw!.onBoard(board());
+    const res = await fetch(url);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(res.headers.get('content-type')).toMatch(/^application\/json/);
+    const text = await res.text();
+    for (const runId of [RUN_A, RUN_B, RUN_C]) expect(text).not.toContain(runId);
+    expect(text).not.toContain('runId');
+    const body = JSON.parse(text);
+    expect(Object.keys(body).sort()).toEqual(['hard', 'normal', 'online', 'updatedAt']);
+    expect(body.normal.allTime[0]).toEqual({ rank: 1, callSign: 'Kestrel-42', shiftsCompleted: 3, totalProductM3: 11999, endedAt: 1_763_500_000_000 });
+    expect(body.hard.allTime[0].callSign).toBe('Osprey-3');
+    expect((await fetch(`${url}?x=1`)).status).toBe(200);
+  });
+
+  it('applies ALLOWED_ORIGINS to /api/leaderboard like /ws, answering CORS for allowed origins', async () => {
+    const { port } = await start({ allowedOrigins: ['https://desal.example'] });
+    gw!.onBoard(board());
+    const url = `http://127.0.0.1:${port}/api/leaderboard`;
+    expect((await fetch(url, { headers: { origin: 'https://evil.example' } })).status).toBe(403);
+    const ok = await fetch(url, { headers: { origin: 'https://desal.example' } });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('access-control-allow-origin')).toBe('https://desal.example');
+    const none = await fetch(url); // R2: no Origin header
+    expect(none.status).toBe(200);
+    expect(none.headers.get('access-control-allow-origin')).toBeNull();
+    await gw!.close();
+
+    const open = await start(); // ALLOWED_ORIGINS empty: any origin (local dev on another port)
+    const dev = await fetch(`http://127.0.0.1:${open.port}/api/leaderboard`, { headers: { origin: 'http://localhost:5173' } });
+    expect(dev.status).toBe(503);
+    expect(dev.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
   });
 
   it('refuses sockets (503) while Kafka is not connected', async () => {

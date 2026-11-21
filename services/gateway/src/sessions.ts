@@ -6,13 +6,18 @@ import {
   TOPICS,
   type Command,
   type CommandEnvelope,
+  type Leaderboard,
+  type PublicLeaderboard,
+  type RunRank,
   type ServerErrorReason,
   type ServerMsg,
+  type ShiftReport,
 } from '@desal/schema';
 import { TokenBucket } from './bucket.js';
 import { FrameAssembler } from './frames.js';
 import type { GatewayTopic, SeenStatus } from './kafka.js';
 import { ClientLimits, type PerClientLimits } from './limits.js';
+import { stripRunId, toPublic } from './publicBoard.js';
 import {
   CLOSE_POLICY_VIOLATION,
   CLOSE_TOO_LARGE,
@@ -64,7 +69,15 @@ interface Socket {
   clientId: string;
   /** A resume waiting for the game's first status (none known yet). */
   resuming: { gameId: string; cancel: () => void } | null;
+  /**
+   * The private runId of the game this socket saw end (from its gameEnd), kept after the unbind so
+   * the run's rank can still reach the Final report. Never sent to the client.
+   */
+  runId: string | null;
 }
+
+/** Ranks kept for runs no socket here has ended yet (run.ranks holds every run ever; oldest go first). */
+const MAX_RANKS = 10_000;
 
 function defaultSchedule(fn: () => void, ms: number): () => void {
   const t = setTimeout(fn, ms);
@@ -86,6 +99,12 @@ export class Sessions {
   private readonly games = new Map<string, Set<string>>();
   /** gameId -> sockets whose resume waits for that game's first status. */
   private readonly resuming = new Map<string, Set<string>>();
+  /** runId -> its latest rank (from run.ranks). */
+  private readonly ranks = new Map<string, RunRank>();
+  /** runId -> the sockets that saw that run end and wait for its rank. */
+  private readonly runs = new Map<string, Set<string>>();
+  /** The latest leaderboard, already without runIds. */
+  private board: PublicLeaderboard | undefined;
   private readonly frames: FrameAssembler;
   private readonly limits: ClientLimits;
   private readonly schedule: (fn: () => void, ms: number) => () => void;
@@ -115,7 +134,7 @@ export class Sessions {
   /** clientId defaults to the socket itself (no per-client grouping). */
   open(socketId: string, sink: SocketSink, clientId: string = socketId): void {
     const bucket = new TokenBucket({ burst: RATE_BURST, refillPerS: RATE_REFILL_PER_S, abuseMs: RATE_ABUSE_MS }, this.now());
-    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, cancelStartWait: null, bucket, clientId, resuming: null });
+    this.sockets.set(socketId, { sink, gameId: null, awaitingStart: false, cancelStartWait: null, bucket, clientId, resuming: null, runId: null });
   }
 
   /**
@@ -126,6 +145,7 @@ export class Sessions {
     const s = this.sockets.get(socketId);
     if (!s) return;
     this.stopResuming(socketId, s);
+    this.forgetRun(socketId, s);
     const gameId = s.gameId;
     this.unbind(socketId, s);
     if (gameId && !this.games.has(gameId)) this.dispatch(this.envelope(gameId, { type: 'heartbeat' }));
@@ -253,9 +273,46 @@ export class Sessions {
           s.sink.send({ t: 'game', gameId });
         }
       }
-      this.broadcast(gameId, { t: 'event', event });
-      if (event.type === 'gameEnd') this.unbindGame(gameId);
+      // The only place events reach sockets. gameEnd and shiftEnd carry the run's private runId.
+      this.broadcast(gameId, { t: 'event', event: stripRunId(event) });
+      if (event.type === 'gameEnd') {
+        if (event.runId) this.rememberRun(gameId, event.runId);
+        this.unbindGame(gameId);
+      }
     }
+  }
+
+  /** A shift report card from Flink, for its game's sockets only. */
+  onReport(gameId: string, report: ShiftReport): void {
+    this.broadcast(gameId, { t: 'shiftReport', report });
+  }
+
+  /** The latest leaderboard; kept without runIds for GET /api/leaderboard. */
+  onBoard(board: Leaderboard): void {
+    try {
+      this.board = toPublic(board);
+    } catch (e) {
+      this.log(`leaderboard not public-safe, keeping the previous one: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  publicBoard(): PublicLeaderboard | undefined {
+    return this.board;
+  }
+
+  /** A run's rank: cached, and sent to the sockets that saw the run end whenever it changes. */
+  onRank(rank: RunRank): void {
+    const prev = this.ranks.get(rank.runId);
+    this.ranks.delete(rank.runId); // re-insert: Map order is the eviction order, latest last
+    this.ranks.set(rank.runId, rank);
+    if (this.ranks.size > MAX_RANKS) this.ranks.delete(this.ranks.keys().next().value!);
+    if (prev && prev.allTime === rank.allTime && prev.today === rank.today) return;
+    for (const id of this.runs.get(rank.runId) ?? []) this.sendRank(this.sockets.get(id), rank);
+  }
+
+  /** A run.ranks tombstone: the run has no rank any more. */
+  forgetRank(runId: string): void {
+    this.ranks.delete(runId);
   }
 
   private envelope(gameId: string, command: Command, commandId?: string): CommandEnvelope {
@@ -338,7 +395,37 @@ export class Sessions {
     for (const id of this.games.get(gameId) ?? []) this.sockets.get(id)?.sink.send(msg);
   }
 
+  /** The game's sockets saw its run end: they get its rank now if known, and on every change. */
+  private rememberRun(gameId: string, runId: string): void {
+    for (const id of this.games.get(gameId) ?? []) {
+      const s = this.sockets.get(id);
+      if (!s) continue;
+      this.forgetRun(id, s);
+      s.runId = runId;
+      let set = this.runs.get(runId);
+      if (!set) this.runs.set(runId, (set = new Set()));
+      set.add(id);
+      const rank = this.ranks.get(runId);
+      if (rank) this.sendRank(s, rank);
+    }
+  }
+
+  private forgetRun(socketId: string, s: Socket): void {
+    if (!s.runId) return;
+    const set = this.runs.get(s.runId);
+    set?.delete(socketId);
+    if (set?.size === 0) this.runs.delete(s.runId);
+    s.runId = null;
+  }
+
+  /** Only the two numbers: the runId stays in the gateway. */
+  private sendRank(s: Socket | undefined, rank: RunRank): void {
+    s?.sink.send({ t: 'rank', allTime: rank.allTime, today: rank.today });
+  }
+
   private bind(socketId: string, s: Socket, gameId: string): void {
+    // A new game: ranks of the run this socket saw end earlier are no longer for it.
+    this.forgetRun(socketId, s);
     s.gameId = gameId;
     let set = this.games.get(gameId);
     if (!set) this.games.set(gameId, (set = new Set()));

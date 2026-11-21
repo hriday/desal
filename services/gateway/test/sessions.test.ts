@@ -3,7 +3,22 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { StatusBook, type GatewayTopic } from '../src/kafka.js';
 import { MAX_MSG_BYTES, RESUME_WAIT_MS, START_WAIT_MS } from '../src/protocol.js';
 import { Sessions } from '../src/sessions.js';
-import { GAME_A, GAME_B, gameEnd, gameRejected, gameStart, noSuchGame, online, reading, status } from './fixtures.js';
+import {
+  board,
+  GAME_A,
+  GAME_B,
+  gameEnd,
+  gameRejected,
+  gameStart,
+  noSuchGame,
+  online,
+  reading,
+  report,
+  RUN_A,
+  RUN_B,
+  shiftEnd,
+  status,
+} from './fixtures.js';
 
 const CMD_ID = '6f1c1a3e-2b7d-4c1a-9f3e-1d2c3b4a5f60';
 
@@ -547,5 +562,100 @@ describe('configurable per-client limits', () => {
     expect(sent).toHaveLength(2);
     expect(inbox.get('b')).toEqual([]);
     expect(inbox.get('c')).toEqual([{ t: 'error', reason: 'capacity' }]);
+  });
+});
+
+/** Binds a fresh socket to GAME_B through a resume (GAME_B has a recent status). */
+function onGameB(socketId: string): ServerMsg[] {
+  deliver(TOPICS.status, GAME_B, status(GAME_B, 9));
+  const box = open(socketId);
+  client(socketId, { t: 'resume', gameId: GAME_B });
+  box.length = 0;
+  return box;
+}
+
+describe('Flink feeds: runId stripping, shift reports and ranks', () => {
+  it('forwards gameEnd and shiftEnd without their runId', () => {
+    const box = bound('s1');
+    deliver(TOPICS.events, GAME_A, shiftEnd(GAME_A, RUN_A));
+    deliver(TOPICS.events, GAME_A, gameEnd(GAME_A, 10, RUN_A));
+    expect(box.map((m) => m.t)).toEqual(['event', 'event']);
+    for (const m of box) expect(m.t === 'event' && 'runId' in m.event).toBe(false);
+    expect(JSON.stringify(box)).not.toContain(RUN_A);
+    expect(box[0]).toEqual({ t: 'event', event: shiftEnd(GAME_A) });
+  });
+
+  it("sends a shift report only to that game's sockets", () => {
+    const a = bound('s1');
+    const b = onGameB('s2');
+    sessions.onReport(GAME_A, report(1));
+    expect(a).toEqual([{ t: 'shiftReport', report: report(1) }]);
+    expect(b).toEqual([]);
+    sessions.onReport('00000000-0000-4000-8000-0000000000ff', report(2)); // nobody here plays it
+    expect(a).toHaveLength(1);
+  });
+
+  it('sends the rank to the socket whose game ended with that runId, and again when it changes', () => {
+    const a = bound('s1');
+    const b = onGameB('s2');
+    deliver(TOPICS.events, GAME_A, gameEnd(GAME_A, 10, RUN_A));
+    a.length = 0;
+    sessions.onRank({ runId: RUN_A, allTime: 57, today: 3 });
+    expect(a).toEqual([{ t: 'rank', allTime: 57, today: 3 }]);
+    sessions.onRank({ runId: RUN_A, allTime: 57, today: 3 }); // unchanged: nothing new
+    sessions.onRank({ runId: RUN_A, allTime: 58, today: null });
+    expect(a).toEqual([
+      { t: 'rank', allTime: 57, today: 3 },
+      { t: 'rank', allTime: 58, today: null },
+    ]);
+    expect(b).toEqual([]);
+    expect(JSON.stringify(a)).not.toContain(RUN_A);
+  });
+
+  it("sends nothing for another run's rank", () => {
+    const a = bound('s1');
+    deliver(TOPICS.events, GAME_A, gameEnd(GAME_A, 10, RUN_A));
+    a.length = 0;
+    sessions.onRank({ runId: RUN_B, allTime: 1, today: 1 });
+    expect(a).toEqual([]);
+  });
+
+  it('sends a rank known before the gameEnd right after the gameEnd message', () => {
+    const a = bound('s1');
+    sessions.onRank({ runId: RUN_A, allTime: 12, today: 2 });
+    expect(a).toEqual([]);
+    deliver(TOPICS.events, GAME_A, gameEnd(GAME_A, 10, RUN_A));
+    expect(a.map((m) => m.t)).toEqual(['event', 'rank']);
+    expect(a[1]).toEqual({ t: 'rank', allTime: 12, today: 2 });
+  });
+
+  it('forgets a deleted rank; a re-bound or closed socket gets no more ranks', () => {
+    const a = bound('s1');
+    sessions.onRank({ runId: RUN_A, allTime: 12, today: 2 });
+    sessions.forgetRank(RUN_A);
+    deliver(TOPICS.events, GAME_A, gameEnd(GAME_A, 10, RUN_A));
+    expect(a.map((m) => m.t)).toEqual(['event']);
+
+    // s1 starts another game: ranks of the run it left are no longer its business.
+    clock += 60_000;
+    client('s1', { t: 'newGame' });
+    a.length = 0;
+    sessions.onRank({ runId: RUN_A, allTime: 9, today: 1 });
+    expect(a).toEqual([]);
+
+    const b = onGameB('s2');
+    deliver(TOPICS.events, GAME_B, gameEnd(GAME_B, 10, RUN_B));
+    sessions.close('s2');
+    b.length = 0;
+    sessions.onRank({ runId: RUN_B, allTime: 3, today: 3 });
+    expect(b).toEqual([]);
+  });
+
+  it('caches the board as the public board: no runId, both modes', () => {
+    expect(sessions.publicBoard()).toBeUndefined();
+    sessions.onBoard(board());
+    const pub = sessions.publicBoard()!;
+    expect(Object.keys(pub).sort()).toEqual(['hard', 'normal', 'online', 'updatedAt']);
+    expect(JSON.stringify(pub)).not.toContain('runId');
   });
 });
