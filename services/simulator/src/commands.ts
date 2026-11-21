@@ -2,15 +2,18 @@ import { CommandEnvelopeSchema, type AccountCause, type Command, type LoopId } f
 import {
   ACID_CLEAN_COST_USD,
   CHANGEOVER_TICKS,
+  CREW_JOBS,
   LOOP_RANGES,
   PUMP_OVERHAUL_COST_USD,
   PUMP_OVERHAUL_TICKS,
+  TICK_PLANT_S,
 } from './constants.js';
 import { loopKind } from './control/loops.js';
 import { backupOrderCostUsd, canAfford, charge } from './economy.js';
 import { endGame } from './gameover.js';
 import { applyTrip } from './safety/interlocks.js';
 import { beginAcidClean, beginRestart, restartStep, type Result } from './safety/restart.js';
+import { crewJobHasFault } from './scenario/sharp.js';
 import { startShift } from './shift.js';
 import type { Loop, PlantState, SimEvent } from './state.js';
 
@@ -60,6 +63,8 @@ function withFuelSpend(s: PlantState, usd: number): PlantState {
 }
 
 const isLevel = (id: LoopId): boolean => loopKind(id) === 'level';
+/** The level loops and the makeup loop (the brine pool's level) stay operable in both control modes. */
+const isInventoryLoop = (id: LoopId): boolean => isLevel(id) || id === 'makeup';
 const levelIndex = (id: LoopId): number => Number(id.slice(5)) - 1;
 
 function getLoop(s: PlantState, id: LoopId): Loop {
@@ -88,6 +93,14 @@ function apply(s: PlantState, id: string, c: Command): Out {
     case 'startGame':
     case 'heartbeat':
       return no('not implemented');
+    case 'dispatchCrew': {
+      if (s.phase !== 'running') return no('not running');
+      if (s.crew) return no('crew busy');
+      if (!crewJobHasFault(s, c.job)) return no('nothing to repair');
+      const job = CREW_JOBS[c.job];
+      const crew = { job: c.job, remainingTicks: (job.minutes * 60) / TICK_PLANT_S };
+      return paid(s, id, job.costUsd, 'crew', ok({ ...s, crew }));
+    }
     case 'overhaulPump': {
       const p = s.intake.pumps[c.pumpId];
       if (p.overhaulRemainingTicks > 0) return no('under overhaul');
@@ -98,7 +111,7 @@ function apply(s: PlantState, id: string, c: Command): Out {
     case 'setSetpoint': {
       const r = LOOP_RANGES[loopKind(c.loop)];
       if (c.value < r.spMin || c.value > r.spMax) return no(`setpoint ${c.value} out of range ${r.spMin}..${r.spMax}`);
-      if (!isLevel(c.loop) && s.controlMode !== 'auto') return no('setpoint changes are Auto-mode only');
+      if (!isInventoryLoop(c.loop) && s.controlMode !== 'auto') return no('setpoint changes are Auto-mode only');
       return ok(withLoop(s, c.loop, { setpoint: c.value }));
     }
     case 'setOutput': {
@@ -108,7 +121,7 @@ function apply(s: PlantState, id: string, c: Command): Out {
       return ok(withLoop(s, c.loop, { output: c.value }));
     }
     case 'setLoopMode':
-      if (s.controlMode === 'manual' && !isLevel(c.loop)) return no('only level loops can change mode in Manual');
+      if (s.controlMode === 'manual' && !isInventoryLoop(c.loop)) return no('only level and makeup loops can change mode in Manual');
       return ok(withLoop(s, c.loop, { mode: c.mode }));
     case 'pump':
       if (c.action === 'start' && s.intake.pumps[c.pumpId].overhaulRemainingTicks > 0) return no('under overhaul');
@@ -188,7 +201,8 @@ export function applyCommand(s: PlantState, env: unknown): Out {
     command.type === 'startGame' ||
     command.type === 'quitGame' ||
     command.type === 'heartbeat';
-  if (!exempt && s.phase === 'handover') return reject(s, commandId, 'not allowed during handover');
+  // dispatchCrew answers its own 'not running' during handover.
+  if (!exempt && command.type !== 'dispatchCrew' && s.phase === 'handover') return reject(s, commandId, 'not allowed during handover');
   if (!exempt && shiftId !== (s.shift?.id ?? null)) return reject(s, commandId, 'stale shift');
   return apply(s, commandId, command);
 }

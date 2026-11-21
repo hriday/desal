@@ -18,7 +18,7 @@ export type UnitId = z.infer<typeof UnitIdSchema>;
  * Readings per tick per game: one per simulator sensor (SENSOR_IDS in services/simulator/src/emit.ts,
  * whose test pins it to this). The gateway treats a tick's frame as complete at this many.
  */
-export const TELEMETRY_SENSOR_COUNT = 109;
+export const TELEMETRY_SENSOR_COUNT = 127;
 
 export const TelemetryReadingSchema = z.object({
   gameId: z.uuid(),

@@ -1,5 +1,6 @@
 import type { PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
 import { commandKey, setpoint } from '../src/commands';
+import { FIX } from '../src/expanded/labels';
 import { initialState, reducer, type State } from '../src/state/store';
 import { MAX_POINTS } from '../src/state/trends';
 
@@ -8,7 +9,7 @@ const gameId = '11111111-1111-4111-8111-111111111111';
 function status(over: Partial<PlantStatus> = {}): PlantStatus {
   return {
     gameId, epoch: 0, shiftNumber: 1, balanceUsd: 1000, tick: 0, plantTime: 0, shiftId: 1,
-    phase: 'running', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
+    phase: 'running', mode: 'normal', pace: 'calm', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
     loops: { tbt: { mode: 'auto', setpoint: 100, output: 50 } } as PlantStatus['loops'],
     pumps: { 'P-101': { running: true, overhaulRemainingTicks: 0 }, 'P-102': { running: false, overhaulRemainingTicks: 0 }, 'P-103': { running: false, overhaulRemainingTicks: 0 } },
     fuel: {
@@ -17,7 +18,7 @@ function status(over: Partial<PlantStatus> = {}): PlantStatus {
     },
     doses: { chlorineMgL: 1, antiscalantMgL: 2 }, shiftTarget: null,
     ballCleaning: false, divertToDrain: false, shiftTicksRemaining: 100, deliveries: [],
-    acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard', ...over,
+    acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard', shiftProductM3: 0, shiftOffSpecM3: 0, productFlowM3h: 0, crew: null, orders: null, hell: null, ...over,
   };
 }
 const ev = (e: Record<string, unknown>): PlantEvent =>
@@ -284,5 +285,46 @@ describe('store reducer', () => {
   it('commandKey is type plus target', () => {
     expect(commandKey({ type: 'pump', pumpId: 'P-101', action: 'start' })).toBe('pump:P-101');
     expect(commandKey({ type: 'setDose', chemical: 'chlorine', mgL: 1 })).toBe('setDose:chlorine');
+  });
+
+  it('alarmsSeen marks alarm ids seen; alarmsActive forgets cleared ones so a recurrence alerts again', () => {
+    let s = reducer(initialState(), { type: 'alarmsSeen', ids: ['a', 'b'] });
+    expect([...s.seenAlarms].sort()).toEqual(['a', 'b']);
+    const same = reducer(s, { type: 'alarmsActive', ids: ['a', 'b', 'c'] });
+    expect(same).toBe(s);
+    s = reducer(s, { type: 'alarmsActive', ids: ['a'] });
+    expect([...s.seenAlarms]).toEqual(['a']);
+    expect(reducer(s, { type: 'startClicked' }).seenAlarms.size).toBe(0);
+  });
+
+  it('a status 20 plant minutes after an open event fired puts its hint on the radio once', () => {
+    const MIN = 60_000;
+    let s = server(initialState(), statusMsg({ plantTime: 0 }));
+    s = server(s, eventMsg({ type: 'scenario', seq: 1, eventId: 1, kind: 'tubeLeak', message: 'm', radio: 'leak!', plantTime: 0 }));
+    s = reducer(s, { type: 'radioExpire' });
+    s = server(s, statusMsg({ plantTime: 19 * MIN }));
+    expect(s.radio.current).toBeNull();
+    s = server(s, statusMsg({ plantTime: 20 * MIN }));
+    expect(s.radio.current).toMatchObject({ key: '1:1:hint', text: `Hint: ${FIX.tubeLeak.text}`, monitor: 'product' });
+    expect(s.hinted.has('1:1:hint')).toBe(true);
+    s = reducer(s, { type: 'radioExpire' });
+    s = server(s, statusMsg({ plantTime: 21 * MIN }));
+    expect(s.radio.current).toBeNull();
+    expect(s.radio.queue).toHaveLength(0);
+  });
+
+  it('a hint opens the monitor the event names (a makeup controller fault opens Stages)', () => {
+    let s = server(initialState(), statusMsg({ plantTime: 0 }));
+    s = server(s, eventMsg({ type: 'scenario', seq: 1, eventId: 1, kind: 'controllerFault', message: 'Controller fault on loop makeup: stuck.', radio: 'r', plantTime: 0 }));
+    s = reducer(s, { type: 'radioExpire' });
+    s = server(s, statusMsg({ plantTime: 20 * 60_000 }));
+    expect(s.radio.current).toMatchObject({ key: '1:1:hint', monitor: 'stages' });
+  });
+
+  it('a replayed earthquake from before the session start does not hint again on resume', () => {
+    let s = server(initialState(true), statusMsg({ plantTime: 10 * 60_000 }));
+    s = server(s, eventMsg({ type: 'scenario', seq: 1, eventId: 1, kind: 'earthquake', message: 'm', radio: 'quake', plantTime: 0 }));
+    s = server(s, statusMsg({ plantTime: 11 * 60_000 }));
+    expect(s.radio.current).toBeNull();
   });
 });

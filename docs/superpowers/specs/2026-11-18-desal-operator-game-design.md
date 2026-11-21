@@ -44,7 +44,7 @@ A later phase adds a reverse osmosis (RO) unit.
   - **The point is water** (the user's direction, 2026-11-18: "water revenue isn't the point. Quantity of water output is."). The plant is a utility, not a business: water earns nothing.
   - **Operating budget** (numbers are my calls):
     - The run starts with $15,000.
-    - At each shift start the utility adds an allocation: `$10,000 × (1 − 0.03 × (n − 1))` for shift `n`, multiplied for shift ≥ 2 by `min(1, previous shift's in-spec water ÷ its target)`. So missing the target cuts the next shift's funding.
+    - At each shift start the utility adds an allocation: `$11,000 × (1 − 0.03 × (n − 1))` ($10,000 until the Plan 4 rebalance, R19) for shift `n`, multiplied for shift ≥ 2 by `min(1, previous shift's in-spec water ÷ its target)`. So missing the target cuts the next shift's funding.
     - The budget pays for gas as it burns, backup-fuel deliveries (on order), acid cleaning ($6,000) and pump overhauls ($8,000).
     - There is no revenue and no fines. Off-spec water simply doesn't count toward the target or the score.
   - **Game over** comes from any of:

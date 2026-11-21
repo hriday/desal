@@ -2,11 +2,14 @@ import type { PlantEvent, PlantStatus, RestartStep } from '@desal/schema';
 import { manualTrip, pause, quit, restart, restartStep, resume } from '../commands';
 import { ActionButton } from '../controls/ActionButton';
 import { canSend, pendingCommand, type ControlCtx } from '../controls/ctx';
+import { CrewButton } from '../controls/CrewButton';
 import { Trend } from '../controls/Trend';
 import { DASH, clamp01, fmt, get, label, num, ticksToHm, usd } from '../equipment/format';
 import { ShiftAccount } from '../equipment/ShiftAccount';
+import { CREW_JOBS } from '../plantConstants';
+import { crewMinutesLeft } from '../screens/quota';
 import { clock, eventText } from './eventText';
-import { MODE_TEXT, PLANT_TEXT, STEP_TEXT, TRIP_TEXT } from './labels';
+import { MODE_TEXT, PLANT_TEXT, STEP_TEXT, TRIP_FIX, TRIP_TEXT } from './labels';
 import { Detail, Row, ViewLayout } from './Layout';
 import type { ExpandedProps } from './types';
 
@@ -26,40 +29,87 @@ export function nextRestartStep(st: PlantStatus | null): RestartStep | null {
   return i < 0 ? null : STEPS[i + 1] ?? null;
 }
 
-function ShiftControls(ctl: ControlCtx) {
+/**
+ * Why the burner is locked out and what to do, while the plant is tripped or restarting; nothing otherwise.
+ * Shown wherever the player may look for the burner (the shift and heater views).
+ */
+export function TripNotice({ status }: { status: PlantStatus | null | undefined }) {
+  if (status?.status === 'tripped') {
+    const cause = typeof status.tripCause === 'string' ? status.tripCause : undefined;
+    const why = cause ? label(TRIP_TEXT, cause) ?? cause : undefined;
+    return (
+      <div className="ctl ctl--notice" role="status">
+        <span className="ctl__label">Plant tripped{why ? `: ${why}` : ''}</span>
+        <span className="ctl__meta">
+          The burner is locked out until the plant restarts. {(cause && TRIP_FIX[cause]) || 'Fix the cause, then press Restart.'}
+        </span>
+      </div>
+    );
+  }
+  if (status?.status === 'restarting') {
+    const step = label(STEP_TEXT, status.restartStep);
+    return (
+      <div className="ctl ctl--notice" role="status">
+        <span className="ctl__label">Restarting{step ? `: ${step.toLowerCase()}` : ''}</span>
+        <span className="ctl__meta">The restart sequence controls the burner until it reaches ignition.</span>
+      </div>
+    );
+  }
+  return null;
+}
+
+/** The restart control: one button in Auto, the four steps in order in Manual. */
+export function RestartControl(ctl: ControlCtx) {
   const st = ctl.status;
   const ok = canSend(ctl);
   const busy = (key: string) => pendingCommand(ctl, key) !== undefined;
   const next = nextRestartStep(st);
+  return st?.controlMode === 'manual' ? (
+    <div className="ctl">
+      <span className="ctl__label">Restart, step by step</span>
+      <span className="ctl__row">
+        {STEPS.map((step) => (
+          <ActionButton
+            key={step}
+            label={label(STEP_TEXT, step)!}
+            disabled={!ok || step !== next}
+            pending={busy(`restartStep:${step}`)}
+            onAction={() => ctl.send?.(restartStep(step))}
+          />
+        ))}
+      </span>
+    </div>
+  ) : (
+    <div className="ctl">
+      <span className="ctl__label">Restart</span>
+      <ActionButton
+        label="Restart"
+        disabled={!ok || st?.status !== 'tripped'}
+        pending={busy('restart')}
+        onAction={() => ctl.send?.(restart())}
+      />
+    </div>
+  );
+}
+
+function ShiftControls(ctl: ControlCtx) {
+  const st = ctl.status;
+  const ok = canSend(ctl);
+  const busy = (key: string) => pendingCommand(ctl, key) !== undefined;
   const paused = st?.phase === 'paused';
   return (
     <>
-      {st?.controlMode === 'manual' ? (
-        <div className="ctl">
-          <span className="ctl__label">Restart, step by step</span>
-          <span className="ctl__row">
-            {STEPS.map((step) => (
-              <ActionButton
-                key={step}
-                label={label(STEP_TEXT, step)!}
-                disabled={!ok || step !== next}
-                pending={busy(`restartStep:${step}`)}
-                onAction={() => ctl.send?.(restartStep(step))}
-              />
-            ))}
+      <TripNotice status={st} />
+      <RestartControl {...ctl} />
+      <div className="ctl">
+        <span className="ctl__label">Crew</span>
+        <CrewButton job="replaceSensor" {...ctl} />
+        {st?.crew && (
+          <span className="ctl__meta">
+            {CREW_JOBS[st.crew.job]?.doing ?? st.crew.job}, {crewMinutesLeft(st.crew.remainingTicks)} min left
           </span>
-        </div>
-      ) : (
-        <div className="ctl">
-          <span className="ctl__label">Restart</span>
-          <ActionButton
-            label="Restart"
-            disabled={!ok || st?.status !== 'tripped'}
-            pending={busy('restart')}
-            onAction={() => ctl.send?.(restart())}
-          />
-        </div>
-      )}
+        )}
+      </div>
       <div className="ctl">
         <span className="ctl__label">Plant</span>
         <span className="ctl__row">
@@ -84,17 +134,24 @@ function ShiftControls(ctl: ControlCtx) {
   );
 }
 
-/** This shift's allocation and repair charges, from its accountChange events. */
+/**
+ * This shift's allocation, repair charges, crew charges and standing cost, from its accountChange events. The
+ * standing cost is reported once per plant hour, so it lags by up to an hour.
+ */
 export function shiftAccount(events: readonly PlantEvent[], shiftId: number | null | undefined) {
   let allocationUsd: number | undefined;
   let repairsUsd = 0;
-  if (!num(shiftId)) return { allocationUsd, repairsUsd };
+  let crewUsd = 0;
+  let standingUsd = 0;
+  if (!num(shiftId)) return { allocationUsd, repairsUsd, crewUsd, standingUsd };
   for (const e of events) {
     if (e?.type !== 'accountChange' || e.shiftId !== shiftId || !num(e.deltaUsd)) continue;
     if (e.cause === 'allocation') allocationUsd = (allocationUsd ?? 0) + e.deltaUsd;
     else if (e.cause === 'acidClean' || e.cause === 'overhaul') repairsUsd -= e.deltaUsd;
+    else if (e.cause === 'crew') crewUsd -= e.deltaUsd;
+    else if (e.cause === 'standing') standingUsd -= e.deltaUsd;
   }
-  return { allocationUsd, repairsUsd };
+  return { allocationUsd, repairsUsd, crewUsd, standingUsd };
 }
 
 /** The last EVENT_LOG_SIZE known events, newest first, as plain sentences. */
@@ -124,8 +181,8 @@ export function ShiftView(props: ExpandedProps) {
   const goal = num(target?.productM3) ? target.productM3 : undefined;
   const frac = made !== undefined && goal !== undefined && goal > 0 ? clamp01(made / goal) : undefined;
   const fuelUsd = get(readings, 'fuel.shiftCostUsd');
-  const { allocationUsd, repairsUsd } = shiftAccount(events, status?.shiftId);
-  const spent = fuelUsd === undefined ? undefined : fuelUsd + repairsUsd;
+  const { allocationUsd, repairsUsd, crewUsd, standingUsd } = shiftAccount(events, status?.shiftId);
+  const spent = fuelUsd === undefined ? undefined : fuelUsd + repairsUsd + crewUsd + standingUsd;
   const bal = num(status?.balanceUsd) ? status.balanceUsd : undefined;
   const plant = label(PLANT_TEXT, status?.status);
   const trip = label(TRIP_TEXT, status?.tripCause);
@@ -143,6 +200,8 @@ export function ShiftView(props: ExpandedProps) {
           <Row k="Spent this shift" v={usd(spent)} />
           <Row k="of which fuel" v={usd(fuelUsd)} />
           <Row k="of which repairs" v={usd(repairsUsd)} />
+          <Row k="of which crew" v={usd(crewUsd)} />
+          <Row k="of which staff and standby" v={usd(standingUsd)} />
           <Row k="Mode" v={label(MODE_TEXT, status?.controlMode) ?? DASH} />
           <Row k="Plant" v={plant ?? DASH} tone={status?.status === 'tripped' ? 'bad' : plant && status?.status !== 'online' ? 'warn' : undefined} />
           <Row k="Restart step" v={step ?? (status?.status === 'restarting' ? DASH : 'None')} />

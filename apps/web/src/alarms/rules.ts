@@ -1,6 +1,11 @@
 import type { PlantEvent, PlantStatus, ShiftTarget } from '@desal/schema';
 import { usd } from '../equipment/format';
-import { DEFAULT_MAX_SALINITY_PPM, INTAKE_REQUIRED_BASE_M3H, INTAKE_REQUIRED_PER_C, STAGE_COUNT } from '../plantConstants';
+import { TRIP_TEXT } from '../expanded/labels';
+import { DEFAULT_MAX_SALINITY_PPM, INTAKE_REQUIRED_BASE_M3H, INTAKE_REQUIRED_PER_C, RECIRC_SUCTION_MIN_M, STAGE_COUNT } from '../plantConstants';
+
+/** Brine pool (S24) low-level alarm: bad at or below RECIRC_SUCTION_MIN_M (the recirc pump losing suction), warn from 1.5x that. */
+export const POOL_LOW_BAD_M = RECIRC_SUCTION_MIN_M;
+export const POOL_LOW_WARN_M = 1.5 * RECIRC_SUCTION_MIN_M;
 
 export type MonitorId = 'intake' | 'heater' | 'stages' | 'product' | 'fuel' | 'shift';
 /** The wall's monitors, in display order. */
@@ -23,6 +28,8 @@ export function requiredIntakeM3h(seawaterC: number | undefined): number {
   return INTAKE_REQUIRED_BASE_M3H * (1 + INTAKE_REQUIRED_PER_C * hot);
 }
 
+const PUMP_IDS = ['P-101', 'P-102', 'P-103'] as const;
+
 const stageKey = (i: number) => `s${String(i).padStart(2, '0')}`;
 
 /** The worst stage (1-based) for a per-stage reading, or null when none is known. */
@@ -36,11 +43,11 @@ function worstStage(readings: Record<string, number>, field: string): { n: numbe
 }
 
 /** Monitor that owns a loop, for controller-fault hints ("Controller fault on loop tbt: drift."). */
-function faultMonitor(text: string): MonitorId {
+export function faultMonitor(text: string): MonitorId {
   const loop = /loop (\w+)/.exec(text)?.[1];
   if (loop === 'tbt') return 'heater';
   if (loop === 'intakeFlow') return 'intake';
-  if (loop === 'recirc' || loop === 'blowdown' || loop === 'vacuum' || loop?.startsWith('level')) return 'stages';
+  if (loop === 'recirc' || loop === 'blowdown' || loop === 'vacuum' || loop === 'makeup' || loop?.startsWith('level')) return 'stages';
   return 'shift';
 }
 
@@ -65,16 +72,26 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
   }
   const fouling = r('intake.screenFouling');
   add('screen', 'intake', high(fouling, 0.3, 0.5), `Intake screen fouling ${fouling?.toFixed(2)}`);
+  // A fast pump on fouled screens cavitates and wears (e.g. a storm's stopgap of more pump speed).
+  for (const id of PUMP_IDS) {
+    const cav = r(`intake.${id}.cavitation`);
+    add(`cavitation-${id}`, 'intake', high(cav, 0.1, 0.5), `${id} cavitating ${cav?.toFixed(2)}: slow it or clean the screens`);
+  }
   const chl = r('pretreat.chlorophyllUgL');
   add('chlorophyll', 'intake', high(chl, 4, Infinity), `Intake chlorophyll ${chl?.toFixed(1)} µg/L`);
 
   // Brine heater
   const tbt = r('heater.tbtC');
-  add('tbt', 'heater', high(tbt, 112, 116), `TBT high ${tbt?.toFixed(1)} °C`);
+  // Warn where scaling turns severe (105 C); alarm short of the 115 C high-high trip.
+  add('tbt', 'heater', high(tbt, 105, 113), `TBT high ${tbt?.toFixed(1)} °C`);
 
   // Flash stages
   const lvl = worstStage(readings, 'levelM');
   if (lvl) add('stageLevel', 'stages', high(lvl.v, 0.5, 0.65), `S${lvl.n} level high ${lvl.v.toFixed(2)} m`);
+  // The brine pool feeds the recirc pump: emptying it starves recirculation and trips the plant on TBT.
+  const pool = r(`stages.${stageKey(STAGE_COUNT)}.levelM`);
+  const poolLvl = pool === undefined ? null : pool <= POOL_LOW_BAD_M ? 'bad' : pool <= POOL_LOW_WARN_M ? 'warn' : null;
+  add('poolLow', 'stages', poolLvl, `Brine pool (S${STAGE_COUNT}) level low ${pool?.toFixed(2)} m: raise Makeup`);
   const vac = r('vacuum.quality');
   add('vacuum', 'stages', low(vac, 0.8, 0.7), `Vacuum low ${vac?.toFixed(2)}`);
   const scale = worstStage(readings, 'hardScaleMm');
@@ -94,7 +111,7 @@ export function alarmsFor(status: PlantStatus | null, readings: Record<string, n
   if (typeof status?.fuel?.gasCurtailmentNotice === 'string') add('gasCurtail', 'fuel', 'warn', status.fuel.gasCurtailmentNotice);
 
   // Shift & account
-  if (status?.status === 'tripped') add('tripped', 'shift', 'bad', `Plant tripped${typeof status.tripCause === 'string' ? `: ${status.tripCause}` : ''}`);
+  if (status?.status === 'tripped') add('tripped', 'shift', 'bad', `Plant tripped${typeof status.tripCause === 'string' ? `: ${TRIP_TEXT[status.tripCause] ?? status.tripCause}` : ''}`);
   const bal = Number.isFinite(status?.balanceUsd) ? status!.balanceUsd : undefined;
   add('balance', 'shift', low(bal, 5000, 0), `Balance ${usd(bal)}`);
 
@@ -127,6 +144,9 @@ export function alarmContext(
     : eventFaults;
   return { target: liveTarget ?? target, faults };
 }
+
+/** What "seen" tracks: the alarm at its level, so a warning escalating to high alerts afresh. */
+export const seenKey = (a: Alarm): string => `${a.id}:${a.level}`;
 
 /** Alarms worst first (bad before warn), otherwise in their original order. */
 export function byWorst(alarms: readonly Alarm[]): Alarm[] {

@@ -1,6 +1,9 @@
 import type { Command } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
+import { CREW_JOBS, TICK_PLANT_S, TUBE_PLUG_DERATE } from '../src/constants.js';
 import { applyCommand, DELIVERY_TICKS } from '../src/commands.js';
+import { applyEffect } from '../src/scenario/effects.js';
+import { tick } from '../src/tick.js';
 import { startShift } from '../src/shift.js';
 import { createInitialState, type PlantState, type SimEvent } from '../src/state.js';
 import { allFinite } from './helpers.js';
@@ -34,7 +37,7 @@ describe('applyCommand rejections never throw or change state', () => {
     ['unknown type', env({ type: 'selfDestruct' })],
     ['NaN value', env({ type: 'setSetpoint', loop: 'tbt', value: NaN })],
     ['Infinity value', env({ type: 'setOutput', loop: 'tbt', value: Infinity })],
-    ['bad loop id', env({ type: 'setSetpoint', loop: 'level21', value: 0.3 })],
+    ['bad loop id', env({ type: 'setSetpoint', loop: 'level24', value: 0.3 })],
     ['bad uuid', { ...env({ type: 'pause' }), commandId: 'x' }],
   ];
   it.each(bad)('%s', (_n, input) => {
@@ -74,6 +77,16 @@ describe('applyCommand', () => {
     const good = applyCommand(s, env({ type: 'setSetpoint', loop: 'tbt', value: 112 }));
     expect(good.events).toEqual([]);
     expect(good.state.loops.tbt.setpoint).toBe(112);
+  });
+
+  it('TBT setpoint range is 85-112 C: 84 and 113 are rejected, 85 is accepted', () => {
+    const s = running();
+    for (const value of [84, 113]) {
+      const r = applyCommand(s, env({ type: 'setSetpoint', loop: 'tbt', value }));
+      expect(r.state).toBe(s);
+      expect(rejection(r.events)).toContain('out of range');
+    }
+    expect(applyCommand(s, env({ type: 'setSetpoint', loop: 'tbt', value: 85 })).state.loops.tbt.setpoint).toBe(85);
   });
 
   it('setOutput on tbt: rejected in Auto, accepted in Manual, range-checked', () => {
@@ -201,5 +214,96 @@ describe('applyCommand', () => {
     expect(noTrip.state).toBe(s);
     rejection(noTrip.events);
     expect(applyCommand(t.state, env({ type: 'acidClean' })).state.status).toBe('acidCleaning');
+  });
+});
+
+describe('dispatchCrew', () => {
+  const dispatch = (s: PlantState, job: keyof typeof CREW_JOBS) =>
+    applyCommand(s, env({ type: 'dispatchCrew', job }));
+  const leaking = (): PlantState => applyEffect(running(), 'tubeLeak', { stage: 2, ppm: 30 });
+  const idle = (s: PlantState, n: number): PlantState => {
+    for (let i = 0; i < n; i++) s = tick(s, []).state;
+    return s;
+  };
+
+  it('rejects with nothing to repair when the job has no fault', () => {
+    const s = running();
+    for (const job of Object.keys(CREW_JOBS) as (keyof typeof CREW_JOBS)[]) {
+      const r = dispatch(s, job);
+      expect(r.state).toBe(s);
+      expect(rejection(r.events)).toBe('nothing to repair');
+    }
+  });
+
+  it('plugTubes charges $800 at once, runs 90 ticks, then plugs the stage', () => {
+    const s = leaking();
+    const r = dispatch(s, 'plugTubes');
+    expect(r.state.run.balanceUsd).toBe(s.run.balanceUsd - 800);
+    expect(r.state.crew).toEqual({ job: 'plugTubes', remainingTicks: 90 });
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0]).toMatchObject({ type: 'accountChange', deltaUsd: -800, cause: 'crew' });
+    const mid = idle(r.state, 89);
+    expect(mid.crew?.remainingTicks).toBe(1);
+    expect(mid.faults.tubeLeak).not.toBeNull();
+    const done = idle(mid, 1);
+    expect(done.faults.tubeLeak).toBeNull();
+    expect(done.faults.stageDerate[2]).toBe(TUBE_PLUG_DERATE);
+    expect(done.crew).toBeNull();
+  });
+
+  it('a second dispatch while busy is rejected as crew busy and charges nothing', () => {
+    const first = dispatch(leaking(), 'plugTubes').state;
+    const sensors = applyEffect(first, 'sensorFailure', { loop: 'tbt', mode: 'freeze' });
+    const r = dispatch(sensors, 'replaceSensor');
+    expect(r.state).toBe(sensors);
+    expect(rejection(r.events)).toBe('crew busy');
+  });
+
+  it('replaceSensor clears every sensor fault', () => {
+    let s = applyEffect(running(), 'sensorFailure', { loop: 'tbt', mode: 'freeze' });
+    s = applyEffect(s, 'sensorFailure', { loop: 'vacuum', mode: 'noise' });
+    const r = dispatch(s, 'replaceSensor');
+    expect(r.state.run.balanceUsd).toBe(s.run.balanceUsd - 400);
+    const done = idle(r.state, 45);
+    expect(done.faults.sensors).toEqual({});
+    expect(done.crew).toBeNull();
+  });
+
+  it('is rejected as not running during handover and while paused', () => {
+    const h = { ...leaking(), phase: 'handover' as const };
+    const r = dispatch(h, 'plugTubes');
+    expect(r.state).toBe(h);
+    expect(rejection(r.events)).toBe('not running');
+    const p = { ...leaking(), phase: 'paused' as const };
+    expect(rejection(dispatch(p, 'plugTubes').events)).toBe('not running');
+  });
+
+  it('rejects insufficient funds without starting the crew', () => {
+    const s = leaking();
+    const poor = { ...s, run: { ...s.run, balanceUsd: 100 } };
+    const r = dispatch(poor, 'plugTubes');
+    expect(r.state).toBe(poor);
+    expect(rejection(r.events)).toBe('insufficient funds');
+  });
+
+  it('every job costs and lasts what the spec says (4.6)', () => {
+    const faulted: Record<string, PlantState> = {
+      plugTubes: leaking(),
+      repairEjector: applyEffect(running(), 'vacuumLoss', { ratePerMin: 0.012 }),
+      replaceSensor: applyEffect(running(), 'sensorFailure', { loop: 'tbt', mode: 'freeze' }),
+      cleanScreens: applyEffect(running(), 'storm', { fouling: 0.2, deltaC: 2, minutes: 90 }),
+    };
+    const spec = {
+      plugTubes: [800, 60],
+      repairEjector: [1000, 45],
+      replaceSensor: [400, 30],
+      cleanScreens: [300, 30],
+    } as const;
+    for (const [job, [usd, min]] of Object.entries(spec)) {
+      const s = faulted[job]!;
+      const r = dispatch(s, job as keyof typeof spec);
+      expect(s.run.balanceUsd - r.state.run.balanceUsd).toBe(usd);
+      expect(r.state.crew).toEqual({ job, remainingTicks: (min * 60) / TICK_PLANT_S });
+    }
   });
 });

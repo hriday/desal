@@ -10,9 +10,11 @@ import { FuelView } from '../src/expanded/FuelView';
 import { HeaterView } from '../src/expanded/HeaterView';
 import { IntakeView } from '../src/expanded/IntakeView';
 import { ProductView } from '../src/expanded/ProductView';
-import { ShiftView } from '../src/expanded/ShiftView';
+import { ShiftView, shiftAccount } from '../src/expanded/ShiftView';
 import { StagesView } from '../src/expanded/StagesView';
 import type { ExpandedProps } from '../src/expanded/types';
+import { RECIRC_SUCTION_MIN_M } from '../src/plantConstants';
+import { TRIP_FIX } from '../src/expanded/labels';
 
 afterEach(cleanup);
 
@@ -23,8 +25,8 @@ const empty: ExpandedProps = { status: null, readings: {}, target: null, trends:
 
 const VIEWS: [string, ComponentType<ExpandedProps>, string[]][] = [
   ['IntakeView', IntakeView, ['P-101', 'P-103', 'Running', 'Stopped', '5,800 m³/h', '5,500 m³/h', '0.18', '4.1 µg/L', '28.0 °C', '31 %', '5 %']],
-  ['HeaterView', HeaterView, ['108.0 °C', '72 %', '43.2 MW', '93 %', 'Gas']],
-  ['StagesView', StagesView, ['104.2 °C', '0.80 mm', '1.45', '512 m³/h', 'Off']],
+  ['HeaterView', HeaterView, ['93.5 °C', '72 %', '43.2 MW', '93 %', 'Gas']],
+  ['StagesView', StagesView, ['92.1 °C', '0.80 mm', '1.45', '512 m³/h', 'Off']],
   ['ProductView', ProductView, ['512 m³/h', '18.0 ppm', '25 ppm', '2,380 / 3,900 m³', '61 %', 'To tank']],
   ['FuelView', FuelView, ['60 MW', '$8.00/GJ', '128 t', 'Standard', '$2.15/m³', '$5,120']],
   ['ShiftView', ShiftView, ['Shift 3', '3h 40m', '2,380 / 3,900 m³', '$12,450', 'Online', 'Auto', '$13,120', '$20,000']],
@@ -63,17 +65,66 @@ describe('expanded views', () => {
     expect(container.innerHTML).not.toMatch(/NaN|undefined|Infinity|function|\[object/);
   });
 
-  it('StagesView lays out all 20 stages in two rows of 10, each with temperature, level and scale', () => {
+  it('StagesView lays out all 24 stages in two labelled groups, each cell with temperature, level and scale', () => {
     const { container } = render(<StagesView {...sample()} />);
-    const rows = container.querySelectorAll('.xv-stages__row');
-    expect(rows).toHaveLength(2);
-    rows.forEach((r) => expect(r.querySelectorAll('[data-stage-cell]')).toHaveLength(10));
+    const groups = container.querySelectorAll('[data-stage-group]');
+    expect(groups).toHaveLength(2);
+    expect(container.querySelectorAll('[data-stage-cell]')).toHaveLength(24);
+    const cells = (g: Element) => [...g.querySelectorAll('[data-stage-cell]')].map((c) => Number(c.getAttribute('data-stage-cell')));
+    expect(groups[0]!.getAttribute('aria-label')).toBe('Heat recovery 1–21');
+    expect(groups[0]!.textContent).toContain('Heat recovery 1–21');
+    expect(cells(groups[0]!)).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
+    expect(groups[1]!.getAttribute('aria-label')).toBe('Heat rejection 22–24');
+    expect(groups[1]!.textContent).toContain('Heat rejection 22–24');
+    expect(cells(groups[1]!)).toEqual([22, 23, 24]);
+    expect(container.querySelector('[data-stage-cell="24"]')!.textContent).toContain('Brine pool');
+    expect(container.querySelector('[data-stage-cell="23"]')!.textContent).not.toContain('Brine pool');
     const s2 = container.querySelector('[data-stage-cell="2"]')!.textContent;
     expect(s2).toContain('S2');
-    expect(s2).toContain('100.8 °C');
+    expect(s2).toContain('89.8 °C');
     expect(s2).toContain('0.314 m');
     expect(s2).toContain('0.05');
     expect(s2).toContain('0.80');
+  });
+
+  const detailValue = (root: HTMLElement, k: string) =>
+    [...root.querySelectorAll('.detail__row')].find((r) => r.querySelector('dt')?.textContent === k)?.querySelector('dd');
+
+  it('StagesView shows the makeup and cooling-water reject flows and the brine pool level', () => {
+    const { container } = render(<StagesView {...sample()} />);
+    expect(detailValue(container, 'Makeup to brine pool')?.textContent).toBe('1,714 m³/h');
+    expect(detailValue(container, 'Cooling water reject')?.textContent).toBe('4,086 m³/h');
+    expect(detailValue(container, 'Brine pool (S24) level')?.textContent).toBe('0.30 m');
+  });
+
+  it('StagesView marks the brine pool low on the brine-pool alarm\'s thresholds', () => {
+    const tone = (v: number) => {
+      const { container } = render(<StagesView {...sample()} readings={demoReadings({ 'stages.s24.levelM': v })} />);
+      const cls = detailValue(container, 'Brine pool (S24) level')!.className;
+      cleanup();
+      return cls;
+    };
+    expect(tone(RECIRC_SUCTION_MIN_M - 0.01)).toBe('tone--bad');
+    expect(tone(RECIRC_SUCTION_MIN_M)).toBe('tone--bad');
+    expect(tone(RECIRC_SUCTION_MIN_M + 0.01)).toBe('tone--warn');
+    expect(tone(1.5 * RECIRC_SUCTION_MIN_M)).toBe('tone--warn');
+    expect(tone(1.5 * RECIRC_SUCTION_MIN_M + 0.01)).toBe('');
+    expect(tone(0.3)).toBe('');
+    expect(tone(0.66)).toBe('tone--bad'); // flooding, like any stage
+  });
+
+  it('trip advice sends the player to Makeup when the brine pool (S24) empties or floods', () => {
+    // An empty pool starves the recirc pump and trips on TBT; a full one trips as a stage flood. Only Makeup moves it.
+    expect(TRIP_FIX.tbtHighHigh).toContain('TBT setpoint');
+    expect(TRIP_FIX.tbtHighHigh).toMatch(/recirculation.*Brine pool \(S24\).*raise Makeup/);
+    expect(TRIP_FIX.stageFlood).toMatch(/level valves/);
+    expect(TRIP_FIX.stageFlood).toMatch(/Brine pool \(S24\).*lower Makeup/);
+    expect(TRIP_FIX.noIntakeFlow).toMatch(/Makeup refill the Brine pool \(S24\)/);
+    for (const k of ['tbtHighHigh', 'stageFlood', 'noIntakeFlow']) expect(TRIP_FIX[k]).toMatch(/then press Restart\.$/);
+    // The controls the advice names are on the Stages view under those labels.
+    const { container } = render(<StagesView {...sample()} />);
+    expect(container.textContent).toContain('Makeup setpoint');
+    expect(container.textContent).toContain('Brine pool (S24) level');
   });
 
   it('IntakeView compares intake flow with the required flow for the seawater temperature', () => {
@@ -89,6 +140,18 @@ describe('expanded views', () => {
     const unknown = demoStatus({ fuel: { ...demoStatus().fuel, changeoverTo: 'backup', changeoverRemainingTicks: null } });
     cleanup();
     expect(render(<HeaterView {...sample()} status={unknown} />).container.textContent).toContain('Changing over to backup, — left');
+  });
+
+  it('HeaterView explains a trip lockout, says what to do and offers Restart', () => {
+    const { container, getByRole } = render(<HeaterView {...sample({ status: 'tripped', tripCause: 'noIntakeFlow' })} />);
+    expect(container.textContent).toContain('Plant tripped: no intake flow');
+    expect(container.textContent).toContain('The burner is locked out until the plant restarts.');
+    expect(container.textContent).toContain('clean the intake screens');
+    expect(getByRole('button', { name: 'Restart' })).toBeTruthy();
+    cleanup();
+    const online = render(<HeaterView {...sample()} />);
+    expect(online.container.textContent).not.toContain('locked out');
+    expect(online.queryByRole('button', { name: 'Restart' })).toBeNull();
   });
 
   it('FuelView lists deliveries in transit with their arrival in plant-minutes, and the curtailment notice', () => {
@@ -129,25 +192,26 @@ describe('expanded views', () => {
 describe('eventText', () => {
   const base = { gameId: DEMO_GAME_ID, epoch: 0, seq: 1, tick: 1, plantTime: 3600, shiftId: 3 };
   const SAMPLES: { [K in PlantEvent['type']]: Extract<PlantEvent, { type: K }> } = {
-    shiftStart: { ...base, type: 'shiftStart', scenarioId: 'x', mode: 'auto', target: demoTarget },
+    shiftStart: { ...base, type: 'shiftStart', scenarioId: 'x', mode: 'auto', target: demoTarget, hell: false, orders: { targetM3: 1, maxSalinityPpm: 25, budgetUsd: 1, lines: [], briefing: [] } },
     shiftEnd: {
       ...base, type: 'shiftEnd',
       summary: {
         productM3: 3800, targetM3: 3900, offSpecMinutes: 0, offSpecM3: 0, fuelCostUsd: 9000, fuelBudgetUsd: 12000, trips: 0,
-        spentUsd: 9500, nextAllocationUsd: 19000, balanceUsd: 12000, damage: { maxHardScaleMm: 0.2, pumpWear: { 'P-101': 0.1, 'P-102': 0.2, 'P-103': 0.1 }, burnerCondition: 0.9 },
+        spentUsd: 9500, nextAllocationUsd: 19000, balanceUsd: 12000, damage: { maxHardScaleMm: 0.2, pumpWear: { 'P-101': 0.1, 'P-102': 0.2, 'P-103': 0.1 }, burnerCondition: 0.9 }, hell: false, events: [],
       },
     },
     trip: { ...base, type: 'trip', cause: 'lossOfVacuum' },
     restartProgress: { ...base, type: 'restartProgress', step: 'ignition', ok: false, reason: 'TBT did not rise' },
     online: { ...base, type: 'online' },
-    scenario: { ...base, type: 'scenario', kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.' },
+    scenario: { ...base, type: 'scenario', eventId: 1, kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.', radio: 'Algal bloom.' },
+    eventCleared: { ...base, type: 'eventCleared', eventId: 1, kind: 'bloom', how: 'player' },
     fuelChangeover: { ...base, type: 'fuelChangeover', from: 'gas', to: 'backup', phase: 'done' },
     deliveryArrived: { ...base, type: 'deliveryArrived', tonnes: 50, grade: 'offgrade' },
     commandRejected: { ...base, type: 'commandRejected', commandId: 'c', reason: 'insufficient funds' },
     damage: { ...base, type: 'damage', component: 'burner', value: 0.6 },
-    gameStart: { ...base, type: 'gameStart' },
+    gameStart: { ...base, type: 'gameStart', mode: 'normal' },
     gameRejected: { ...base, type: 'gameRejected', reason: 'capacity' },
-    gameEnd: { ...base, type: 'gameEnd', reason: 'outOfFuel', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: 100 } },
+    gameEnd: { ...base, type: 'gameEnd', mode: 'normal', reason: 'outOfFuel', score: { shiftsCompleted: 2, totalProductM3: 7000, balanceUsd: 100 } },
     accountChange: { ...base, type: 'accountChange', deltaUsd: -8000, balanceUsd: 4450, cause: 'overhaul' },
   };
 
@@ -160,6 +224,32 @@ describe('eventText', () => {
     const s = eventText(e);
     expect(s).toMatch(/^[A-Z].{8,}/);
     expect(s).not.toMatch(/NaN|undefined|null|\[object|[a-z][A-Z]/); // no camelCase ids leak through
+  });
+
+  it('eventCleared names the kind and how it ended', () => {
+    expect(eventText({ ...SAMPLES.eventCleared, kind: 'pumpTrip', how: 'crew' })).toBe('Pump trip cleared: fixed by crew');
+    expect(eventText({ ...SAMPLES.eventCleared, kind: 'tubeLeak', how: 'player' })).toBe('Tube leak cleared: cleared by you');
+    expect(eventText({ ...SAMPLES.eventCleared, kind: 'storm', how: 'expired' })).toBe('Storm cleared: passed');
+    expect(eventText({ ...SAMPLES.eventCleared, kind: 'sensorFailure', how: 'noted' })).toContain('Instrument failure');
+  });
+  it('an account change by the crew reads naturally', () => {
+    expect(eventText({ ...SAMPLES.accountChange, cause: 'crew' })).toBe('Paid $8,000 for a crew job; balance $4,450');
+  });
+  it('the hourly standing cost reads as staff and standby, and counts toward the shift spend', () => {
+    const standing = { ...SAMPLES.accountChange, deltaUsd: -90, cause: 'standing' as const };
+    expect(eventText(standing)).toBe('Paid $90 for staff and standby; balance $4,450');
+    expect(PlantEventSchema.parse(standing)).toEqual(standing);
+    const shiftId = standing.shiftId!;
+    expect(shiftAccount([standing, standing, SAMPLES.accountChange], shiftId)).toMatchObject({ standingUsd: 180, repairsUsd: 8000 });
+  });
+  it('crew charges count toward the shift spend, on their own line', () => {
+    const crew = { ...SAMPLES.accountChange, deltaUsd: -800, cause: 'crew' as const };
+    const shiftId = crew.shiftId!;
+    expect(shiftAccount([crew, crew, SAMPLES.accountChange], shiftId)).toMatchObject({ crewUsd: 1600, repairsUsd: 8000 });
+    const status = { ...demoStatus(), shiftId } as PlantStatus;
+    const { getByText } = render(<ShiftView {...empty} status={status} readings={{ 'fuel.shiftCostUsd': 1000 }} events={[crew]} />);
+    expect(getByText('of which crew').nextSibling?.textContent).toBe('$800');
+    expect(getByText('Spent this shift').nextSibling?.textContent).toBe('$1,800');
   });
 
   it('reads the way an operator would say it', () => {

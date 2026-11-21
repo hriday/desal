@@ -18,6 +18,7 @@ import {
   TICK_PLANT_S,
   TRIP_SCALE_STAGES,
 } from '../constants.js';
+import { autoOutputRange } from '../control/loops.js';
 import { pidStep } from '../control/pid.js';
 import { BALANCE, type PlantState, type SimEvent } from '../state.js';
 import { applyTrip } from './interlocks.js';
@@ -179,7 +180,7 @@ export function stepRestart(s: PlantState): { state: PlantState; events: SimEven
   }
   if (r.auto && s.loops.tbt.mode === 'auto') {
     const tbt = s.loops.tbt;
-    const { outMin, outMax } = LOOP_RANGES.tbt;
+    const { outMin, outMax } = autoOutputRange('tbt');
     const pid = pidStep(tbt, s.heater.tbtC, LOOP_GAINS.tbt, outMin, outMax, TICK_PLANT_S, LOOP_ACTION.tbt);
     const output = Math.min(tbt.output + AUTO_RAMP_PCT_PER_TICK, pid.output);
     state = { ...s, loops: { ...s.loops, tbt: { ...pid, output } } };

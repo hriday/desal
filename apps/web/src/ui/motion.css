@@ -1,0 +1,69 @@
+/*
+ * Everything that moves on the wall. Only transform, opacity and stroke-dashoffset are animated, all in CSS:
+ * the drawings set classes and CSS variables from their props, never per-frame state.
+ * Under prefers-reduced-motion every animation here is off (bottom of file).
+ */
+
+/* Pipes: dashes run along the path; --flow-speed (seconds per cycle) comes from the flow. */
+.pipe__flow {
+  stroke-dasharray: 3 7;
+  stroke-linecap: round;
+  opacity: 0.45;
+  animation: pipe-flow var(--flow-speed, 2s) linear infinite;
+}
+.pipe[data-flowing="false"] .pipe__flow { animation-play-state: paused; opacity: 0.15; }
+@keyframes pipe-flow { to { stroke-dashoffset: -10; } }
+
+/* Pumps: a running pump's rotor spins about its own centre. */
+.pump__rotor { transform-box: fill-box; transform-origin: center; }
+.pump.is-running .pump__rotor { animation: rotor-spin 1.1s linear infinite; }
+@keyframes rotor-spin { to { transform: rotate(360deg); } }
+
+/* Burner: the size follows firing (SVG transform); this flickers it from its base. */
+.flame__flicker {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: flame-flicker 0.7s ease-in-out infinite alternate;
+}
+@keyframes flame-flicker {
+  0% { transform: scale(1, 1); opacity: 1; }
+  35% { transform: scale(0.93, 1.07); opacity: 0.92; }
+  70% { transform: scale(1.04, 0.95); opacity: 1; }
+  100% { transform: scale(0.97, 1.04); opacity: 0.95; }
+}
+
+/* Sea: the surface slides one wavelength (16 user units) and loops; it is clipped to the sea. */
+.sea__surface { animation: sea-swell 3.2s linear infinite; }
+@keyframes sea-swell { to { transform: translateX(16px); } }
+
+/* Flash stages: brine levels bob by about a unit, staggered per stage (inline animation-delay). */
+.brine { animation: brine-wobble 2.4s ease-in-out infinite alternate; }
+@keyframes brine-wobble { to { transform: translateY(1px); } }
+
+/* Status LED: pulses while its monitor has an alarm. */
+.monitor__light--warn, .monitor__light--bad { animation: led-pulse 1.4s ease-in-out infinite; }
+.monitor__light--bad { animation-duration: 0.8s; }
+@keyframes led-pulse { 50% { opacity: 0.35; } }
+
+/* Monitor frame: an unseen high alarm pulses until its monitor is opened; an unseen warning pulses twice. */
+.monitor[data-alert="high"]::before { animation: frame-pulse 1.1s ease-in-out infinite; }
+.monitor[data-alert="warn"]::before { animation: frame-pulse 1.1s ease-in-out 2; }
+@keyframes frame-pulse { 50% { opacity: 1; } }
+
+/* Alarm strip: each new alarm flashes once as it appears. */
+.alarm::before { animation: alarm-flash 0.9s ease-out 1; }
+@keyframes alarm-flash { from { opacity: 0.55; } to { opacity: 0; } }
+
+/* A tripped or offline unit stands still (wall.css dims it). */
+.monitor[data-down="true"] .monitor__screen * { animation-play-state: paused; }
+
+/* Start screen: water dashes run along the links between the plant strip's units. */
+.start__link::before { animation: link-flow 0.9s linear infinite; }
+@keyframes link-flow { to { transform: translateX(10px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pipe__flow, .pump__rotor, .flame__flicker, .sea__surface, .brine,
+  .monitor__light, .monitor::before, .alarm::before, .start__link::before { animation: none !important; }
+  /* Without the pulse, an unseen high alarm keeps a steady glow instead. */
+  .monitor[data-alert="high"]::before { opacity: 0.8; }
+}

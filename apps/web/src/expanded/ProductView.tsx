@@ -1,6 +1,7 @@
 import { salinityLimit } from '../alarms/rules';
 import { divert as divertCmd } from '../commands';
 import { canSend } from '../controls/ctx';
+import { CrewButton } from '../controls/CrewButton';
 import { Toggle } from '../controls/Toggle';
 import { Trend } from '../controls/Trend';
 import { DASH, fmt, get, num } from '../equipment/format';
@@ -16,6 +17,7 @@ export function ProductView(props: ExpandedProps) {
   const goal = num(target?.productM3) ? target.productM3 : undefined;
   const frac = made !== undefined && goal !== undefined && goal > 0 ? made / goal : undefined;
   const divert = status?.divertToDrain;
+  const ctl = { status, pending: props.pending, send: props.send };
   return (
     <ViewLayout
       drawing={<ProductWater {...props} />}
@@ -37,13 +39,16 @@ export function ProductView(props: ExpandedProps) {
         </>
       }
       controls={
-        <Toggle
-          label="Divert to drain"
-          on={typeof divert === 'boolean' ? divert : undefined}
-          pending={props.pending?.has('divertToDrain') === true}
-          disabled={!canSend({ status, send: props.send })}
-          onChange={(on) => props.send?.(divertCmd(on))}
-        />
+        <>
+          <Toggle
+            label="Divert to drain"
+            on={typeof divert === 'boolean' ? divert : undefined}
+            pending={props.pending?.has('divertToDrain') === true}
+            disabled={!canSend({ status, send: props.send })}
+            onChange={(on) => props.send?.(divertCmd(on))}
+          />
+          <CrewButton job="plugTubes" {...ctl} />
+        </>
       }
     />
   );

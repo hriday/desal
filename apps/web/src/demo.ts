@@ -1,4 +1,5 @@
 import type { PlantEvent, PlantStatus, ShiftTarget } from '@desal/schema';
+import { LEVEL_LOOP_COUNT, STAGE_COUNT } from './plantConstants';
 import type { Trends } from './state/trends';
 
 /** Built-in sample plant for `?demo` and the tests: mid-shift, S2 badly scaled, chlorophyll rising. */
@@ -9,12 +10,13 @@ export const demoTarget: ShiftTarget = { productM3: 3900, maxSalinityPpm: 25, fu
 export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
   const loop = (setpoint: number, output: number) => ({ mode: 'auto' as const, setpoint, output });
   const loops: Record<string, { mode: 'auto'; setpoint: number; output: number }> = {
-    tbt: loop(108, 72), intakeFlow: loop(5800, 66), recirc: loop(4180, 84), blowdown: loop(1.45, 40), vacuum: loop(0.95, 55),
+    tbt: loop(93.5, 72), intakeFlow: loop(5800, 66), recirc: loop(5350, 82), blowdown: loop(1.45, 40), vacuum: loop(0.95, 55),
+    makeup: loop(0.3, 50),
   };
-  for (let i = 1; i <= 20; i++) loops[`level${i}`] = loop(0.35, 50);
+  for (let i = 1; i <= LEVEL_LOOP_COUNT; i++) loops[`level${i}`] = loop(0.35, 50);
   return {
     gameId: DEMO_GAME_ID, epoch: 0, shiftNumber: 3, balanceUsd: 12450, tick: 1720, plantTime: 68800, shiftId: 3,
-    phase: 'running', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
+    phase: 'running', mode: 'normal', pace: 'calm', status: 'online', controlMode: 'auto', tripCause: null, restartStep: null,
     loops: loops as PlantStatus['loops'],
     pumps: {
       'P-101': { running: true, overhaulRemainingTicks: 0 },
@@ -29,6 +31,7 @@ export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
     shiftTarget: demoTarget,
     ballCleaning: false, divertToDrain: false, shiftTicksRemaining: 330, deliveries: [],
     acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard',
+    shiftProductM3: 0, shiftOffSpecM3: 0, productFlowM3h: 0, crew: null, orders: null, hell: null, // Plan 4 Task 11 replaces
     ...over,
   };
 }
@@ -43,16 +46,18 @@ export function demoReadings(over: Record<string, number> = {}): Record<string, 
     'intake.P-103.flowM3h': 0, 'intake.P-103.wear': 0.05, 'intake.P-103.cavitation': 0,
     'intake.flowM3h': 5800, 'intake.screenFouling': 0.18, 'intake.seawaterTempC': 28,
     'pretreat.chlorophyllUgL': 4.1,
-    'heater.tbtC': 108, 'heater.firingPct': 72, 'heater.heatMW': 43.2, 'heater.burnerCondition': 0.93,
-    'brine.recircM3h': 4180, 'brine.concentrationFactor': 1.45, 'brine.blowdownM3h': 760,
+    'heater.tbtC': 93.5, 'heater.firingPct': 72, 'heater.heatMW': 43.2, 'heater.burnerCondition': 0.93,
+    'brine.recircM3h': 5350, 'brine.concentrationFactor': 1.45, 'brine.blowdownM3h': 760,
+    'brine.makeupM3h': 1714, 'brine.coolingRejectM3h': 4086,
     'vacuum.quality': 0.94,
     'product.flowM3h': 512, 'product.salinityPpm': 18, 'product.shiftProductM3': 2380,
     'fuel.gasCapMW': 60, 'fuel.gasPriceUsdPerGJ': 8, 'fuel.backupTonnes': 128, 'fuel.burnMW': 43.2, 'fuel.shiftCostUsd': 5120,
   };
-  for (let i = 1; i <= 20; i++) {
+  for (let i = 1; i <= STAGE_COUNT; i++) {
     const k = pad(i);
-    r[`stages.${k}.tempC`] = 104.2 - (i - 1) * 3.4;
-    r[`stages.${k}.levelM`] = 0.31 + (i - 1) * 0.004;
+    r[`stages.${k}.tempC`] = 92.1 - (i - 1) * 2.3;
+    // S24 is the brine pool, held at the makeup loop's setpoint.
+    r[`stages.${k}.levelM`] = i === STAGE_COUNT ? 0.3 : 0.31 + (i - 1) * 0.004;
     r[`stages.${k}.softScaleMm`] = 0.05;
     r[`stages.${k}.hardScaleMm`] = i === 2 ? 0.8 : 0.08;
   }
@@ -76,9 +81,9 @@ export function demoTrends(points = 600): Trends {
 export function demoEvents(): PlantEvent[] {
   const base = (seq: number, tick: number) => ({ gameId: DEMO_GAME_ID, epoch: 0, seq, tick, plantTime: tick * 40, shiftId: 3 });
   return [
-    { ...base(40, 1440), type: 'shiftStart', scenarioId: 'shift-3', mode: 'auto', target: demoTarget },
+    { ...base(40, 1440), type: 'shiftStart', scenarioId: 'shift-3', mode: 'auto', target: demoTarget, hell: false, orders: { targetM3: demoTarget.productM3, maxSalinityPpm: demoTarget.maxSalinityPpm, budgetUsd: demoTarget.fuelBudgetUsd, lines: [], briefing: [] } },
     { ...base(41, 1440), type: 'accountChange', deltaUsd: 20000, balanceUsd: 25570, cause: 'allocation' },
-    { ...base(42, 1500), type: 'scenario', kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.' },
+    { ...base(42, 1500), type: 'scenario', eventId: 1, kind: 'bloom', message: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.', radio: 'Algal bloom in the intake water: chlorophyll rising toward 8 ug/L.' },
     { ...base(43, 1610), type: 'accountChange', deltaUsd: -8000, balanceUsd: 17570, cause: 'overhaul' },
   ];
 }

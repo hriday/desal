@@ -5,10 +5,10 @@ import { GAME_A as A, GAME_B as B, reading } from './fixtures.js';
 
 describe('FrameAssembler', () => {
   it('expects a full tick of telemetry by default', () => {
-    expect(TELEMETRY_SENSOR_COUNT).toBe(109);
+    expect(TELEMETRY_SENSOR_COUNT).toBe(127);
     const fa = new FrameAssembler();
     for (let i = 0; i < TELEMETRY_SENSOR_COUNT - 1; i++) fa.add(reading(A, 1, `s${i}`));
-    expect(fa.flush(A, 1)).toBeNull(); // 108 of 109: held
+    expect(fa.flush(A, 1)).toBeNull(); // 126 of 127: held
     expect(fa.add(reading(A, 1, 'last'))?.tick).toBe(1); // the status came first: complete now, so out it goes
   });
 

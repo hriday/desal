@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TBT_HH_C } from '../../src/constants.js';
 import { applyTrip, checkInterlocks } from '../../src/safety/interlocks.js';
 import { createInitialState, type PlantState } from '../../src/state.js';
 import { allFinite } from '../helpers.js';
@@ -27,9 +28,10 @@ describe('checkInterlocks', () => {
     expect(checkInterlocks(online(), NOMINAL_MW)).toBeNull();
   });
 
-  it('trips on TBT high-high at 118 C, not just below', () => {
-    expect(checkInterlocks(withTbt(online(), 118), NOMINAL_MW)).toBe('tbtHighHigh');
-    expect(checkInterlocks(withTbt(online(), 117.99), NOMINAL_MW)).toBeNull();
+  it('trips on TBT high-high at 115 C, not just below', () => {
+    expect(TBT_HH_C).toBe(115);
+    expect(checkInterlocks(withTbt(online(), TBT_HH_C), NOMINAL_MW)).toBe('tbtHighHigh');
+    expect(checkInterlocks(withTbt(online(), TBT_HH_C - 0.01), NOMINAL_MW)).toBeNull();
   });
 
   it('trips on any stage level at 0.8 m, not just below', () => {
@@ -89,7 +91,9 @@ describe('applyTrip', () => {
     expect(state.restart).toBeNull();
     expect(state.loops.tbt.output).toBe(0);
     expect(state.heater.firingPct).toBe(0);
-    state.stages.forEach((st, i) => expect(st.hardScaleMm).toBeCloseTo(i < 5 ? 0.02 : 0, 12));
+    // A quarter of the plant: stages 1-6 (TRIP_SCALE_STAGES), not stage 7.
+    state.stages.forEach((st, i) => expect(st.hardScaleMm).toBeCloseTo(i < 6 ? 0.02 : 0, 12));
+    expect(state.stages[6]!.hardScaleMm).toBe(0);
     expect(state.heater.burnerCondition).toBeCloseTo(0.99, 12);
     expect(events.map((e) => e.type)).toEqual(['trip', 'damage', 'damage']);
     expect(events[0]).toMatchObject({ type: 'trip', cause: 'tbtHighHigh', tick: 42, shiftId: null });

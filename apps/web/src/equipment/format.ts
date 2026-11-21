@@ -39,6 +39,12 @@ export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 /** Stage index (1-based) to its sensor key, e.g. 2 -> "s02". */
 export const stageKey = (n: number) => `s${String(n).padStart(2, '0')}`;
 
+/**
+ * Every drawing's coordinate box. 200:150 is close to a wall monitor's screen at desktop sizes, so the
+ * drawing fills it (xMidYMid meet) instead of letterboxing.
+ */
+export const VIEWBOX = '0 0 200 150';
+
 /** Status colours (tokens.css). */
 export const C = {
   ok: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--bad)', water: 'var(--water)', flame: 'var(--flame)',

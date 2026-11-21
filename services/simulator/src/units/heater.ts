@@ -4,11 +4,13 @@ import {
   BURNER_WEAR_GAS,
   BURNER_WEAR_OFFGRADE_MULT,
   BURNER_WEAR_STANDARD_MULT,
+  CONTAMINATION_WEAR_MULT,
   CP_BRINE,
   HEATER_TAU_S,
   MIN_RECIRC_KGS,
   TICK_PLANT_S,
 } from '../constants.js';
+import { contaminationActive } from '../scenario/disaster/fuelContamination.js';
 import type { PlantState } from '../state.js';
 
 /**
@@ -32,6 +34,7 @@ export function heaterDemandMW(s: PlantState): number {
 }
 
 function wearMultiplier(s: PlantState): number {
+  if (contaminationActive(s)) return CONTAMINATION_WEAR_MULT;
   if (s.fuel.active !== 'backup') return 1;
   return s.fuel.backup.grade === 'offgrade' ? BURNER_WEAR_OFFGRADE_MULT : BURNER_WEAR_STANDARD_MULT;
 }

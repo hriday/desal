@@ -1,8 +1,10 @@
 import type { LoopId, PlantStatus, PumpId, TelemetryReading, UnitId } from '@desal/schema';
 import { PUMP_WEAR_FLOW_LOSS, SHIFT_TICKS, STAGE_COUNT } from './constants.js';
-import type { Loop, PlantState } from './state.js';
+import { paceOf } from './pace.js';
+import { measured } from './sensors.js';
+import type { Loop, LoopSensorId, PlantState } from './state.js';
 
-type Sensor = { id: string; unitId: UnitId; read: (s: PlantState) => number };
+type Sensor = { id: string; unitId: UnitId; read: (s: PlantState) => number; loop?: LoopSensorId };
 
 const PUMP_IDS: readonly PumpId[] = ['P-101', 'P-102', 'P-103'];
 
@@ -19,12 +21,14 @@ function pumpFlowM3h(s: PlantState, id: PumpId): number {
 
 const stageKey = (i: number): string => `s${String(i + 1).padStart(2, '0')}`;
 
+/** Four readings per stage. The last stage's level is the brine pool, the makeup loop's process value. */
 function stageSensors(i: number): Sensor[] {
   const k = stageKey(i);
   const st = (s: PlantState) => s.stages[i]!;
+  const pool = i === STAGE_COUNT - 1;
   return [
     { id: `stages.${k}.tempC`, unitId: 'stages', read: (s) => st(s).tempC },
-    { id: `stages.${k}.levelM`, unitId: 'stages', read: (s) => st(s).levelM },
+    { id: `stages.${k}.levelM`, unitId: 'stages', read: (s) => st(s).levelM, ...(pool ? { loop: 'makeup' as const } : {}) },
     { id: `stages.${k}.softScaleMm`, unitId: 'stages', read: (s) => st(s).softScaleMm },
     { id: `stages.${k}.hardScaleMm`, unitId: 'stages', read: (s) => st(s).hardScaleMm },
   ];
@@ -36,19 +40,22 @@ const SENSORS: readonly Sensor[] = [
     { id: `intake.${id}.wear`, unitId: 'intake', read: (s) => s.intake.pumps[id].wear },
     { id: `intake.${id}.cavitation`, unitId: 'intake', read: (s) => s.intake.pumps[id].cavitation },
   ]),
-  { id: 'intake.flowM3h', unitId: 'intake', read: (s) => s.intake.flowM3h },
+  { id: 'intake.flowM3h', unitId: 'intake', read: (s) => s.intake.flowM3h, loop: 'intakeFlow' },
   { id: 'intake.screenFouling', unitId: 'intake', read: (s) => s.intake.screenFouling },
   { id: 'intake.seawaterTempC', unitId: 'intake', read: (s) => s.seawater.tempC },
   { id: 'pretreat.chlorophyllUgL', unitId: 'pretreat', read: (s) => s.seawater.chlorophyllUgL },
-  { id: 'heater.tbtC', unitId: 'heater', read: (s) => s.heater.tbtC },
+  { id: 'heater.tbtC', unitId: 'heater', read: (s) => s.heater.tbtC, loop: 'tbt' },
   { id: 'heater.firingPct', unitId: 'heater', read: (s) => s.heater.firingPct },
   { id: 'heater.heatMW', unitId: 'heater', read: (s) => s.heater.heatMW },
   { id: 'heater.burnerCondition', unitId: 'heater', read: (s) => s.heater.burnerCondition },
   ...Array.from({ length: STAGE_COUNT }, (_, i) => stageSensors(i)).flat(),
-  { id: 'brine.recircM3h', unitId: 'brine', read: (s) => s.brine.recircM3h },
-  { id: 'brine.concentrationFactor', unitId: 'brine', read: (s) => s.brine.concentrationFactor },
+  { id: 'brine.recircM3h', unitId: 'brine', read: (s) => s.brine.recircM3h, loop: 'recirc' },
+  { id: 'brine.concentrationFactor', unitId: 'brine', read: (s) => s.brine.concentrationFactor, loop: 'blowdown' },
   { id: 'brine.blowdownM3h', unitId: 'brine', read: (s) => s.brine.blowdownM3h },
-  { id: 'vacuum.quality', unitId: 'vacuum', read: (s) => s.vacuum.quality },
+  { id: 'brine.makeupM3h', unitId: 'brine', read: (s) => s.brine.makeupM3h },
+  // Cooling seawater returned to sea after the reject-stage tubes: what the makeup does not take.
+  { id: 'brine.coolingRejectM3h', unitId: 'brine', read: (s) => s.intake.flowM3h - s.brine.makeupM3h },
+  { id: 'vacuum.quality', unitId: 'vacuum', read: (s) => s.vacuum.quality, loop: 'vacuum' },
   { id: 'product.flowM3h', unitId: 'product', read: (s) => s.product.flowM3h },
   { id: 'product.salinityPpm', unitId: 'product', read: (s) => s.product.salinityPpm },
   { id: 'product.shiftProductM3', unitId: 'product', read: (s) => s.shift?.acc.productM3 ?? 0 },
@@ -65,7 +72,7 @@ export const SENSOR_IDS: readonly string[] = Object.freeze(SENSORS.map((x) => x.
 /** One reading per SENSOR_IDS entry for the current state. Requires a shift (telemetry is emitted only while running). */
 export function toTelemetry(s: PlantState): TelemetryReading[] {
   const shiftId = s.shift?.id ?? 0;
-  return SENSORS.map(({ id, unitId, read }) => ({
+  return SENSORS.map(({ id, unitId, read, loop }) => ({
     gameId: s.run.gameId,
     epoch: s.run.epoch,
     sensorId: id,
@@ -73,7 +80,7 @@ export function toTelemetry(s: PlantState): TelemetryReading[] {
     shiftId,
     tick: s.tick,
     plantTime: s.plantTime,
-    value: read(s),
+    value: loop ? measured(s, loop, read(s)) : read(s),
   }));
 }
 
@@ -90,6 +97,7 @@ export function toStatus(s: PlantState): PlantStatus {
     recirc: loopView(s.loops.recirc),
     blowdown: loopView(s.loops.blowdown),
     vacuum: loopView(s.loops.vacuum),
+    makeup: loopView(s.loops.makeup),
   };
   s.loops.levels.forEach((l, i) => {
     loops[`level${i + 1}`] = loopView(l);
@@ -132,5 +140,15 @@ export function toStatus(s: PlantState): PlantStatus {
     acidCleanRemainingTicks: s.acidCleanRemainingTicks,
     restartAuto: s.restart?.auto ?? null,
     offeredGrade: s.scenario.effects.offgradeOnly ? 'offgrade' : 'standard',
+    shiftProductM3: s.shift?.acc.productM3 ?? 0,
+    shiftOffSpecM3: s.shift?.acc.offSpecM3 ?? 0,
+    productFlowM3h: s.product.flowM3h,
+    crew: s.crew ? { job: s.crew.job, remainingTicks: s.crew.remainingTicks } : null,
+    // Handover shows the pending orders; a live shift shows the active ones.
+    orders: s.phase === 'handover' ? (s.chaos.pending?.orders ?? null) : inShift ? (s.chaos.active?.plan.orders ?? null) : null,
+    mode: s.run.mode,
+    // Never exposed in handover, so an unwarned hell shift cannot be peeked at.
+    hell: s.phase === 'running' ? (s.chaos.active?.plan.hell ?? null) : null,
+    pace: paceOf(s),
   };
 }

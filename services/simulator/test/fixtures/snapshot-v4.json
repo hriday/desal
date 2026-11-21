@@ -1,0 +1,568 @@
+{
+  "format": "desal-snapshot",
+  "version": 4,
+  "savedAt": 0,
+  "state": {
+    "version": 1,
+    "seed": 1071847752,
+    "tick": 1080,
+    "plantTime": 1767268800000,
+    "phase": "running",
+    "controlMode": "auto",
+    "status": "online",
+    "trip": null,
+    "restart": null,
+    "acidCleanRemainingTicks": 0,
+    "loops": {
+      "tbt": {
+        "mode": "auto",
+        "setpoint": 93.5,
+        "output": 72.19410918393427,
+        "integral": 3608.5205039615958,
+        "prevError": 0.0013166169279088535,
+        "fault": null
+      },
+      "intakeFlow": {
+        "mode": "auto",
+        "setpoint": 6000,
+        "output": 100,
+        "integral": 799629.0269597289,
+        "prevError": 176.32804698762448,
+        "fault": null
+      },
+      "recirc": {
+        "mode": "auto",
+        "setpoint": 5350,
+        "output": 82.3076923076923,
+        "integral": 548717.9487179487,
+        "prevError": -9.094947017729282e-13,
+        "fault": null
+      },
+      "blowdown": {
+        "mode": "auto",
+        "setpoint": 1.45,
+        "output": 58.333333333333336,
+        "integral": 416.66666666666663,
+        "prevError": 0,
+        "fault": null
+      },
+      "vacuum": {
+        "mode": "auto",
+        "setpoint": 0.95,
+        "output": 92.85714285714285,
+        "integral": 265.3061224489796,
+        "prevError": 0,
+        "fault": null
+      },
+      "levels": [
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "auto",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": null
+        },
+        {
+          "mode": "manual",
+          "setpoint": 0.3,
+          "output": 49.99999999840473,
+          "integral": 71.4285714330402,
+          "prevError": -1.2595757770128557e-11,
+          "fault": {
+            "kind": "stuck",
+            "bias": 0
+          }
+        }
+      ]
+    },
+    "seawater": {
+      "tempC": 26.44,
+      "salinityGL": 45,
+      "chlorophyllUgL": 1.4
+    },
+    "intake": {
+      "pumps": {
+        "P-101": {
+          "running": true,
+          "wear": 0.1023715999999942,
+          "cavitation": 0,
+          "bearingWearMult": 1,
+          "overhaulRemainingTicks": 0
+        },
+        "P-102": {
+          "running": true,
+          "wear": 0.002375999999999977,
+          "cavitation": 0,
+          "bearingWearMult": 1,
+          "overhaulRemainingTicks": 0
+        },
+        "P-103": {
+          "running": false,
+          "wear": 0,
+          "cavitation": 0,
+          "bearingWearMult": 1,
+          "overhaulRemainingTicks": 0
+        }
+      },
+      "screenFouling": 0.14568876806607595,
+      "flowM3h": 5823.5762839407635,
+      "requiredM3h": 5500
+    },
+    "pretreat": {
+      "chlorineMgL": 1,
+      "antiscalantMgL": 2,
+      "biofouling": 0.08682917372650287
+    },
+    "heater": {
+      "tbtC": 93.49868459672132,
+      "firingPct": 72.19410918393427,
+      "burnerCondition": 0.9848800000000448,
+      "heatMW": 42.662126982363
+    },
+    "stages": [
+      {
+        "tempC": 91.99721748180329,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.0025003967328267574,
+        "hardScaleMm": 0.00005467614446558486
+      },
+      {
+        "tempC": 88.99428325196722,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.0012203735063280948,
+        "hardScaleMm": 0.00002690038715420595
+      },
+      {
+        "tempC": 85.99134902213115,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.0005958073222333924,
+        "hardScaleMm": 0.000013236264992304294
+      },
+      {
+        "tempC": 82.98841479229509,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.00029096880993902883,
+        "hardScaleMm": 0.000006513556325986474
+      },
+      {
+        "tempC": 79.98548056245902,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.00014213889045070263,
+        "hardScaleMm": 0.000003205651384018754
+      },
+      {
+        "tempC": 76.98254633262295,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.00006945502391758027,
+        "hardScaleMm": 0.0000015778273873625755
+      },
+      {
+        "tempC": 73.97961210278689,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.00003394822650779838,
+        "hardScaleMm": 7.766896919136696e-7
+      },
+      {
+        "tempC": 70.97667787295083,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.000016597843621373344,
+        "hardScaleMm": 3.823669148658126e-7
+      },
+      {
+        "tempC": 67.97374364311476,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.000008117193956386292,
+        "hardScaleMm": 1.882598666867192e-7
+      },
+      {
+        "tempC": 64.97080941327869,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.0000039708039620780625,
+        "hardScaleMm": 9.270004048273149e-8
+      },
+      {
+        "tempC": 61.96787518344262,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 0.0000019429780839363467,
+        "hardScaleMm": 4.56506546867474e-8
+      },
+      {
+        "tempC": 58.964940953606565,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 9.509836164617549e-7,
+        "hardScaleMm": 2.248326061767317e-8
+      },
+      {
+        "tempC": 55.96200672377049,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 4.6557824792417887e-7,
+        "hardScaleMm": 1.1074323082518273e-8
+      },
+      {
+        "tempC": 52.95907249393442,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 2.2799523881569669e-7,
+        "hardScaleMm": 5.455332662356593e-9
+      },
+      {
+        "tempC": 49.956138264098364,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 1.1167896206347093e-7,
+        "hardScaleMm": 2.687646380421016e-9
+      },
+      {
+        "tempC": 46.95320403426229,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 5.4717799101574516e-8,
+        "hardScaleMm": 1.32425215784149e-9
+      },
+      {
+        "tempC": 43.950269804426235,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 2.681617482768178e-8,
+        "hardScaleMm": 6.525562003031632e-10
+      },
+      {
+        "tempC": 40.94733557459016,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 1.3145449159983567e-8,
+        "hardScaleMm": 3.215992204221862e-10
+      },
+      {
+        "tempC": 37.94440134475409,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 6.445609878721057e-9,
+        "hardScaleMm": 1.585123993728841e-10
+      },
+      {
+        "tempC": 34.941467114918034,
+        "levelM": 0.29999999998868043,
+        "softScaleMm": 3.161275492095285e-9,
+        "hardScaleMm": 7.813834792774056e-11
+      }
+    ],
+    "brine": {
+      "recircM3h": 5350.000000000001,
+      "concentrationFactor": 1.45,
+      "blowdownM3h": 1050
+    },
+    "vacuum": {
+      "quality": 0.95
+    },
+    "product": {
+      "flowM3h": 565.2614587732178,
+      "salinityPpm": 8,
+      "divertToDrain": false
+    },
+    "fuel": {
+      "active": "gas",
+      "changeover": null,
+      "gas": {
+        "capMW": 60,
+        "priceUsdPerGJ": 8,
+        "curtailmentNotice": null
+      },
+      "backup": {
+        "tonnes": 200,
+        "grade": "standard",
+        "priceUsdPerGJ": 14
+      },
+      "deliveries": [],
+      "burnMW": 42.662126982363
+    },
+    "ballCleaning": false,
+    "shift": {
+      "id": 2,
+      "startTick": 720,
+      "mode": "auto",
+      "target": {
+        "productM3": 4056,
+        "maxSalinityPpm": 25,
+        "fuelBudgetUsd": 12480
+      },
+      "acc": {
+        "productM3": 2142.0366431692732,
+        "offSpecM3": 0,
+        "offSpecTicks": 0,
+        "fuelCostUsd": 4722.3373751099425,
+        "trips": 0,
+        "spentUsd": 5382.337375109943
+      }
+    },
+    "scenario": {
+      "id": "shift-2",
+      "definition": {
+        "id": "shift-2",
+        "target": {
+          "productM3": 4056,
+          "maxSalinityPpm": 25,
+          "fuelBudgetUsd": 12480
+        },
+        "initial": {
+          "seawaterTempC": 28,
+          "chlorophyllUgL": 1.4
+        },
+        "events": []
+      },
+      "nextEventIndex": 0,
+      "effects": {
+        "offgradeOnly": false,
+        "deliveryDelayTicks": 0,
+        "chlorophyllTarget": 1.4,
+        "chlorophyllRampPerTick": 0
+      }
+    },
+    "run": {
+      "gameId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "mode": "normal",
+      "balanceUsd": 20339.992859207046,
+      "shiftNumber": 2,
+      "totalProductM3": 4254.036530574651,
+      "shiftsCompleted": 1,
+      "eventSeq": 27,
+      "epoch": 0,
+      "over": null
+    },
+    "chaos": {
+      "pending": null,
+      "active": {
+        "plan": {
+          "shiftNumber": 2,
+          "hell": false,
+          "warned": false,
+          "targetM3": 4056,
+          "initial": {
+            "seawaterTempC": 28,
+            "chlorophyllUgL": 1.4
+          },
+          "queue": [],
+          "orders": {
+            "targetM3": 4056,
+            "maxSalinityPpm": 25,
+            "budgetUsd": 12480,
+            "lines": [
+              "Seawater is 28.0 °C with chlorophyll at 1.4 µg/L."
+            ],
+            "briefing": []
+          }
+        },
+        "fired": [
+          {
+            "eventId": 1,
+            "kind": "powerDip",
+            "params": {
+              "pumpId": "P-101",
+              "recircFactor": 0.596,
+              "minutes": 36
+            },
+            "atMinute": 69.33333333333333,
+            "cleared": true,
+            "how": "player",
+            "disaster": false
+          },
+          {
+            "eventId": 2,
+            "kind": "storm",
+            "params": {
+              "fouling": 0.104,
+              "deltaC": 1.56,
+              "minutes": 110
+            },
+            "atMinute": 129.33333333333334,
+            "cleared": true,
+            "how": "crew",
+            "disaster": false
+          }
+        ],
+        "lastFiredMinute": 129.33333333333334,
+        "nextEventId": 3
+      },
+      "lastWasHell": false,
+      "lastHadDisaster": false
+    },
+    "crew": null,
+    "faults": {
+      "tubeLeak": {
+        "stage": 19,
+        "ppm": 5
+      },
+      "ejectorFailed": false,
+      "ejectorRatePerMin": 0,
+      "powerDipRemainingTicks": 0,
+      "powerDipRecircFactor": 0.596,
+      "stormRemainingTicks": 0,
+      "stormFouling": 0.059500000000000046,
+      "stormCleanedByCrew": true,
+      "fuelContamination": null,
+      "tsunami": null,
+      "sensors": {},
+      "stageDerate": [
+        1,
+        1,
+        1,
+        1,
+        0.6,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    }
+  }
+}

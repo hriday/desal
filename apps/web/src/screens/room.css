@@ -1,4 +1,16 @@
-.room { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; min-height: 100%; }
+.room {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  /* The viewport, not 100%: in the live app the room sits inside `.app`, which has no height. */
+  min-height: 100vh;
+  min-height: 100dvh;
+  /* A dim room behind the wall: a soft light from above. */
+  background: radial-gradient(120% 70% at 50% 0%, #111c28 0%, var(--bg) 70%);
+}
+/* ?demo has no top bar; give the strip some air. */
+.room--demo { padding-top: 12px; }
 
 .topbar {
   display: flex;
@@ -9,12 +21,32 @@
   border-bottom: 1px solid var(--line);
   font: 13px/1.3 var(--mono);
 }
-.topbar__shift { font-weight: 700; font-size: 15px; }
-.topbar__k { color: var(--muted); margin-right: 4px; }
+.topbar__shift { font-family: var(--font-display); font-weight: 700; font-size: 17px; letter-spacing: 0.04em; }
+.topbar__k { color: var(--muted); margin-right: 4px; font-family: var(--font-display); font-weight: 600; letter-spacing: 0.04em; }
+.topbar__hard { color: var(--bad); font-family: var(--font-display); font-weight: 700; letter-spacing: 0.08em; }
 .topbar__conn { color: var(--muted); }
+/* Pace: ▶▶ calm (3x), ▶ busy (1x). Fixed width so the bar does not shift when it changes. */
+.topbar__pace { min-width: 2.5ch; color: var(--ok); letter-spacing: -0.1em; cursor: default; }
+.topbar__pace--busy { color: var(--warn); }
 .topbar__quit { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
 .room__narrow { display: none; margin: 0; color: var(--warn); font-size: 13px; }
 @media (max-width: 899px) {
   .room__narrow { display: block; }
 }
+
+.quota { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; padding: 6px 4px; font: 13px/1.3 var(--mono); }
+.quota__track { flex: 1 0 100%; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.quota__fill { height: 100%; background: var(--ok); }
+.quota__fill--warn { background: var(--warn); }
+.quota__fill--bad { background: var(--bad); }
+.quota__pace { font-weight: 700; }
+
+/* The radio's live region is fixed out of the room's flow, so it adds no gap when empty. */
+.radio-live { position: fixed; right: 16px; bottom: 16px; z-index: 20; }
+.radio {
+  display: block; max-width: 360px; text-align: left; cursor: pointer;
+  padding: 10px 12px; border: 1px solid var(--warn); border-radius: 4px; background: var(--panel); color: var(--text);
+  font: 13px/1.4 var(--mono);
+}
+.radio__tag { color: var(--warn); font-weight: 700; margin-right: 6px; }

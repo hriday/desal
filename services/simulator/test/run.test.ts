@@ -14,6 +14,7 @@ describe('run state', () => {
   it('starts with the operating account and zeroed counters', () => {
     expect(fresh().run).toEqual({
       gameId: GAME_ID,
+      mode: 'normal',
       balanceUsd: START_BALANCE_USD,
       shiftNumber: 0,
       totalProductM3: 0,
@@ -67,6 +68,7 @@ describe('run state', () => {
     expect(PlantStatusSchema.parse(status)).toEqual(status);
     expect(status).toMatchObject({
       gameId: GAME_ID,
+      mode: 'normal',
       shiftNumber: 1,
       balanceUsd: last.state.run.balanceUsd,
       acidCleanRemainingTicks: 0,

@@ -1,6 +1,6 @@
 import type { PlantEvent } from '@desal/schema';
 import { DASH, fmt, label, num, usd } from '../equipment/format';
-import { CAUSE_TEXT, END_TEXT, FUEL_TEXT, GRADE_TEXT, MODE_TEXT, STEP_TEXT, TRIP_TEXT } from './labels';
+import { CAUSE_TEXT, END_TEXT, FUEL_TEXT, GRADE_TEXT, HOW_TEXT, KIND_TEXT, MODE_TEXT, STEP_TEXT, TRIP_TEXT } from './labels';
 
 const lower = (s: string | undefined) => (s ?? DASH).toLowerCase();
 const pct = (v: unknown) => fmt(num(v as number) ? (v as number) * 100 : undefined, 0, '%');
@@ -26,6 +26,11 @@ export function eventText(e: PlantEvent): string | null {
       return 'Plant back online';
     case 'scenario':
       return typeof e.message === 'string' && e.message ? e.message.replace(/\bug\/L/g, 'µg/L') : 'Plant conditions changed';
+    case 'eventCleared': {
+      const kind = label(KIND_TEXT, e.kind) ?? 'A plant problem';
+      const how = label(HOW_TEXT, e.how);
+      return how ? `${kind} cleared: ${how}` : `${kind} cleared`;
+    }
     case 'fuelChangeover': {
       const from = lower(label(FUEL_TEXT, e.from));
       const to = lower(label(FUEL_TEXT, e.to));

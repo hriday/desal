@@ -1,3 +1,5 @@
+import type { ScenarioKind } from '@desal/schema';
+import { applyEffect } from '../../src/scenario/effects.js';
 import { loadScenario, stepScenario } from '../../src/scenario/engine.js';
 import { scenarioForShift } from '../../src/scenario/library.js';
 import { createInitialState, type PlantState } from '../../src/state.js';
@@ -21,16 +23,16 @@ function running(shift: number, seed = 1): PlantState {
   };
 }
 
-function run(s: PlantState, toTick: number, onTick?: (s: PlantState, firedCount: number) => void) {
-  const all: ReturnType<typeof stepScenario>['events'] = [];
+/** Chlorophyll starts at 1 ug/L so the 120-minute ramp lands on a whole tick. */
+const atOneUgL = (s: PlantState): PlantState => ({ ...s, seawater: { ...s.seawater, chlorophyllUgL: 1 } });
+
+function run(s: PlantState, toTick: number, onTick?: (s: PlantState) => void) {
   while (s.tick <= toTick) {
-    const r = stepScenario(s);
-    s = r.state;
-    all.push(...r.events);
-    onTick?.(s, r.events.length);
+    s = stepScenario(s).state;
+    onTick?.(s);
     s = { ...s, tick: s.tick + 1 };
   }
-  return { s, all };
+  return s;
 }
 
 describe('scenario engine', () => {
@@ -41,46 +43,29 @@ describe('scenario engine', () => {
     expect(stepScenario(idle).state).toBe(idle);
   });
 
-  it('fires the shift 2 bloom at tick 135 exactly once', () => {
-    const fired: number[] = [];
-    run(running(2), 400, (st, n) => {
-      if (n) fired.push(st.tick);
+  it('a bloom ramps chlorophyll to 8 over 120 minutes (180 ticks) and holds it', () => {
+    const s0 = applyEffect(atOneUgL(running(2)), 'bloom', { peakUgL: 8, rampMinutes: 120 });
+    let at178 = 0;
+    const s = run(s0, 179, (st) => {
+      if (st.tick === 178) at178 = st.seawater.chlorophyllUgL;
     });
-    expect(fired).toEqual([135]);
-  });
-
-  it('ramps chlorophyll to 8 by tick 315 and not before', () => {
-    let at314 = 0;
-    const { s } = run(running(2), 315, (st) => {
-      if (st.tick === 314) at314 = st.seawater.chlorophyllUgL;
-    });
-    expect(at314).toBeLessThan(8);
+    expect(at178).toBeLessThan(8);
     expect(s.seawater.chlorophyllUgL).toBeCloseTo(8, 9);
-    expect(run(s, 400).s.seawater.chlorophyllUgL).toBeCloseTo(8, 9);
+    expect(run(s, 400).seawater.chlorophyllUgL).toBeCloseTo(8, 9);
   });
+});
 
-  it('shift 3: offgrade at start, notice at minute 60, price spike at 240', () => {
-    const { s, all } = run(running(3), 600);
-    expect(all.map((e) => (e.type === 'scenario' ? e.kind : ''))).toEqual([
-      'offgradeOnly',
-      'gasCurtailNotice',
-      'gasPriceSpike',
-    ]);
-    expect(s.scenario.effects.offgradeOnly).toBe(true);
-    expect(s.fuel.gas.priceUsdPerGJ).toBeCloseTo(8 * 1.8, 9);
-    expect(run(running(3), 91).s.fuel.gas.curtailmentNotice).toEqual({ atTick: 270, capMW: 25 });
-  });
-
-  it('applies the other effects', () => {
+describe('applyEffect', () => {
+  it('applies each slow kind', () => {
     const base = running(1);
-    const mk = (kind: string, params: Record<string, number | string>) => {
-      const sc = { ...base.scenario.definition!, events: [{ atMinute: 0, kind: kind as never, params, message: 'm' }] };
-      return stepScenario({ ...base, scenario: { ...base.scenario, definition: sc } }).state;
-    };
+    const mk = (kind: string, params: Record<string, number | string>) => applyEffect(base, kind as ScenarioKind, params);
     expect(mk('seawaterTemp', { deltaC: 3 }).seawater.tempC).toBe(33);
     expect(mk('pumpBearing', { pumpId: 'P-102', mult: 4 }).intake.pumps['P-102'].bearingWearMult).toBe(4);
     expect(mk('deliveryDelay', { ticks: 90 }).scenario.effects.deliveryDelayTicks).toBe(90);
     expect(mk('demandChange', { deltaM3: -200 }).shift!.target.productM3).toBe(3700);
+    expect(mk('offgradeOnly', {}).scenario.effects.offgradeOnly).toBe(true);
+    expect(mk('gasPriceSpike', { mult: 1.8 }).fuel.gas.priceUsdPerGJ).toBeCloseTo(8 * 1.8, 9);
+    expect(mk('gasCurtailNotice', { capMW: 25, effectiveMinute: 180 }).fuel.gas.curtailmentNotice).toEqual({ atTick: 270, capMW: 25 });
     expect(mk('controllerFault', { loop: 'recirc', kind: 'drift' }).loops.recirc.fault).toEqual({
       kind: 'drift',
       bias: 0,
@@ -91,35 +76,23 @@ describe('scenario engine', () => {
     });
   });
 
-  it('random events use state.seed and store the advanced seed', () => {
-    const base = running(1, 42);
-    const def = { ...base.scenario.definition!, randomPerHour: [{ kind: 'gasPriceSpike' as const, p: 3600 / 40 }] };
-    const s0 = { ...base, scenario: { ...base.scenario, definition: def } };
-    const r = stepScenario(s0);
-    expect(r.state.seed).not.toBe(s0.seed);
-    expect(r.events).toHaveLength(1);
-    expect(r.state.fuel.gas.priceUsdPerGJ).toBeGreaterThan(8);
-    expect(stepScenario(s0)).toEqual(r);
-    const never = { ...s0, scenario: { ...s0.scenario, definition: { ...def, randomPerHour: [{ kind: 'gasPriceSpike' as const, p: 0 }] } } };
-    const rn = stepScenario(never);
-    expect(rn.events).toHaveLength(0);
-    expect(rn.state.seed).not.toBe(never.seed);
+  it('does nothing outside a shift', () => {
+    const s = createInitialState(1, 0, GAME_ID);
+    expect(applyEffect(s, 'seawaterTemp', { deltaC: 3 })).toBe(s);
   });
 });
 
 describe('scenarioForShift', () => {
-  it('matches the fixed shifts', () => {
+  it('supplies the base target and no events', () => {
     expect(scenarioForShift(1, 0).target).toEqual({ productM3: 3900, maxSalinityPpm: 25, fuelBudgetUsd: 12000 });
-    // Shift 3 keeps its hand-written events and budget; its target follows the run's difficulty.
     expect(scenarioForShift(3, 0).target.productM3).toBe(Math.round(3900 * 1.08));
-    expect(scenarioForShift(3, 0).target.fuelBudgetUsd).toBe(16000);
-  });
-  it('shift 7 is deterministic per seed and differs across seeds', () => {
-    expect(scenarioForShift(7, 5)).toEqual(scenarioForShift(7, 5));
-    const seen = new Set([1, 2, 3, 4, 5].map((k) => JSON.stringify(scenarioForShift(7, k))));
-    expect(seen.size).toBeGreaterThan(1);
-    expect(scenarioForShift(7, 5).events).toHaveLength(3);
+    expect(scenarioForShift(7, 5).events).toEqual([]);
     expect(allFinite(scenarioForShift(7, 5))).toBe(true);
+  });
+  it('shift conditions are deterministic per seed and differ across seeds', () => {
+    expect(scenarioForShift(7, 5)).toEqual(scenarioForShift(7, 5));
+    const seen = new Set([1, 2, 3, 4, 5].map((k) => JSON.stringify(scenarioForShift(7, k).initial)));
+    expect(seen.size).toBeGreaterThan(1);
   });
   it('scales the target 4% per shift, uncapped (see difficulty.test.ts)', () => {
     expect(scenarioForShift(4, 1).target.productM3).toBe(Math.round(3900 * 1.12));

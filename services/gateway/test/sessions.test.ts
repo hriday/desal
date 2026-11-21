@@ -88,6 +88,33 @@ describe('newGame', () => {
     expect(box.at(-1)).toEqual({ t: 'status', status: status(GAME_A, 1) });
   });
 
+  it('passes the chosen mode into the startGame command', () => {
+    open('s1');
+    client('s1', { t: 'newGame', mode: 'hard' });
+    expect(sent[0]!.command).toMatchObject({ type: 'startGame', mode: 'hard' });
+  });
+
+  it('defaults the mode to normal when newGame names none', () => {
+    open('s1');
+    client('s1', { t: 'newGame' });
+    expect(sent[0]!.command).toMatchObject({ type: 'startGame', mode: 'normal' });
+  });
+
+  it('rejects an unknown mode like any invalid message, sending nothing', () => {
+    const box = open('s1');
+    client('s1', { t: 'newGame', mode: 'nightmare' });
+    expect(sent).toHaveLength(0);
+    expect(box).toEqual([{ t: 'error', reason: 'invalid message' }]);
+  });
+
+  it('still binds on a pre-mode gameStart record', () => {
+    const box = open('s1');
+    client('s1', { t: 'newGame' });
+    const { mode: _mode, ...legacy } = gameStart(GAME_A) as Record<string, unknown>;
+    deliver(TOPICS.events, GAME_A, legacy);
+    expect(box[0]).toEqual({ t: 'game', gameId: GAME_A });
+  });
+
   it('rejects a second newGame on the same socket', () => {
     const box = open('s1');
     client('s1', { t: 'newGame' });
@@ -215,11 +242,11 @@ describe('limits', () => {
     expect(pings(30)).toBe(25);
   });
 
-  it('allows a 20-command burst (set all stage levels)', () => {
+  it('allows a 23-command burst (set all stage levels)', () => {
     const box = bound('s1');
-    for (let i = 1; i <= 20; i++) client('s1', { t: 'cmd', command: { type: 'setSetpoint', loop: `level${i}`, value: 0.5 } });
+    for (let i = 1; i <= 23; i++) client('s1', { t: 'cmd', command: { type: 'setSetpoint', loop: `level${i}`, value: 0.5 } });
     expect(box).toEqual([]);
-    expect(sent.filter((e) => e.command.type === 'setSetpoint')).toHaveLength(20);
+    expect(sent.filter((e) => e.command.type === 'setSetpoint')).toHaveLength(23);
   });
 
   it('closes the socket (1008) after 3 consecutive seconds of an empty bucket', () => {
@@ -359,6 +386,25 @@ describe('routing', () => {
     deliver(TOPICS.telemetry, GAME_A, reading(GAME_A, 6, 'TBT', 92));
     expect(a.at(-1)).toEqual({ t: 'frame', tick: 5, plantTime: 200, readings: { TBT: 91 } });
     expect(b).toEqual([]);
+  });
+
+  it('forwards pace: a busy status as busy, a pre-pace record as calm', () => {
+    const a = bound('s1');
+    deliver(TOPICS.status, GAME_A, { ...status(GAME_A, 4), pace: 'busy' });
+    expect((a.at(-1) as { status: { pace: string } }).status.pace).toBe('busy');
+    const { pace: _pace, ...old } = status(GAME_A, 5);
+    deliver(TOPICS.status, GAME_A, old);
+    expect(a.at(-1)).toEqual({ t: 'status', status: status(GAME_A, 5) });
+    expect((a.at(-1) as { status: { pace: string } }).status.pace).toBe('calm');
+  });
+
+  it('forwards every status of a calm game at 3 per second (no throttling)', () => {
+    const a = bound('s1');
+    for (let i = 0; i < 30; i++) {
+      clock += 333;
+      deliver(TOPICS.status, GAME_A, status(GAME_A, i));
+    }
+    expect(a.filter((m) => m.t === 'status')).toHaveLength(30);
   });
 
   it('a status that overtakes its tick goes out at once; the frame follows when complete', () => {

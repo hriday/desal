@@ -7,6 +7,8 @@ import { GAME_ID_KEY } from '../src/net/socket';
 import { GameOver, REASON_TEXT } from '../src/screens/GameOver';
 import { Handover } from '../src/screens/Handover';
 import { Start } from '../src/screens/Start';
+import { TopBar } from '../src/screens/TopBar';
+import { FIX } from '../src/expanded/labels';
 import { GameProvider } from '../src/state/GameProvider';
 
 afterEach(cleanup);
@@ -17,16 +19,32 @@ const shiftEnd = {
     productM3: 3600, targetM3: 3900, offSpecMinutes: 12, offSpecM3: 80, fuelCostUsd: 5000, fuelBudgetUsd: 12000, trips: 2,
     spentUsd: 7000, nextAllocationUsd: 9000, balanceUsd: 12450,
     damage: { maxHardScaleMm: 0.8, pumpWear: { 'P-101': 0.1, 'P-102': 0.2, 'P-103': 0.3 }, burnerCondition: 0.9 },
+    hell: false, events: [],
   },
 } as unknown as PlantEvent;
 
 describe('Start', () => {
-  it('shows the copy and starts a run', () => {
+  it('shows the title, the pitch and starts a run', () => {
     const onStart = vi.fn();
     const { getByText, getByRole } = render(<Start onStart={onStart} />);
-    expect(getByText(/You run a seawater desalination plant/)).toBeTruthy();
+    expect(getByRole('heading', { level: 1, name: 'Desal Operator' })).toBeTruthy();
+    expect(getByText('You run a thermal desalination plant.')).toBeTruthy();
+    expect(getByText(/Deliver the water, shift after shift — until the money, the fuel or the plant gives out\./)).toBeTruthy();
     fireEvent.click(getByRole('button', { name: 'Start a run' }));
-    expect(onStart).toHaveBeenCalled();
+    expect(onStart).toHaveBeenCalledWith('normal');
+  });
+  it('offers a Hard run with its line, and no disaster cheat sheet', () => {
+    const onStart = vi.fn();
+    const { getByRole, queryByText } = render(<Start onStart={onStart} />);
+    const hard = getByRole('button', { name: 'Start a Hard run' });
+    expect(hard.parentElement!.nextElementSibling!.textContent).toBe('Every shift is a bad one, and disasters strike.');
+    fireEvent.click(hard);
+    expect(onStart).toHaveBeenCalledWith('hard');
+    expect(queryByText('When disaster strikes')).toBeNull();
+  });
+  it('the plant picture shows all 24 flash stages', () => {
+    const { container } = render(<Start onStart={vi.fn()} />);
+    expect(container.querySelectorAll('.start__plant [data-stage]')).toHaveLength(24);
   });
   it('capacity shows the message and a retry button', () => {
     const onStart = vi.fn();
@@ -52,14 +70,93 @@ describe('Handover', () => {
     expect(t).toContain(`≈ ${nextTargetEstimateM3(2).toLocaleString('en-US')} m³`);
     expect(getByRole('button', { name: 'Start shift 2' })).toBeTruthy();
   });
+  it('shows the pending orders: target, limit, budget, supervisor notes and the shift 1 briefing', () => {
+    const orders = {
+      targetM3: 4100, maxSalinityPpm: 22, budgetUsd: 13000,
+      lines: ['Watch the vacuum pump.', 'Gas is dear today.'],
+      briefing: ['Welcome to the plant.', 'Keep the product in spec.', 'Send the crew when a fault stays.'],
+    };
+    const status = demoStatus({ phase: 'handover', shiftNumber: 0, shiftTarget: null, orders });
+    const { container, getByRole } = render(<Handover {...base} status={status} events={[]} />);
+    const t = container.textContent!;
+    expect(t).toContain('4,100 m³');
+    expect(t).toContain('22 ppm');
+    expect(t).toContain('$13,000');
+    // The orders' budget is fuel guidance, not the allocation the account is credited.
+    expect(getByRole('region', { name: 'Orders for shift 1' }).querySelector('dl')?.textContent).toContain('Fuel budget$13,000');
+    expect(t).not.toContain('≈');
+    const notes = getByRole('list', { name: "Supervisor's notes" });
+    expect(notes.querySelectorAll('li')).toHaveLength(2);
+    expect(notes.textContent).toContain('Watch the vacuum pump.');
+    const brief = getByRole('list', { name: 'Briefing' });
+    expect(brief.querySelectorAll('li')).toHaveLength(3);
+  });
+  it('lists the last shift events with a HELL SHIFT tag', () => {
+    const s = (shiftEnd as unknown as { summary: object }).summary;
+    const ev = { ...shiftEnd, summary: { ...s, hell: true, events: [
+      { eventId: 1, kind: 'pumpTrip', atMinute: 130.7, cleared: true, how: 'player' },
+      { eventId: 2, kind: 'tubeLeak', atMinute: 340, cleared: true, how: 'crew' },
+      { eventId: 3, kind: 'gasPriceSpike', atMinute: 10, cleared: true, how: 'noted' },
+      { eventId: 4, kind: 'vacuumLoss', atMinute: 400, cleared: false, how: null },
+      { eventId: 5, kind: 'storm', atMinute: 60, cleared: true, how: 'expired' },
+    ] } } as unknown as PlantEvent;
+    const { container } = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null })} events={[ev]} />);
+    const t = container.textContent!;
+    expect(t).toContain('HELL SHIFT');
+    expect(t).toContain('02:10 Pump trip — cleared by you');
+    expect(t).toContain('05:40 Tube leak — fixed by crew');
+    expect(t).toContain('Gas price spike — noted');
+    expect(t).not.toContain('00:10 Gas price spike');
+    expect(t).toContain('06:40 Vacuum loss — not cleared');
+    expect(t).toContain('01:00 Storm — passed');
+  });
+  describe('what to do', () => {
+    const withEvents = (events: object[]) => {
+      const s = (shiftEnd as unknown as { summary: object }).summary;
+      return { ...shiftEnd, summary: { ...s, events } } as unknown as PlantEvent;
+    };
+    const evs = [
+      { eventId: 1, kind: 'tubeLeak', atMinute: 340, cleared: false, how: null },
+      { eventId: 2, kind: 'pumpTrip', atMinute: 130, cleared: true, how: 'player' },
+      { eventId: 3, kind: 'earthquake', atMinute: 20, cleared: true, how: 'noted' },
+      { eventId: 4, kind: 'martianInvasion', atMinute: 30, cleared: false, how: null },
+    ];
+    for (const mode of ['normal', 'hard'] as const) {
+      it(`shows the fix under the uncleared event only (${mode})`, () => {
+        const status = demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null, mode });
+        const { container } = render(<Handover {...base} status={status} events={[withEvents(evs)]} />);
+        const lis = container.querySelectorAll('[aria-label="Shift events"] li');
+        expect(lis).toHaveLength(4);
+        expect(lis[0]!.textContent).toContain(`What to do: ${FIX.tubeLeak.text}`);
+        expect(container.textContent!.match(/What to do:/g)).toHaveLength(1);
+      });
+    }
+  });
+  it('shows no HELL SHIFT tag on a normal shift', () => {
+    const { container } = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null })} events={[shiftEnd]} />);
+    expect(container.textContent).not.toContain('HELL SHIFT');
+  });
   it('before the first shift (shiftNumber 0) offers shift 1 at about 3,900 m³; after shift 2 offers shift 3', () => {
     const first = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 0, shiftTarget: null })} events={[]} />);
     expect(first.getByRole('button', { name: 'Start shift 1' })).toBeTruthy();
+    // The whole handover is one shift-log sheet: orders, condition, mode and the Start button.
+    const sheet = first.getByRole('article', { name: 'Shift 1 handover' });
+    for (const name of ['Plant condition', 'Orders for shift 1']) expect(sheet.contains(first.getByRole('region', { name }))).toBe(true);
+    expect(sheet.contains(first.getByRole('group', { name: 'Control mode' }))).toBe(true);
+    expect(sheet.contains(first.getByRole('button', { name: 'Start shift 1' }))).toBe(true);
     expect(first.container.textContent).toContain('≈ 3,900 m³');
     cleanup();
     const third = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 2, shiftTarget: null })} events={[]} />);
     expect(third.getByRole('button', { name: 'Start shift 3' })).toBeTruthy();
     expect(third.container.textContent).toContain(`≈ ${nextTargetEstimateM3(3).toLocaleString('en-US')} m³`);
+  });
+  it('shows the run mode, Normal or Hard', () => {
+    for (const [mode, text] of [['normal', 'Normal'], ['hard', 'Hard']] as const) {
+      const status = demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null, mode });
+      const { getByText, unmount } = render(<Handover {...base} status={status} events={[]} />);
+      expect(getByText('Mode').nextElementSibling!.textContent).toBe(text);
+      unmount();
+    }
   });
   it('sends the chosen mode, and quit', () => {
     const onStartShift = vi.fn();
@@ -84,6 +181,7 @@ describe('GameOver', () => {
     const { container, getByRole } = render(
       <GameOver reason="bankrupt" score={{ totalProductM3: 18250, shiftsCompleted: 5, balanceUsd: 400 }} onPlayAgain={onPlayAgain} />,
     );
+    expect(getByRole('article', { name: 'Final report' }).contains(getByRole('heading', { level: 1, name: 'Final report' }))).toBe(true);
     const t = container.textContent!;
     expect(t).toContain('The budget ran out');
     expect(t.indexOf('18,250')).toBeLessThan(t.indexOf('Shifts completed'));
@@ -91,6 +189,24 @@ describe('GameOver', () => {
     fireEvent.click(getByRole('button', { name: 'Play again' }));
     expect(sessionStorage.getItem(GAME_ID_KEY)).toBeNull();
     expect(onPlayAgain).toHaveBeenCalled();
+  });
+});
+
+describe('TopBar HARD tag', () => {
+  it('shows HARD only in hard mode', () => {
+    const props = { conn: 'open' as const, quitting: false, onQuit: vi.fn() };
+    const hard = render(<TopBar status={demoStatus({ mode: 'hard' })} {...props} />);
+    expect(hard.queryByText('HARD')).not.toBeNull();
+    cleanup();
+    const normal = render(<TopBar status={demoStatus({ mode: 'normal' })} {...props} />);
+    expect(normal.queryByText('HARD')).toBeNull();
+  });
+});
+
+describe('GameOver mode', () => {
+  it.each([['hard', 'Hard'], ['normal', 'Normal']] as const)('shows %s', (mode, text) => {
+    const { getByText } = render(<GameOver reason="quit" mode={mode} score={null} onPlayAgain={vi.fn()} />);
+    expect(getByText(text)).toBeTruthy();
   });
 });
 
@@ -121,6 +237,13 @@ describe('Screens with provider', () => {
     socks[0]!.open();
     expect(socks[0]!.sent.map((m) => JSON.parse(m).t)).toEqual(['newGame']);
     expect(container.querySelector('[data-screen="start"]')).not.toBeNull(); // still waiting for the plant
+  });
+
+  it('Start a Hard run sends newGame with mode hard on the next open', () => {
+    const { getByRole } = mount();
+    fireEvent.click(getByRole('button', { name: 'Start a Hard run' }));
+    socks[0]!.open();
+    expect(JSON.parse(socks[0]!.sent[0]!)).toMatchObject({ t: 'newGame', mode: 'hard' });
   });
 
   it('a stored game opens the socket at once, to resume', () => {

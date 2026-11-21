@@ -8,7 +8,7 @@ test('a valid status round-trips through JSON', () => {
 test('rejects an invalid phase, status and loop key', () => {
   expect(PlantStatusSchema.safeParse({ ...status, phase: 'napping' }).success).toBe(false);
   expect(PlantStatusSchema.safeParse({ ...status, status: 'exploded' }).success).toBe(false);
-  expect(PlantStatusSchema.safeParse({ ...status, loops: { level21: status.loops.tbt } }).success).toBe(false);
+  expect(PlantStatusSchema.safeParse({ ...status, loops: { level24: status.loops.tbt } }).success).toBe(false);
 });
 
 test('accepts the over phase', () => {
@@ -20,4 +20,17 @@ test('rejects non-finite new fields and accepts null shiftTarget / changeoverRem
   expect(PlantStatusSchema.safeParse(nulls).success).toBe(true);
   expect(PlantStatusSchema.safeParse({ ...status, doses: { chlorineMgL: Infinity, antiscalantMgL: 1 } }).success).toBe(false);
   expect(PlantStatusSchema.safeParse({ ...status, fuel: { ...status.fuel, gasCapMW: NaN } }).success).toBe(false);
+});
+
+test('crew, orders and hell are required; null crew parses', () => {
+  const { crew: _c, ...noCrew } = status;
+  expect(PlantStatusSchema.safeParse(noCrew).success).toBe(false);
+  expect(PlantStatusSchema.safeParse({ ...status, crew: null, orders: null, hell: true }).success).toBe(true);
+});
+
+test('pace defaults to calm when missing; only calm and busy parse', () => {
+  const { pace: _p, ...noPace } = status;
+  expect(PlantStatusSchema.parse(noPace).pace).toBe('calm');
+  expect(PlantStatusSchema.parse({ ...status, pace: 'busy' }).pace).toBe('busy');
+  expect(PlantStatusSchema.safeParse({ ...status, pace: 'fast' }).success).toBe(false);
 });

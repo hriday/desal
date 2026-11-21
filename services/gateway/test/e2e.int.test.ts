@@ -121,9 +121,9 @@ describe('full stack: simulator + gateway + two ws clients', () => {
     );
     expect(running.status.gameId).toBe(a.gameId);
     await a.until(() => (a.of('frame').length >= 3 ? true : undefined), 20_000, '3 frames');
-    // Telemetry is produced before status, so a frame is complete: every one of the simulator's 109 sensors
+    // Telemetry is produced before status, so a frame is complete: every one of the simulator's 127 sensors
     // (SENSOR_IDS.length, measured; not 108).
-    for (const f of a.of('frame').slice(0, 3)) expect(Object.keys(f.readings)).toHaveLength(109);
+    for (const f of a.of('frame').slice(0, 3)) expect(Object.keys(f.readings)).toHaveLength(127);
     expect(JSON.stringify(b.msgs)).not.toContain(a.gameId);
 
     a.send({ t: 'cmd', command: { type: 'quitGame' } });

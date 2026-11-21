@@ -45,7 +45,10 @@ function enter(root: HTMLElement, name: RegExp, value: string) {
 
 describe('limits', () => {
   it('mirrors the simulator LOOP_RANGES', () => {
-    expect(LOOP_RANGES.tbt).toEqual({ spMin: 90, spMax: 118, outMin: 0, outMax: 100 });
+    expect(LOOP_RANGES.tbt).toEqual({ spMin: 85, spMax: 112, outMin: 0, outMax: 100 });
+    expect(LOOP_RANGES.recirc).toEqual({ spMin: 2000, spMax: 6500, outMin: 0, outMax: 100 });
+    expect(LOOP_RANGES.makeup).toEqual({ spMin: 0.15, spMax: 0.6, outMin: 0, outMax: 100 });
+    expect(loopRange('makeup', 'setSetpoint')).toEqual({ min: 0.15, max: 0.6 });
     expect(loopRange('level7', 'setSetpoint')).toEqual({ min: 0.15, max: 0.6 });
     expect(loopRange('recirc', 'setOutput')).toEqual({ min: 0, max: 100 });
   });
@@ -81,9 +84,12 @@ describe('loop controls follow the mode', () => {
   it('stage levels stay setpoint-driven in Manual; all at once or per stage', () => {
     const { container, sent } = withSend(StagesView, manual());
     enter(container, /all stage levels/i, '0.4');
-    expect(sent).toHaveLength(20);
+    expect(sent).toHaveLength(23);
     expect(sent.every((c) => c.type === 'setSetpoint' && c.value === 0.4)).toBe(true);
-    expect(sent.map((c) => (c as { loop: string }).loop)).toContain('level20');
+    const loops = sent.map((c) => (c as { loop: string }).loop);
+    expect(loops).toContain('level23');
+    expect(loops).not.toContain('level24');
+    expect(loops).not.toContain('makeup');
     sent.length = 0;
     fireEvent.change(within(container).getByRole('combobox', { name: /stage/i }), { target: { value: '7' } });
     enter(container, /S7 level setpoint/i, '0.3');
@@ -92,20 +98,20 @@ describe('loop controls follow the mode', () => {
 
   it('shows the reported value and its range, and clamps to the range', () => {
     const { container, sent } = withSend(HeaterView, demoStatus());
-    expect(container.textContent).toContain('reported 108.0 °C');
-    expect(container.textContent).toContain('90–118 °C');
+    expect(container.textContent).toContain('reported 93.5 °C');
+    expect(container.textContent).toContain('85–112 °C');
     enter(container, /tbt setpoint/i, '150');
-    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'tbt', value: 118 }]);
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'tbt', value: 112 }]);
   });
 
   it('− and + step the field, Enter sends', () => {
     const { container, sent } = withSend(HeaterView, demoStatus());
     fireEvent.click(within(container).getByRole('button', { name: /increase tbt setpoint/i }));
     const input = within(container).getByRole('spinbutton', { name: /tbt setpoint/i }) as HTMLInputElement;
-    expect(input.value).toBe('108.5');
+    expect(input.value).toBe('94.0');
     expect(sent).toEqual([]);
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'tbt', value: 108.5 }]);
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'tbt', value: 94 }]);
   });
 
   it('loop-mode toggles appear only in Auto mode', () => {
@@ -257,6 +263,36 @@ describe('StagesView controls', () => {
     fireEvent.click(btn);
     fireEvent.click(within(tripped.container).getByRole('button', { name: /confirm acid clean/i }));
     expect(tripped.sent).toEqual([{ type: 'acidClean' }]);
+  });
+
+  it('the stage picker lists the 23 level loops, S1–S23 (the brine pool is the makeup loop\'s)', () => {
+    const { container } = withSend(StagesView, demoStatus());
+    const options = [...within(container).getByRole('combobox', { name: /stage/i }).querySelectorAll('option')].map((o) => o.textContent);
+    expect(options).toEqual(Array.from({ length: 23 }, (_, i) => `S${i + 1}`));
+  });
+
+  it('the makeup loop has a pool-level setpoint (m) and, in Auto, a loop-mode toggle', () => {
+    const { container, sent } = withSend(StagesView, demoStatus());
+    expect(container.querySelector('[data-control="Makeup setpoint"]')!.textContent).toContain('0.15–0.6 m');
+    enter(container, /makeup setpoint/i, '0.32');
+    fireEvent.click(within(container).getByRole('button', { name: /makeup loop mode/i }));
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'makeup', value: 0.32 }, { type: 'setLoopMode', loop: 'makeup', mode: 'manual' }]);
+  });
+
+  it('the makeup loop takes outputs when switched to manual', () => {
+    const st = demoStatus();
+    const { container, sent } = withSend(StagesView, { ...st, loops: { ...st.loops, makeup: { mode: 'manual', setpoint: 0.3, output: 50 } } });
+    enter(container, /makeup output/i, '60');
+    expect(sent).toEqual([{ type: 'setOutput', loop: 'makeup', value: 60 }]);
+  });
+
+  it('in Manual control mode the makeup loop keeps its setpoint and its mode toggle (a controller fault clears in Manual)', () => {
+    const { container, sent } = withSend(StagesView, manual());
+    enter(container, /makeup setpoint/i, '0.3');
+    fireEvent.click(within(container).getByRole('button', { name: /makeup loop mode/i }));
+    expect(sent).toEqual([{ type: 'setSetpoint', loop: 'makeup', value: 0.3 }, { type: 'setLoopMode', loop: 'makeup', mode: 'manual' }]);
+    // The other Stages loops are plant-managed in Manual control mode: no toggles for them.
+    expect(within(container).queryByRole('button', { name: /(recirc|blowdown|vacuum) loop mode/i })).toBeNull();
   });
 
   it('blowdown CF and vacuum use controlFor', () => {
@@ -430,9 +466,9 @@ describe('pending and rejection', () => {
     const { gameId } = demoStatus();
     dispatchServer({ t: 'event', event: { gameId, epoch: 0, seq: 500, tick: 1, plantTime: 1, shiftId: 3, type: 'commandRejected', commandId: sends[0]!.commandId, reason: 'setpoint changes are Auto-mode only' } });
     expect(within(container).getByRole('alert').textContent).toContain('setpoint changes are Auto-mode only');
-    expect(input.value).toBe('108.0');
+    expect(input.value).toBe('93.5');
     expect(container.textContent).not.toContain('sending…');
-    expect(container.textContent).toContain('reported 108.0 °C');
+    expect(container.textContent).toContain('reported 93.5 °C');
   });
 
   it('a paid fuel order cannot repeat until a status arrives', () => {
@@ -467,5 +503,40 @@ describe('pending and rejection', () => {
     expect(container.textContent).not.toContain('sending…');
     expect(input.value).toBe('112.0');
     expect(container.textContent).toContain('reported 112.0 °C');
+  });
+});
+
+describe('crew buttons', () => {
+  const BUTTONS: [string, ComponentType<ExpandedProps>, string, string][] = [
+    ['ProductView', ProductView, 'plugTubes', 'Send crew: plug tubes — $800, 60 min'],
+    ['StagesView', StagesView, 'repairEjector', 'Send crew: repair ejector — $1,000, 45 min'],
+    ['IntakeView', IntakeView, 'cleanScreens', 'Send crew: clean screens — $300, 30 min'],
+    ['FuelView', FuelView, 'flushFuel', 'Send crew: flush fuel — $1,500, 60 min'],
+    ['ShiftView', ShiftView, 'replaceSensor', 'Send crew: replace instrument — $400, 30 min'],
+  ];
+  it.each(BUTTONS)('%s sends the crew job on click, whatever the fault state', (_n, View, job, text) => {
+    const { container, sent } = withSend(View, demoStatus());
+    fireEvent.click(within(container).getByRole('button', { name: text }));
+    expect(sent).toEqual([{ type: 'dispatchCrew', job }]);
+  });
+  it.each(BUTTONS)('%s disables the button while the crew is busy', (_n, View, _job, text) => {
+    const { container, sent } = withSend(View, demoStatus({ crew: { job: 'cleanScreens', remainingTicks: 10 } }));
+    const b = within(container).getByRole('button', { name: text }) as HTMLButtonElement;
+    expect(b.disabled).toBe(true);
+    expect(container.textContent).toContain('Crew busy: cleaning screens');
+    fireEvent.click(b);
+    expect(sent).toEqual([]);
+  });
+  it('is disabled outside a running shift and while the dispatch is pending', () => {
+    const paused = withSend(ProductView, demoStatus({ phase: 'paused' }));
+    expect((within(paused.container).getByRole('button', { name: /send crew/i }) as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    const pending = new Map([['dispatchCrew', { command: { type: 'dispatchCrew', job: 'plugTubes' }, tick: 0 }]]);
+    const p = withSend(ProductView, demoStatus(), { pending: pending as unknown as ExpandedProps['pending'] });
+    expect((within(p.container).getByRole('button', { name: /send crew/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it('the shift view shows the crew job and minutes left', () => {
+    const { container } = withSend(ShiftView, demoStatus({ crew: { job: 'replaceSensor', remainingTicks: 0.1 } }));
+    expect(container.textContent).toContain('Replacing sensor, 1 min left');
   });
 });

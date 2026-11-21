@@ -6,6 +6,7 @@ import { DASH, fmt, get, label, num } from '../equipment/format';
 import { TICK_PLANT_S } from '../plantConstants';
 import { FUEL_TEXT } from './labels';
 import { Detail, Row, ViewLayout } from './Layout';
+import { RestartControl, TripNotice } from './ShiftView';
 import type { ExpandedProps } from './types';
 
 export function HeaterView(props: ExpandedProps) {
@@ -45,6 +46,8 @@ export function HeaterView(props: ExpandedProps) {
       }
       controls={
         <>
+          <TripNotice status={status} />
+          {(status?.status === 'tripped' || status?.status === 'restarting') && <RestartControl {...ctl} />}
           <LoopSetpoint loop="tbt" name="TBT" unit="°C" step={0.5} digits={1} {...ctl} />
           {status?.controlMode === 'auto' && <LoopModeToggle loop="tbt" name="TBT" {...ctl} />}
         </>

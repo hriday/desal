@@ -1,9 +1,9 @@
 import { PlantEventSchema, PlantStatusSchema, TELEMETRY_SENSOR_COUNT, TelemetryReadingSchema, type PlantEvent } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
-import { SHIFT_TICKS, TICK_PLANT_S } from '../src/constants.js';
+import { LOOP_RANGES, SHIFT_TICKS, TICK_PLANT_S } from '../src/constants.js';
 import { SENSOR_IDS } from '../src/emit.js';
 import { startShift } from '../src/shift.js';
-import { createInitialState, type PlantState } from '../src/state.js';
+import { createInitialState, NOMINAL, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
 import { env, GAME_ID } from './envelope.js';
 import { allFinite } from './helpers.js';
@@ -118,12 +118,12 @@ describe('shift lifecycle', () => {
   });
 });
 
-describe('TBT setpoint 118 without antiscalant', () => {
+describe('TBT setpoint at its maximum without antiscalant', () => {
   it('speeds stage-1 scaling until it trips on tbtHighHigh, counting the trip', () => {
     let s = runTicks(running(), 5).state;
     const rate0 = tick(s, []).state.stages[0]!.softScaleMm - s.stages[0]!.softScaleMm;
     s = tick(s, [
-      env(s, { type: 'setSetpoint', loop: 'tbt', value: 118 }),
+      env(s, { type: 'setSetpoint', loop: 'tbt', value: LOOP_RANGES.tbt.spMax }),
       env(s, { type: 'setDose', chemical: 'antiscalant', mgL: 0 }),
     ]).state;
     let maxRate = 0;
@@ -144,6 +144,24 @@ describe('TBT setpoint 118 without antiscalant', () => {
       expect(trip.snapshotDue).toBe(true);
     }
   });
+});
+
+describe('lowering the TBT setpoint in Auto (ruling R12a)', () => {
+  // A vacuum loss tells the player to cut TBT; doing so in Auto must not trip the plant. The deepest
+  // cut is to the bottom of the setpoint range (a 10 C cut from 93.5 would leave the 85-112 C range).
+  for (const value of [NOMINAL.tbtC - 5, LOOP_RANGES.tbt.spMin]) {
+    it(`a cut from ${NOMINAL.tbtC} to ${value} C at nominal does not trip within 60 ticks, and TBT follows it down`, () => {
+      const s0 = running();
+      const s = { ...s0, chaos: { ...s0.chaos, active: null } };
+      const drop = NOMINAL.tbtC - value;
+      const cut = tick(s, [env(s, { type: 'setSetpoint', loop: 'tbt', value })]);
+      expect(cut.state.loops.tbt.setpoint).toBe(value);
+      const r = runTicks(cut.state, 60);
+      expect([...cut.events, ...r.events].filter((e) => e.type === 'trip')).toEqual([]);
+      expect(r.state.status).toBe('online');
+      expect(r.state.heater.tbtC).toBeLessThan(NOMINAL.tbtC - drop / 2);
+    });
+  }
 });
 
 describe('record stamps', () => {
@@ -239,6 +257,11 @@ describe('emission', () => {
 
   it('emits TELEMETRY_SENSOR_COUNT readings per tick (the gateway assembles frames of that size)', () => {
     expect(SENSOR_IDS.length).toBe(TELEMETRY_SENSOR_COUNT);
+    expect(TELEMETRY_SENSOR_COUNT).toBe(127);
+    expect(SENSOR_IDS).toContain('stages.s24.levelM');
+    expect(SENSOR_IDS).not.toContain('stages.s25.levelM');
+    expect(SENSOR_IDS).toContain('brine.makeupM3h');
+    expect(SENSOR_IDS).toContain('brine.coolingRejectM3h');
   });
 
   it('reports each loop\'s controller fault in the status (null when healthy), so the UI alarm clears with it', () => {
@@ -288,7 +311,7 @@ describe('emission', () => {
   it('produces a status that matches PlantStatusSchema', () => {
     const r = tick(running(), []);
     expect(PlantStatusSchema.parse(r.status)).toEqual(r.status);
-    expect(Object.keys(r.status.loops)).toHaveLength(25);
+    expect(Object.keys(r.status.loops)).toHaveLength(29); // five plant loops, makeup and level1..level23
     expect(r.status.shiftTicksRemaining).toBe(SHIFT_TICKS - 1);
     expect(allFinite(r.status)).toBe(true);
   });

@@ -1,6 +1,7 @@
 import type { PlantEvent, PlantStatus } from '@desal/schema';
-import { alarmContext, alarmsFor, byWorst, requiredIntakeM3h, salinityLimit, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
+import { alarmContext, alarmsFor, byWorst, faultMonitor, requiredIntakeM3h, salinityLimit, worstLevel, type Alarm, type AlarmContext } from '../src/alarms/rules';
 import { DEMO_GAME_ID, demoReadings, demoStatus, demoTarget } from '../src/demo';
+import { RECIRC_SUCTION_MIN_M } from '../src/plantConstants';
 
 // A healthy plant: the demo frame with its two deliberate problems removed.
 const clean = (over: Record<string, number> = {}) =>
@@ -20,11 +21,20 @@ describe('alarmsFor', () => {
     expect(() => alarmsFor(demoStatus(), {})).not.toThrow();
   });
 
-  it('TBT: warn at 112, bad at 116', () => {
-    expect(level('tbt', clean({ 'heater.tbtC': 111.9 }))).toBeUndefined();
-    expect(level('tbt', clean({ 'heater.tbtC': 112 }))).toBe('warn');
-    expect(level('tbt', clean({ 'heater.tbtC': 115.9 }))).toBe('warn');
-    expect(level('tbt', clean({ 'heater.tbtC': 116 }))).toBe('bad');
+  it('TBT: warn at 105 (severe scaling), bad at 113 (short of the 115 trip)', () => {
+    expect(level('tbt', clean({ 'heater.tbtC': 104.9 }))).toBeUndefined();
+    expect(level('tbt', clean({ 'heater.tbtC': 105 }))).toBe('warn');
+    expect(level('tbt', clean({ 'heater.tbtC': 112.9 }))).toBe('warn');
+    expect(level('tbt', clean({ 'heater.tbtC': 113 }))).toBe('bad');
+  });
+
+  it('cavitation: a pump at 0.1 is warn, at 0.5 bad, on the intake monitor, named by pump', () => {
+    expect(level('cavitation-P-102', clean({ 'intake.P-102.cavitation': 0.099 }))).toBeUndefined();
+    expect(level('cavitation-P-102', clean({ 'intake.P-102.cavitation': 0.1 }))).toBe('warn');
+    expect(level('cavitation-P-102', clean({ 'intake.P-102.cavitation': 0.5 }))).toBe('bad');
+    const a = alarmsFor(demoStatus(), clean({ 'intake.P-101.cavitation': 0.3 })).find((x) => x.id === 'cavitation-P-101');
+    expect(a).toMatchObject({ monitor: 'intake', level: 'warn' });
+    expect(a?.text).toBe('P-101 cavitating 0.30: slow it or clean the screens');
   });
 
   it('stage level: any stage at 0.5 is warn, at 0.65 bad', () => {
@@ -33,6 +43,37 @@ describe('alarmsFor', () => {
     expect(level('stageLevel', clean({ 'stages.s07.levelM': 0.649 }))).toBe('warn');
     expect(level('stageLevel', clean({ 'stages.s07.levelM': 0.65 }))).toBe('bad');
     expect(alarmsFor(demoStatus(), clean({ 'stages.s07.levelM': 0.66 })).find((a) => a.id === 'stageLevel')?.text).toContain('S7');
+  });
+
+  it('stage level covers all 24 stages, the S24 brine pool included', () => {
+    expect(level('stageLevel', clean({ 'stages.s24.levelM': 0.66 }))).toBe('bad');
+    expect(alarmsFor(demoStatus(), clean({ 'stages.s24.levelM': 0.66 })).find((a) => a.id === 'stageLevel')?.text).toContain('S24');
+  });
+
+  it('brine pool low: S24 at or below 1.5x the recirc suction minimum is warn, at or below the minimum bad', () => {
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 0.3 }))).toBeUndefined();
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 1.5 * RECIRC_SUCTION_MIN_M + 0.001 }))).toBeUndefined();
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 1.5 * RECIRC_SUCTION_MIN_M }))).toBe('warn');
+    expect(level('poolLow', clean({ 'stages.s24.levelM': RECIRC_SUCTION_MIN_M + 0.001 }))).toBe('warn');
+    expect(level('poolLow', clean({ 'stages.s24.levelM': RECIRC_SUCTION_MIN_M }))).toBe('bad');
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 0 }))).toBe('bad');
+    const a = alarmsFor(demoStatus(), clean({ 'stages.s24.levelM': 0.12 })).find((x) => x.id === 'poolLow');
+    expect(a).toMatchObject({ monitor: 'stages', level: 'warn', text: 'Brine pool (S24) level low 0.12 m: raise Makeup' });
+  });
+
+  it('brine pool low watches only S24, and a flooding pool still raises the stage-level alarm', () => {
+    expect(level('poolLow', clean({ 'stages.s23.levelM': 0.05 }))).toBeUndefined();
+    expect(level('poolLow', clean({ 'stages.s24.levelM': 0.66 }))).toBeUndefined();
+    expect(level('stageLevel', clean({ 'stages.s24.levelM': 0.5 }))).toBe('warn');
+    const r = clean();
+    delete r['stages.s24.levelM'];
+    expect(level('poolLow', r)).toBeUndefined();
+  });
+
+  it('a controller fault on the makeup loop or any level loop opens Stages', () => {
+    expect(faultMonitor('Controller fault on loop makeup: stuck.')).toBe('stages');
+    expect(faultMonitor('Controller fault on loop level23: drift.')).toBe('stages');
+    expect(alarmsFor(demoStatus(), clean(), { faults: ['Controller fault on loop makeup: stuck.'] }).find((a) => a.id === 'fault0')?.monitor).toBe('stages');
   });
 
   it('vacuum: warn below 0.8, bad below 0.7', () => {
@@ -113,7 +154,7 @@ describe('alarmsFor', () => {
   it('tripped is bad on the shift monitor', () => {
     expect(level('tripped', clean(), demoStatus({ status: 'restarting' }))).toBeUndefined();
     const a = alarmsFor(demoStatus({ status: 'tripped', tripCause: 'tbtHighHigh' }), clean()).find((x) => x.id === 'tripped');
-    expect(a).toMatchObject({ monitor: 'shift', level: 'bad' });
+    expect(a).toMatchObject({ monitor: 'shift', level: 'bad', text: 'Plant tripped: TBT high-high' });
   });
 
   it('balance: warn below $5,000, bad below $0', () => {
@@ -142,13 +183,14 @@ describe('alarmsFor', () => {
 });
 
 describe('alarmContext', () => {
+  const ORDERS = { targetM3: 1, maxSalinityPpm: 25, budgetUsd: 1, lines: [], briefing: [] };
   const base = { gameId: DEMO_GAME_ID, epoch: 0, tick: 0, plantTime: 0 };
   const events: PlantEvent[] = [
-    { ...base, seq: 1, shiftId: 2, type: 'shiftStart', scenarioId: 'a', mode: 'auto', target: { ...demoTarget, productM3: 1 } },
-    { ...base, seq: 2, shiftId: 2, type: 'scenario', kind: 'controllerFault', message: 'old fault' },
-    { ...base, seq: 3, shiftId: 3, type: 'shiftStart', scenarioId: 'b', mode: 'auto', target: demoTarget },
-    { ...base, seq: 4, shiftId: 3, type: 'scenario', kind: 'bloom', message: 'bloom' },
-    { ...base, seq: 5, shiftId: 3, type: 'scenario', kind: 'controllerFault', message: 'Controller fault on loop vacuum: stuck.' },
+    { ...base, seq: 1, shiftId: 2, type: 'shiftStart', scenarioId: 'a', mode: 'auto', target: { ...demoTarget, productM3: 1 }, hell: false, orders: ORDERS },
+    { ...base, seq: 2, shiftId: 2, type: 'scenario', kind: 'controllerFault', message: 'old fault', eventId: 1, radio: 'old fault' },
+    { ...base, seq: 3, shiftId: 3, type: 'shiftStart', scenarioId: 'b', mode: 'auto', target: demoTarget, hell: false, orders: ORDERS },
+    { ...base, seq: 4, shiftId: 3, type: 'scenario', kind: 'bloom', message: 'bloom', eventId: 1, radio: 'bloom' },
+    { ...base, seq: 5, shiftId: 3, type: 'scenario', kind: 'controllerFault', message: 'Controller fault on loop vacuum: stuck.', eventId: 1, radio: 'Controller fault on loop vacuum: stuck.' },
   ];
 
   it('takes the current shift target and its controller faults only', () => {

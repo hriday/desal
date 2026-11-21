@@ -3,20 +3,25 @@ import { applyCommand } from './commands.js';
 import {
   LOOP_ACTION,
   LOOP_GAINS,
-  LOOP_RANGES,
   SHIFT_TICKS,
   SNAPSHOT_EVERY_TICKS,
   TICK_PLANT_S,
 } from './constants.js';
+import { autoOutputRange } from './control/loops.js';
 import { pidStep } from './control/pid.js';
-import { spendPerTick } from './economy.js';
+import { chargeStanding, spendPerTick } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
+import { nextRandom } from './rng.js';
 import { checkGameOver, endGame } from './gameover.js';
 import { applyTrip, checkInterlocks } from './safety/interlocks.js';
+import { CONTAMINATION_FLAMEOUT_P } from './constants.js';
 import { stepAcidClean, stepRestart } from './safety/restart.js';
+import { contaminationActive } from './scenario/disaster/fuelContamination.js';
 import { stepScenario } from './scenario/engine.js';
+import { stepCrew, stepFaults } from './scenario/sharp.js';
+import { measured } from './sensors.js';
 import { endShift } from './shift.js';
-import type { Loop, PlantState, SimEvent } from './state.js';
+import type { Loop, LoopSensorId, PlantState, SimEvent } from './state.js';
 import { stepFuel } from './units/fuel.js';
 import { heaterDemandMW, stepHeater } from './units/heater.js';
 import { stepIntake, stepOverhauls } from './units/intake.js';
@@ -45,26 +50,29 @@ export interface PlantStep {
 type Kind = keyof typeof LOOP_GAINS;
 
 function stepLoop(loop: Loop, kind: Kind, measured: number): Loop {
-  const { outMin, outMax } = LOOP_RANGES[kind];
+  const { outMin, outMax } = autoOutputRange(kind);
   return pidStep(loop, measured, LOOP_GAINS[kind], outMin, outMax, TICK_PLANT_S, LOOP_ACTION[kind]);
 }
 
 /**
  * Step every PID on its measured value. While restarting, the restart sequence owns tbt, vacuum
- * and recirc; while tripped or acid cleaning, the burner is locked out (tbt is not stepped).
+ * and recirc; while tripped or acid cleaning, the burner is locked out (tbt is not stepped). The
+ * level and makeup loops run in every status; makeup holds the stage-24 brine pool.
  */
 function stepLoops(s: PlantState): PlantState {
+  const m = (loop: LoopSensorId, trueValue: number): number => measured(s, loop, trueValue);
   const restarting = s.status === 'restarting';
   const burnerOff = s.status === 'tripped' || s.status === 'acidCleaning';
   const l = s.loops;
   return {
     ...s,
     loops: {
-      tbt: restarting || burnerOff ? l.tbt : stepLoop(l.tbt, 'tbt', s.heater.tbtC),
-      intakeFlow: stepLoop(l.intakeFlow, 'intakeFlow', s.intake.flowM3h),
-      recirc: restarting ? l.recirc : stepLoop(l.recirc, 'recirc', s.brine.recircM3h),
-      blowdown: stepLoop(l.blowdown, 'blowdown', s.brine.concentrationFactor),
-      vacuum: restarting ? l.vacuum : stepLoop(l.vacuum, 'vacuum', s.vacuum.quality),
+      tbt: restarting || burnerOff ? l.tbt : stepLoop(l.tbt, 'tbt', m('tbt', s.heater.tbtC)),
+      intakeFlow: stepLoop(l.intakeFlow, 'intakeFlow', m('intakeFlow', s.intake.flowM3h)),
+      recirc: restarting ? l.recirc : stepLoop(l.recirc, 'recirc', m('recirc', s.brine.recircM3h)),
+      blowdown: stepLoop(l.blowdown, 'blowdown', m('blowdown', s.brine.concentrationFactor)),
+      vacuum: restarting ? l.vacuum : stepLoop(l.vacuum, 'vacuum', m('vacuum', s.vacuum.quality)),
+      makeup: stepLoop(l.makeup, 'makeup', m('makeup', s.stages[s.stages.length - 1]!.levelM)),
       levels: l.levels.map((loop, i) => stepLoop(loop, 'level', s.stages[i]?.levelM ?? loop.setpoint)),
     },
   };
@@ -81,11 +89,19 @@ export function stepPlant(s0: PlantState): PlantStep {
 
   const sc = stepScenario(s0);
   events.push(...sc.events);
-  let s = stepOverhauls(stepIntake(stepLoops(sc.state), dt));
+  // Faults and the crew run after the scenario, so a crew completion (also after it) is seen by the director next tick.
+  let s = stepOverhauls(stepIntake(stepLoops(stepCrew(stepFaults(sc.state, dt))), dt));
 
+  const burningBadFuel = contaminationActive(s);
   const fuel = stepFuel(s, heaterDemandMW(s), dt);
   s = fuel.state;
-  const flameOut = fuel.events.some((e) => e.type === 'fuelChangeover' && e.phase === 'flameOut');
+  let flameOut = fuel.events.some((e) => e.type === 'fuelChangeover' && e.phase === 'flameOut');
+  if (burningBadFuel) {
+    // Contaminated fuel: a small chance each tick that the flame goes out.
+    const [roll, seed] = nextRandom(s.seed);
+    s = { ...s, seed };
+    if (roll < CONTAMINATION_FLAMEOUT_P) flameOut = true;
+  }
   const burnerUp = s.status === 'online' || s.status === 'restarting';
   // A flame-out only matters while the burner is up; drop the report otherwise.
   events.push(...fuel.events.filter((e) => burnerUp || !(e.type === 'fuelChangeover' && e.phase === 'flameOut')));
@@ -199,6 +215,10 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   // The operating account pays for the gas burned (backup fuel was paid on order).
   s = withAccumulators(spendPerTick(step.state, step.fuelCostUsd), { ...step, trips });
   s = { ...s, tick: s.tick + 1, plantTime: s.plantTime + TICK_PLANT_S * 1000 };
+  // Staff and standby cost money every running tick, online or not (reported hourly).
+  const standing = chargeStanding(s);
+  s = standing.state;
+  events.push(...standing.events);
   const telemetry = toTelemetry(s);
 
   let ended = false;

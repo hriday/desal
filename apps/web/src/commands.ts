@@ -1,4 +1,4 @@
-import type { ClientMsg, Command, FuelKind, LoopId, LoopMode, PumpId, RestartStep } from '@desal/schema';
+import type { ClientMsg, Command, CrewJob, FuelKind, LoopId, LoopMode, PumpId, RestartStep } from '@desal/schema';
 
 type Chemical = Extract<Command, { type: 'setDose' }>['chemical'];
 
@@ -15,6 +15,7 @@ export const restart = (): Command => ({ type: 'restart' });
 export const restartStep = (step: RestartStep): Command => ({ type: 'restartStep', step });
 export const acidClean = (): Command => ({ type: 'acidClean' });
 export const overhaul = (pumpId: PumpId): Command => ({ type: 'overhaulPump', pumpId });
+export const dispatchCrew = (job: CrewJob): Command => ({ type: 'dispatchCrew', job });
 export const manualTrip = (): Command => ({ type: 'manualTrip' });
 export const pause = (): Command => ({ type: 'pause' });
 export const resume = (): Command => ({ type: 'resume' });

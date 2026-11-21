@@ -7,6 +7,7 @@ import { BrineHeater } from '../src/equipment/BrineHeater';
 import { FlashStages } from '../src/equipment/FlashStages';
 import { Fuel } from '../src/equipment/Fuel';
 import { Intake } from '../src/equipment/Intake';
+import { Pipe } from '../src/equipment/Pipe';
 import { ProductWater } from '../src/equipment/ProductWater';
 import { ShiftAccount } from '../src/equipment/ShiftAccount';
 import type { EquipmentProps } from '../src/equipment/types';
@@ -18,8 +19,8 @@ afterEach(cleanup);
 
 const EQUIPMENT: [string, ComponentType<EquipmentProps>, string[]][] = [
   ['Intake', Intake, ['5,800 m³/h', 'Chl-a 4.1', 'P-101', 'P-103']],
-  ['BrineHeater', BrineHeater, ['108.0 °C', '72 %', 'burner health 93 %']],
-  ['FlashStages', FlashStages, ['20 stages', 'Vac 0.94']],
+  ['BrineHeater', BrineHeater, ['93.5 °C', '72 %', 'burner health 93 %']],
+  ['FlashStages', FlashStages, ['24 stages', 'Vac 0.94']],
   ['ProductWater', ProductWater, ['512 m³/h', '18 ppm', 'in spec']],
   ['Fuel', Fuel, ['60 MW', '$8.00/GJ', '128 t', 'standard', 'on gas']],
   ['ShiftAccount', ShiftAccount, ['Shift 3', '3h 40m left', '2,380 / 3,900 m³', '$12,450']],
@@ -109,6 +110,39 @@ describe('equipment drawings', () => {
     expect([tint(1), tint(2), tint(3), tint(4)]).toEqual(['ok', 'bad', 'warn', 'ok']);
   });
 
+  it('draws 24 stages: heat recovery 1–21, then a separate heat-rejection section 22–24', () => {
+    const { container } = render(<FlashStages status={demoStatus()} readings={demoReadings()} target={null} />);
+    const stages = [...container.querySelectorAll('[data-stage]')];
+    expect(stages.map((g) => Number(g.getAttribute('data-stage')))).toEqual(Array.from({ length: 24 }, (_, i) => i + 1));
+    const section = (n: number) => stages[n - 1]!.closest('[data-section]')?.getAttribute('data-section');
+    expect([section(1), section(21), section(22), section(24)]).toEqual(['recovery', 'recovery', 'reject', 'reject']);
+    // The reject section stands apart: the gap between S21 and S22 is wider than between neighbours.
+    const x = (n: number) => Number(stages[n - 1]!.querySelector('rect')!.getAttribute('x'));
+    expect(x(22) - x(21)).toBeGreaterThan(x(21) - x(20));
+  });
+
+  it('pipes: seawater through the reject tubes, makeup to the pool, cooling reject to sea, recycle from S24 through S21 → S1', () => {
+    const r = demoReadings({ 'brine.makeupM3h': 0 });
+    const { container } = render(<FlashStages status={demoStatus()} readings={r} target={null} />);
+    const pipe = (name: string) => container.querySelector(`[data-pipe="${name}"]`);
+    for (const name of ['seawater', 'makeup', 'coolingReject', 'recycle', 'distillate']) expect(pipe(name), name).not.toBeNull();
+    expect(pipe('condenser')).toBeNull();
+    expect(pipe('makeup')!.getAttribute('data-flowing')).toBe('false');
+    expect(pipe('seawater')!.getAttribute('data-flowing')).toBe('true');
+    expect(pipe('coolingReject')!.getAttribute('data-flowing')).toBe('true');
+    expect(pipe('recycle')!.getAttribute('data-flowing')).toBe('true');
+    // Recycle starts under the S24 pool and ends at S1's tubes (on to the heater).
+    const shell = (n: number) => container.querySelector(`[data-stage="${n}"] rect`)!;
+    const left = (n: number) => Number(shell(n).getAttribute('x'));
+    const right = (n: number) => left(n) + Number(shell(n).getAttribute('width'));
+    const d = pipe('recycle')!.querySelector('path')!.getAttribute('d')!;
+    const start = Number(/^M\s*([\d.]+)/.exec(d)![1]);
+    const end = Number(/H\s*([\d.]+)\s*$/.exec(d)![1]);
+    expect(start).toBeGreaterThanOrEqual(left(24));
+    expect(start).toBeLessThanOrEqual(right(24));
+    expect(end).toBeLessThanOrEqual(left(1));
+  });
+
   it('fills a stage by its brine level', () => {
     const { container } = render(<FlashStages status={demoStatus()} readings={demoReadings({ 'stages.s01.levelM': 0.5 })} target={null} />);
     const h = (n: number) => Number(container.querySelector(`[data-stage="${n}"] .brine`)?.getAttribute('height'));
@@ -165,6 +199,87 @@ describe('Monitor', () => {
     const { getByRole } = render(<Monitor id="fuel" {...props} alarms={[]} onOpen={onOpen} />);
     fireEvent.click(getByRole('button', { name: /fuel/i }));
     expect(onOpen).toHaveBeenCalledWith('fuel');
+  });
+});
+
+describe('living wall (Task 11)', () => {
+  const props = { readings: demoReadings(), target: demoTarget };
+  const pumpStatus = (running: boolean) => {
+    const st = demoStatus();
+    return { ...st, pumps: { ...st.pumps, 'P-101': { ...st.pumps['P-101'], running } } };
+  };
+
+  it('a running pump has class is-running; a stopped one does not', () => {
+    const cls = (running: boolean) => {
+      const { container, unmount } = render(<Intake status={pumpStatus(running)} {...props} />);
+      const c = container.querySelector('[data-pump="P-101"]')!.getAttribute('class') ?? '';
+      unmount();
+      return c;
+    };
+    expect(cls(true)).toMatch(/\bis-running\b/);
+    expect(cls(false)).not.toMatch(/\bis-running\b/);
+  });
+
+  it('a pipe with zero flow is not flowing; with flow it is, and its speed follows the flow', () => {
+    const pipe = (flow: number | undefined) => {
+      const { container, unmount } = render(<svg><Pipe d="M0 0 H10" stroke="red" width={2} flow={flow} /></svg>);
+      const el = container.querySelector('[data-flowing]')!;
+      const out = { flowing: el.getAttribute('data-flowing'), speed: (el as SVGElement).style.getPropertyValue('--flow-speed') };
+      unmount();
+      return out;
+    };
+    expect(pipe(0).flowing).toBe('false');
+    expect(pipe(undefined).flowing).toBe('false');
+    expect(pipe(1).flowing).toBe('true');
+    expect(parseFloat(pipe(1).speed)).toBeLessThan(parseFloat(pipe(0.3).speed));
+    expect(pipe(0).speed).not.toMatch(/NaN|Infinity/);
+  });
+
+  it('the intake header stops flowing at zero intake flow', () => {
+    const { container } = render(<Intake status={demoStatus()} readings={demoReadings({ 'intake.flowM3h': 0 })} target={null} />);
+    expect(container.querySelector('[data-pipe="header"]')!.getAttribute('data-flowing')).toBe('false');
+  });
+
+  it('a Monitor with an unseen high alarm has data-alert="high"; once seen it is gone', () => {
+    const alarms = [alarm('heater', 'bad', 'tbt-high')];
+    const onOpen = vi.fn();
+    const { getByRole, rerender } = render(<Monitor id="heater" status={demoStatus()} {...props} alarms={alarms} seen={new Set()} onOpen={onOpen} />);
+    expect(getByRole('button').getAttribute('data-alert')).toBe('high');
+    fireEvent.click(getByRole('button'));
+    expect(onOpen).toHaveBeenCalledWith('heater');
+    rerender(<Monitor id="heater" status={demoStatus()} {...props} alarms={alarms} seen={new Set(['tbt-high:bad'])} onOpen={onOpen} />);
+    expect(getByRole('button').hasAttribute('data-alert')).toBe(false);
+  });
+
+  it('a seen warning that escalates to high pulses again', () => {
+    const { getByRole } = render(<Monitor id="heater" status={demoStatus()} {...props} alarms={[alarm('heater', 'bad', 'tbt')]} seen={new Set(['tbt:warn'])} onOpen={() => {}} />);
+    expect(getByRole('button').getAttribute('data-alert')).toBe('high');
+  });
+
+  it('a warn alarm alone does not make the frame pulse as high', () => {
+    const { getByRole } = render(<Monitor id="heater" status={demoStatus()} {...props} alarms={[alarm('heater', 'warn')]} seen={new Set()} onOpen={() => {}} />);
+    expect(getByRole('button').getAttribute('data-alert')).toBe('warn');
+  });
+
+  it('a Monitor is down (data-down="true") while the plant is tripped, not while online', () => {
+    const down = (status: 'tripped' | 'online') => {
+      const { getByRole, unmount } = render(<Monitor id="intake" status={demoStatus({ status })} {...props} alarms={[]} onOpen={() => {}} />);
+      const v = getByRole('button').getAttribute('data-down');
+      unmount();
+      return v;
+    };
+    expect(down('tripped')).toBe('true');
+    expect(down('online')).not.toBe('true');
+  });
+
+  it.each([
+    ['intake', 'acidCleaning', 'true'],
+    ['stages', 'restarting', null],
+    ['shift', 'tripped', null],
+    ['shift', 'acidCleaning', null],
+  ] as const)('%s monitor with plant %s: data-down is %s', (id, status, expected) => {
+    const { getByRole } = render(<Monitor id={id} status={demoStatus({ status })} {...props} alarms={[]} onOpen={() => {}} />);
+    expect(getByRole('button').getAttribute('data-down')).toBe(expected);
   });
 });
 

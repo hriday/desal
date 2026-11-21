@@ -1,6 +1,8 @@
 import type {
+  CrewJob,
   FuelGrade,
   GameEndReason,
+  GameMode,
   PlantEvent,
   FuelKind,
   Phase,
@@ -29,7 +31,9 @@ import {
   INTAKE_REQUIRED_BASE_M3H,
   LATENT_J_kg,
   LEVEL_BALANCE_VALVE_PCT,
+  LEVEL_LOOP_COUNT,
   LOOP_GAINS,
+  MAKEUP_MAX_M3H,
   PUMP_RATED_M3H,
   RECIRC_NOMINAL_M3H,
   RECIRC_PUMP_MAX_M3H,
@@ -38,7 +42,14 @@ import {
   VACUUM_QUALITY_MIN,
   VACUUM_QUALITY_NOMINAL,
 } from './constants.js';
+import type { ActiveChaos, ChaosPlan, SensorFault } from './scenario/chaosTypes.js';
 import type { Scenario } from './scenario/types.js';
+
+/**
+ * The loops' process values, which a sensor fault can corrupt (the names match the LoopId of the same
+ * loops). 'makeup' is the stage-24 brine pool level.
+ */
+export type LoopSensorId = 'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum' | 'makeup';
 
 export type LoopFault = { kind: 'stuck' | 'drift' | 'oscillate'; bias: number };
 export interface Loop {
@@ -80,7 +91,8 @@ export interface ShiftState {
   target: ShiftTarget;
   /**
    * productM3: in-spec water delivered (the shift's progress); offSpecM3: off-spec water delivered,
-   * which counts for nothing. fuelCostUsd: gas burned plus backup ordered. spentUsd: fuel plus repairs.
+   * which counts for nothing. fuelCostUsd: gas burned plus backup ordered. spentUsd: fuel plus
+   * repairs, crew jobs and the standing cost.
    */
   acc: { productM3: number; offSpecM3: number; offSpecTicks: number; fuelCostUsd: number; trips: number; spentUsd: number };
 }
@@ -95,9 +107,20 @@ export interface ScenarioEffects {
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 export type SimEvent = DistributiveOmit<PlantEvent, 'gameId' | 'epoch' | 'seq'>;
 
+/** A tsunami in progress: the warning, the surge, and whether the crew cleaned up after it. */
+export interface TsunamiFault {
+  warnRemainingTicks: number;
+  surgeRemainingTicks: number;
+  surgeDone: boolean;
+  cleanedAfterSurge: boolean;
+  /** Seawater cooling (degC) applied when the surge arrives, drawn when the tsunami fires. */
+  coolC: number;
+}
+
 /** One game = one run of shifts in one sitting; the operating account lives here. */
 export interface Run {
   gameId: string;
+  mode: GameMode;
   balanceUsd: number;
   shiftNumber: number;
   totalProductM3: number;
@@ -132,13 +155,26 @@ export interface PlantState {
     bestTbtC: number;
   } | null;
   acidCleanRemainingTicks: number;
-  loops: Record<'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum', Loop> & { levels: Loop[] };
+  /** levels: the LEVEL_LOOP_COUNT interstage level loops (level1..level23). makeup: the stage-24 pool's seawater makeup. */
+  loops: Record<'tbt' | 'intakeFlow' | 'recirc' | 'blowdown' | 'vacuum' | 'makeup', Loop> & { levels: Loop[] };
   seawater: { tempC: number; salinityGL: number; chlorophyllUgL: number };
   intake: { pumps: Record<PumpId, Pump>; screenFouling: number; flowM3h: number; requiredM3h: number };
   pretreat: { chlorineMgL: number; antiscalantMgL: number; biofouling: number };
   heater: { tbtC: number; firingPct: number; burnerCondition: number; heatMW: number };
   stages: Stage[];
-  brine: { recircM3h: number; concentrationFactor: number; blowdownM3h: number };
+  /**
+   * makeupM3h: the lagged actual seawater makeup into the stage-24 pool (never above the intake flow).
+   * distillateM3h: the last tick's raw distillate (before status gating), set by stepStages.
+   * cfTargetHeld: the CF target kept while the plant is not online (the last online value).
+   */
+  brine: {
+    recircM3h: number;
+    concentrationFactor: number;
+    blowdownM3h: number;
+    makeupM3h: number;
+    distillateM3h: number;
+    cfTargetHeld: number;
+  };
   vacuum: { quality: number };
   product: { flowM3h: number; salinityPpm: number; divertToDrain: boolean };
   fuel: {
@@ -153,10 +189,31 @@ export interface PlantState {
   shift: ShiftState | null;
   scenario: { id: string; definition: Scenario | null; nextEventIndex: number; effects: ScenarioEffects };
   run: Run;
+  chaos: { pending: ChaosPlan | null; active: ActiveChaos | null; lastWasHell: boolean; lastHadDisaster: boolean };
+  crew: { job: CrewJob; remainingTicks: number } | null;
+  faults: {
+    tubeLeak: { stage: number; ppm: number } | null;
+    ejectorFailed: boolean;
+    /** Vacuum quality the failed ejector loses per plant minute at nominal load. */
+    ejectorRatePerMin: number;
+    powerDipRemainingTicks: number;
+    /** Recirculation pump cap while a power dip lasts, as a fraction of its normal maximum. */
+    powerDipRecircFactor: number;
+    stormRemainingTicks: number;
+    stormFouling: number;
+    /** Set by the cleanScreens crew job (Task 8); it alone makes a storm count as cleared by the crew. */
+    stormCleanedByCrew: boolean;
+    /** Fuel contaminated by a bad delivery; set while the contaminated fuel is the active one. */
+    fuelContamination: { fuel: FuelKind } | null;
+    tsunami: TsunamiFault | null;
+    sensors: Partial<Record<LoopSensorId, SensorFault>>;
+    /** Per-stage capacity multiplier, 1 = healthy. */
+    stageDerate: number[];
+  };
 }
 
 const SEAWATER_C = 30;
-const TBT_C = 108;
+const TBT_C = 93.5;
 const CHLOROPHYLL_UGL = 1;
 const CHLORINE_MGL = 1;
 /** Biofouling (and so screen fouling) where growth balances the chlorine kill (as units/intake). */
@@ -168,9 +225,18 @@ const BOTTOM_C = SEAWATER_C + BOTTOM_APPROACH_C + (1 - VACUUM_QUALITY_NOMINAL) *
 const RECIRC_KGS = (RECIRC_NOMINAL_M3H * BRINE_DENSITY) / 3600;
 /** Heater duty that holds TBT with clean tubes: recovered = TBT - HEATER_DT0_C (as units/heater). */
 const HEAT_MW = (RECIRC_KGS * CP_BRINE * HEATER_DT0_C) / 1e6;
+/** Flash distillate over the whole cascade with clean tubes (as units/stages). */
+const PRODUCT_M3H = ((RECIRC_KGS * CP_BRINE * (TBT_C - BOTTOM_C)) / LATENT_J_kg) * (3600 / DISTILLATE_DENSITY);
+/**
+ * Blowdown valve opening (percent) that holds the nominal CF: 58.33 %. Plan 7 keeps this value (and
+ * so the blowdown loop's integral preset) from the old linear CF model; the salt balance
+ * CF = (D + B) / B gives CF_NOMINAL here because BLOWDOWN_MAX_M3H is sized to it
+ * (PRODUCT_M3H / (CF_NOMINAL - 1) / BLOWDOWN_MAX_M3H is 58.34 %).
+ */
+const BLOWDOWN_PCT = (100 * (CF_MAX - CF_NOMINAL)) / (CF_MAX - CF_MIN);
 
 // Nominal steady state, derived from the unit physics so tick 0 -> 1 starts at equilibrium.
-const NOMINAL = {
+export const NOMINAL = {
   tbtC: TBT_C,
   recircM3h: RECIRC_NOMINAL_M3H,
   intakeM3h: INTAKE_SP_M3H,
@@ -181,16 +247,19 @@ const NOMINAL = {
   levelM: 0.3,
   firingPct: (100 * HEAT_MW) / BURNER_MAX_MW,
   heatMW: HEAT_MW,
-  /** Flash distillate over the whole cascade with clean tubes (as units/stages). */
-  productM3h: ((RECIRC_KGS * CP_BRINE * (TBT_C - BOTTOM_C)) / LATENT_J_kg) * (3600 / DISTILLATE_DENSITY),
+  productM3h: PRODUCT_M3H,
+  blowdownM3h: (BLOWDOWN_MAX_M3H * BLOWDOWN_PCT) / 100,
+  /** Seawater makeup that holds the stage-24 pool: it replaces the distillate and the blowdown drawn from it. */
+  makeupM3h: PRODUCT_M3H + (BLOWDOWN_MAX_M3H * BLOWDOWN_PCT) / 100,
 };
 
 // Actuator outputs (percent) that hold the nominal plant at equilibrium with no PID action.
 export const BALANCE = {
   recircPct: (100 * NOMINAL.recircM3h) / RECIRC_PUMP_MAX_M3H,
   vacuumPct: (100 * (NOMINAL.vacuumQuality - VACUUM_QUALITY_MIN)) / (1 - VACUUM_QUALITY_MIN),
-  blowdownPct: (100 * (CF_MAX - NOMINAL.concentrationFactor)) / (CF_MAX - CF_MIN),
+  blowdownPct: BLOWDOWN_PCT,
   levelPct: LEVEL_BALANCE_VALVE_PCT,
+  makeupPct: (100 * NOMINAL.makeupM3h) / MAKEUP_MAX_M3H,
 };
 
 /** A loop at rest: the integral is preset so that at zero error the PI output equals `output`. */
@@ -203,7 +272,25 @@ function pump(running: boolean): Pump {
   return { running, wear: 0, cavitation: 0, bearingWearMult: 1, overhaulRemainingTicks: 0 };
 }
 
-export function createInitialState(seed: number, startPlantTime: number, gameId: string): PlantState {
+/** Every per-shift fault cleared: the state a shift starts with. */
+export function noFaults(): PlantState['faults'] {
+  return {
+    tubeLeak: null,
+    ejectorFailed: false,
+    ejectorRatePerMin: 0,
+    powerDipRemainingTicks: 0,
+    powerDipRecircFactor: 1,
+    stormRemainingTicks: 0,
+    stormFouling: 0,
+    stormCleanedByCrew: false,
+    fuelContamination: null,
+    tsunami: null,
+    sensors: {},
+    stageDerate: Array.from({ length: STAGE_COUNT }, () => 1),
+  };
+}
+
+export function createInitialState(seed: number, startPlantTime: number, gameId: string, mode: GameMode = 'normal'): PlantState {
   const stages: Stage[] = Array.from({ length: STAGE_COUNT }, (_, i) => ({
     tempC: NOMINAL.tbtC - (NOMINAL.tbtC - BOTTOM_C) * ((i + 0.5) / STAGE_COUNT),
     levelM: NOMINAL.levelM,
@@ -227,7 +314,8 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
       recirc: loop('recirc', NOMINAL.recircM3h, BALANCE.recircPct),
       blowdown: loop('blowdown', NOMINAL.concentrationFactor, BALANCE.blowdownPct),
       vacuum: loop('vacuum', NOMINAL.vacuumQuality, BALANCE.vacuumPct),
-      levels: Array.from({ length: STAGE_COUNT }, () => loop('level', NOMINAL.levelM, BALANCE.levelPct)),
+      makeup: loop('makeup', NOMINAL.levelM, BALANCE.makeupPct),
+      levels: Array.from({ length: LEVEL_LOOP_COUNT }, () => loop('level', NOMINAL.levelM, BALANCE.levelPct)),
     },
     seawater: { tempC: SEAWATER_C, salinityGL: 45, chlorophyllUgL: CHLOROPHYLL_UGL },
     intake: {
@@ -242,7 +330,10 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
     brine: {
       recircM3h: NOMINAL.recircM3h,
       concentrationFactor: NOMINAL.concentrationFactor,
-      blowdownM3h: (BLOWDOWN_MAX_M3H * BALANCE.blowdownPct) / 100,
+      blowdownM3h: NOMINAL.blowdownM3h,
+      makeupM3h: NOMINAL.makeupM3h,
+      distillateM3h: NOMINAL.productM3h,
+      cfTargetHeld: NOMINAL.concentrationFactor,
     },
     vacuum: { quality: NOMINAL.vacuumQuality },
     product: { flowM3h: NOMINAL.productM3h, salinityPpm: BASE_SALINITY_PPM, divertToDrain: false },
@@ -262,6 +353,9 @@ export function createInitialState(seed: number, startPlantTime: number, gameId:
       nextEventIndex: 0,
       effects: { offgradeOnly: false, deliveryDelayTicks: 0, chlorophyllTarget: 1, chlorophyllRampPerTick: 0 },
     },
-    run: { gameId, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
+    run: { gameId, mode, balanceUsd: START_BALANCE_USD, shiftNumber: 0, totalProductM3: 0, shiftsCompleted: 0, eventSeq: 0, epoch: 0, over: null },
+    chaos: { pending: null, active: null, lastWasHell: false, lastHadDisaster: false },
+    crew: null,
+    faults: noFaults(),
   };
 }

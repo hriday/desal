@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { MAX_GAMES } from './constants.js';
 import { toStatus } from './emit.js';
 import { endGame } from './gameover.js';
+import { DUE_SLACK_MS, tickIntervalMs } from './pace.js';
 import { nextRandom } from './rng.js';
+import { drawPendingPlan } from './shift.js';
 import { createInitialState, type PlantState } from './state.js';
 import { stamped, tick } from './tick.js';
 
@@ -45,6 +47,12 @@ export interface GameHostOptions {
   idleRunningMs?: number;
   /** Seed of the RNG that picks each new game's plant seed. Tests use the default; the runner passes a random one. */
   seed?: number;
+  /**
+   * Tick each game at its own pace (default true): a calm running game every CALM_TICK_MS, any
+   * other every BUSY_TICK_MS (src/pace.ts), so step() must be called at least every CALM_TICK_MS.
+   * False ticks every game on every step (tests that step many times at one nowMs).
+   */
+  paced?: boolean;
 }
 
 interface Entry {
@@ -53,6 +61,10 @@ interface Entry {
   lastSeenMs: number;
   /** Last command other than a heartbeat (the player is still playing). */
   lastPlayerActionMs: number;
+  /** Host time from which the game's next tick is due (less DUE_SLACK_MS). */
+  dueMs: number;
+  /** Command envelopes received since its last tick, applied in order on its next one. */
+  queued: unknown[];
 }
 
 type HostEventBody =
@@ -64,7 +76,8 @@ const uuid = z.string().uuid();
 /**
  * Many plants, pure: holds one PlantState per gameId, routes command envelopes, enforces the game cap,
  * ends abandoned games and isolates a failing game from the rest. The only wall-clock input is the
- * `nowMs` passed to step() (liveness); tick() itself never sees it.
+ * `nowMs` passed to step() (liveness and pace); tick() itself never sees it. Pace only chooses which
+ * steps tick a game; a game that is not due keeps its commands for its next tick and emits nothing.
  */
 export class GameHost {
   private readonly entries = new Map<string, Entry>();
@@ -72,6 +85,7 @@ export class GameHost {
   private readonly idleMs: number;
   private readonly idleHandoverMs: number;
   private readonly idleRunningMs: number;
+  private readonly paced: boolean;
   private rngSeed: number;
 
   constructor(opts: GameHostOptions = {}) {
@@ -79,6 +93,7 @@ export class GameHost {
     this.idleMs = opts.idleMs ?? DEFAULT_IDLE_MS;
     this.idleHandoverMs = opts.idleHandoverMs ?? DEFAULT_IDLE_HANDOVER_MS;
     this.idleRunningMs = opts.idleRunningMs ?? DEFAULT_IDLE_RUNNING_MS;
+    this.paced = opts.paced ?? true;
     this.rngSeed = (opts.seed ?? DEFAULT_HOST_SEED) >>> 0;
   }
 
@@ -89,12 +104,12 @@ export class GameHost {
   /**
    * Resume games from snapshots after a restart; their liveness and player-action clocks start now.
    * Each restored game enters a new epoch: its seq and tick may rewind to the snapshot's, and the
-   * epoch tells consumers that records from here on are new, not duplicates.
+   * epoch tells consumers that records from here on are new, not duplicates. They are due at once.
    */
   restore(states: PlantState[], nowMs: number): void {
     for (const s of states) {
       const state: PlantState = { ...s, run: { ...s.run, epoch: s.run.epoch + 1 } };
-      this.entries.set(state.run.gameId, { state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });
+      this.entries.set(state.run.gameId, { state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs, dueMs: nowMs, queued: [] });
     }
   }
 
@@ -113,7 +128,6 @@ export class GameHost {
 
   step(envelopes: unknown[], nowMs: number): HostTick {
     const hostEvents: PlantEvent[] = [];
-    const pending = new Map<string, unknown[]>();
     const lead = new Map<string, PlantEvent[]>();
 
     // Host-level events have no plant to stamp from: seq 0, tick 0, wall-clock plantTime, no shift,
@@ -144,10 +158,12 @@ export class GameHost {
         } else if (this.entries.size >= this.maxGames) {
           hostEvent(gameId, { type: 'gameRejected', reason: 'capacity' });
         } else {
-          const initial = createInitialState(this.newSeed(), nowMs, gameId);
+          // Shift 1's plan is drawn now, deterministically from the game seed, so the first handover has orders.
+          const initial = drawPendingPlan(createInitialState(this.newSeed(), nowMs, gameId, command.mode));
           // gameStart is seq 0 of the new game, stamped from its own state.
-          const start = stamped([{ type: 'gameStart', tick: 0, plantTime: nowMs, shiftId: null }], initial);
-          this.entries.set(gameId, { state: start.state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs });
+          const start = stamped([{ type: 'gameStart', mode: initial.run.mode, tick: 0, plantTime: nowMs, shiftId: null }], initial);
+          // Due at once, so its gameStart and first save come out on this step.
+          this.entries.set(gameId, { state: start.state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs, dueMs: nowMs, queued: [] });
           lead.set(gameId, start.events);
         }
         continue;
@@ -163,9 +179,7 @@ export class GameHost {
       existing.lastSeenMs = nowMs;
       if (command.type === 'heartbeat') continue;
       existing.lastPlayerActionMs = nowMs;
-      const list = pending.get(gameId) ?? [];
-      list.push(raw);
-      pending.set(gameId, list);
+      existing.queued.push(raw);
     }
 
     const perGame = new Map<string, GameTickOut>();
@@ -178,8 +192,16 @@ export class GameHost {
       try {
         if (this.idle(entry, nowMs)) {
           out = this.finish(entry, 'abandoned', first);
+        } else if (this.paced && nowMs < entry.dueMs - DUE_SLACK_MS) {
+          continue; // not due: no tick, no records; its commands wait in entry.queued
         } else {
-          const r = tick(entry.state, pending.get(gameId) ?? []);
+          const commands = entry.queued;
+          entry.queued = [];
+          const r = tick(entry.state, commands);
+          entry.dueMs = nowMs + tickIntervalMs(r.state);
+          // Each phase gets its full idle allowance: a shift that ends on its own lands in handover
+          // with the player's last action a whole shift ago, and must not count as abandoned at once.
+          if (r.state.phase !== entry.state.phase) entry.lastPlayerActionMs = nowMs;
           entry.state = r.state;
           // A game created this step is saved at once: until its first shift runs, no periodic
           // snapshot would come, and a crash would lose it.

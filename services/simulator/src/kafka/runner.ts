@@ -1,6 +1,7 @@
 import { TOPICS } from '@desal/schema';
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
 import type { GameHost, HostTick } from '../host.js';
+import { CALM_TICK_MS } from '../pace.js';
 import { restore, serialize, snapshotIssue } from '../snapshot.js';
 import type { PlantState } from '../state.js';
 import { topicName, type KafkaInstance } from './client.js';
@@ -174,7 +175,10 @@ export function kafkaIO(kafka: KafkaInstance): SimIO {
 // ---------------------------------------------------------------------------
 
 export interface RunnerOptions {
-  /** Real milliseconds per tick (1 tick = 40 plant seconds). */
+  /**
+   * Real ms per host step (default CALM_TICK_MS, the calm pace). The host decides which games each
+   * step ticks (1 tick = 40 plant seconds), so this is no longer a game's tick period.
+   */
   tickMs?: number;
   /** While Kafka is down, how often to retry the failed send. */
   retryMs?: number;
@@ -269,7 +273,7 @@ export class SimRunner {
     opts: RunnerOptions = {},
   ) {
     this.io = isSimIO(kafka) ? kafka : kafkaIO(kafka);
-    this.tickMs = opts.tickMs ?? 1000;
+    this.tickMs = opts.tickMs ?? CALM_TICK_MS;
     this.retryMs = opts.retryMs ?? 2000;
     this.log = opts.log ?? ((m) => console.log(`[sim] ${m}`));
     this.warn = opts.warn ?? ((m) => console.warn(`[sim] WARN ${m}`));
@@ -450,7 +454,7 @@ export class SimRunner {
       return await this.halt('runner error', e);
     }
     if (!this.running) return;
-    // While down, retry every retryMs; otherwise keep a 1 tick/tickMs cadence.
+    // While down, retry every retryMs; otherwise keep a 1 step/tickMs cadence.
     this.schedule(this.unsent ? this.retryMs : Math.max(0, this.tickMs - (this.now() - began)));
   }
 

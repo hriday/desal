@@ -1,24 +1,57 @@
+/* The wall fills the room below the top bar, quota bar and alarm strip: 3 x 2 monitors, drawings scaled to fit. */
 .wall {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .monitor {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  padding: 6px;
-  background: var(--panel);
+  min-height: 0;
+  padding: 8px 10px 10px;
+  background: radial-gradient(120% 90% at 50% 45%, #122030 0%, var(--panel) 72%);
   border: 2px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
+  /* Bezel: a dark rim, a faint blue inner glow, and a drop shadow onto the wall. */
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.55),
+    inset 0 0 22px rgba(56, 139, 253, 0.09),
+    0 1px 0 rgba(255, 255, 255, 0.03),
+    0 6px 18px rgba(0, 0, 0, 0.45);
   color: var(--muted);
   font: 11px/1.3 var(--mono);
   text-align: left;
   cursor: pointer;
 }
-.monitor svg { display: block; width: 100%; height: auto; font-family: var(--mono); }
+/* Alert glow, pulsed by motion.css; its colour follows the worst level. */
+.monitor::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--bad), inset 0 0 26px rgba(248, 81, 73, 0.35);
+  opacity: 0;
+  pointer-events: none;
+}
+.monitor[data-alert="warn"]::before { box-shadow: inset 0 0 0 2px var(--warn), inset 0 0 26px rgba(210, 153, 34, 0.3); }
+/* Scanlines: faint (<= 4 % opacity) and above the drawing, never touching its contrast much. */
+.monitor::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px);
+  pointer-events: none;
+}
 .monitor:hover { border-color: var(--muted); }
 .monitor:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 .monitor--warn, .monitor--warn:hover { border-color: var(--warn); }
@@ -27,26 +60,65 @@
 .monitor__title {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   color: var(--text);
+  font-family: var(--font-display);
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+}
+.monitor__light {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
 }
 .monitor__light--ok { color: var(--ok); }
 .monitor__light--warn { color: var(--warn); }
 .monitor__light--bad { color: var(--bad); }
+
+/* The drawing takes the rest of the monitor and scales to it (viewBox, xMidYMid meet). */
+.monitor__screen { position: relative; flex: 1 1 0; min-height: 0; }
+.monitor__screen svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  font-family: var(--mono);
+}
+/* A tripped or offline unit: still (motion.css) and dimmed. */
+.monitor[data-down="true"] .monitor__screen { opacity: 0.6; }
+
+/* Narrow screens: one monitor per row, each drawing at its natural aspect, scrolling down the page. */
+@media (max-width: 640px) {
+  .wall { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
+  .monitor__screen { flex: none; aspect-ratio: 200 / 150; } /* the drawings' VIEWBOX */
+}
+@media (min-width: 641px) and (max-width: 899px) {
+  /* Never shrink below three readable rows; a short window scrolls the page instead of clipping. */
+  .wall { flex: 1 0 auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(160px, 1fr)); }
+}
 
 .alarm-strip {
   display: flex;
   gap: 6px;
   align-items: center;
   overflow-x: auto;
-  padding: 4px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  padding: 5px 8px;
   background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.35);
   font: 11px/1.3 var(--mono);
 }
 .alarm-strip__none { color: var(--muted); }
 .alarm {
+  position: relative;
   flex: none;
   padding: 2px 8px;
   background: transparent;
@@ -55,6 +127,16 @@
   font: inherit;
   cursor: pointer;
 }
+/* Flash overlay, played once when the alarm appears (motion.css). */
+.alarm::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+}
 .alarm--warn { color: var(--warn); }
-.alarm--bad { color: var(--bad); }
+.alarm--bad { color: var(--bad); background: rgba(248, 81, 73, 0.08); }
 .alarm:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }

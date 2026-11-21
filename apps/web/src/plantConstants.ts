@@ -8,5 +8,38 @@ export const INTAKE_REQUIRED_BASE_M3H = 5500;
 export const INTAKE_REQUIRED_PER_C = 0.03;
 /** TICK_PLANT_S: plant seconds advanced per simulation tick. */
 export const TICK_PLANT_S = 40;
-/** STAGE_COUNT: number of evaporator stages. */
-export const STAGE_COUNT = 20;
+/** STAGE_COUNT: number of evaporator stages: heat recovery 1-21, then heat rejection 22-24. Source: services/simulator/src/constants.ts. */
+export const STAGE_COUNT = 24;
+/** RECOVERY_STAGES: heat-recovery stages (1-21), whose tubes carry the recycled brine. Source: services/simulator/src/constants.ts. */
+export const RECOVERY_STAGES = 21;
+/** LEVEL_LOOP_COUNT: interstage level loops level1..level23; stage 24 (the brine pool) is the makeup loop's. Source: services/simulator/src/constants.ts. */
+export const LEVEL_LOOP_COUNT = 23;
+/** RECIRC_SUCTION_MIN_M: brine pool (S24) level below which the recirc pump loses suction (m). Source: services/simulator/src/constants.ts. */
+export const RECIRC_SUCTION_MIN_M = 0.1;
+/**
+ * MAKEUP_NOMINAL_M3H: seawater makeup into the brine pool at nominal (m3/h), replacing the distillate and
+ * blowdown drawn from it. Mirrors the simulator's NOMINAL.makeupM3h (services/simulator/src/state.ts), about 1713.7.
+ */
+export const MAKEUP_NOMINAL_M3H = 1714;
+/** DESIGN_PRODUCT_M3H: design product flow (m3/h). Mirrors the simulator's NOMINAL.productM3h at 93.5 C TBT (services/simulator/src/state.ts). */
+export const DESIGN_PRODUCT_M3H = 531.9;
+/**
+ * PLANT_MAX_PRODUCT_M3H: best product flow the plant can make, flat out at TBT 112 C and recirc 6500 (m3/h).
+ * Source: services/simulator/src/constants.ts (pinned there by test/maxproduct.test.ts). Running hotter
+ * is the intended way to catch up (spec 4.12), so the quota bar's "out of reach" uses this, not the design flow.
+ */
+export const PLANT_MAX_PRODUCT_M3H = 857;
+/** RECIRC_NOMINAL_M3H: nominal brine recirculation (m3/h). Source: services/simulator/src/constants.ts. */
+export const RECIRC_NOMINAL_M3H = 5350;
+
+/**
+ * The crew's jobs: cost (USD) and duration (plant minutes). Mirrors the simulator's CREW_JOBS in
+ * services/simulator/src/constants.ts (spec 4.6); keep in sync. `plain` names the job on a button, `doing` the work under way.
+ */
+export const CREW_JOBS = {
+  plugTubes: { costUsd: 800, minutes: 60, plain: 'plug tubes', doing: 'Plugging tubes' },
+  repairEjector: { costUsd: 1000, minutes: 45, plain: 'repair ejector', doing: 'Repairing ejector' },
+  replaceSensor: { costUsd: 400, minutes: 30, plain: 'replace instrument', doing: 'Replacing sensor' },
+  cleanScreens: { costUsd: 300, minutes: 30, plain: 'clean screens', doing: 'Cleaning screens' },
+  flushFuel: { costUsd: 1500, minutes: 60, plain: 'flush fuel', doing: 'Flushing fuel' },
+} as const;

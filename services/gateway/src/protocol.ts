@@ -5,7 +5,7 @@ export const MAX_MSG_BYTES = 16384;
 /**
  * Per-socket token bucket (bucket.ts): a burst of 25 messages, refilled at 5 per second; a message
  * finding the bucket empty is dropped. 25 leaves room for the UI's "set all stage levels" burst
- * (20 commands at once). A socket that keeps the bucket empty for 3 s is closed with 1008.
+ * (23 commands at once). A socket that keeps the bucket empty for 3 s is closed with 1008.
  */
 export const RATE_BURST = 25;
 export const RATE_REFILL_PER_S = 5;

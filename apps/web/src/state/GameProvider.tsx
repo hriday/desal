@@ -1,4 +1,4 @@
-import type { ClientMsg, Command } from '@desal/schema';
+import type { ClientMsg, Command, GameMode } from '@desal/schema';
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type ReactNode } from 'react';
 import { cmdMsg } from '../commands';
 import { createSocket, defaultWsUrl, storedGameId, storeGameId, type GameSocket } from '../net/socket';
@@ -10,7 +10,7 @@ export interface Game {
   /** Send a command; it shows as pending only if the socket accepted it. Returns whether it was sent. */
   send: (command: Command) => boolean;
   /** Ask the gateway for a new game (opens the socket first if there is none). */
-  newGame: () => boolean;
+  newGame: (mode: GameMode) => boolean;
   /** At capacity: reconnect now instead of waiting out the backoff. */
   retry: () => void;
 }
@@ -42,12 +42,13 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
   }, []);
   const sock = useRef<GameSocket | null>(null);
   /** Start was pressed: the next open sends newGame (once) instead of a resume. */
-  const wantNewGame = useRef(false);
+  const wantNewGame = useRef<GameMode | null>(null);
 
   const hello = useCallback((): ClientMsg | null => {
     if (wantNewGame.current) {
-      wantNewGame.current = false;
-      return { t: 'newGame' };
+      const mode = wantNewGame.current;
+      wantNewGame.current = null;
+      return { t: 'newGame', mode };
     }
     const id = storedGameId();
     return id ? { t: 'resume', gameId: id } : null;
@@ -67,7 +68,7 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
     const s = sock.current;
     if (!s) return;
     sock.current = null;
-    wantNewGame.current = false;
+    wantNewGame.current = null;
     s.close();
     rawDispatch({ type: 'conn', conn: 'idle' });
   }, []);
@@ -121,15 +122,15 @@ export function GameProvider({ children, url, factory }: { children: ReactNode; 
     return ok;
   }, [dispatch]);
 
-  const newGame = useCallback(() => {
+  const newGame = useCallback((mode: GameMode) => {
     const s = sock.current;
     if (s) {
       // A socket is already open (it normally is not, on Start): ask on it.
-      const ok = s.send({ t: 'newGame' });
+      const ok = s.send({ t: 'newGame', mode });
       if (ok) dispatch({ type: 'startClicked' });
       return ok;
     }
-    wantNewGame.current = true;
+    wantNewGame.current = mode;
     dispatch({ type: 'startClicked' });
     openSocket();
     return true;

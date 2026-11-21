@@ -1,6 +1,9 @@
-import type { Command, GameEndReason, GameScore, PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
+import type { Command, GameEndReason, GameMode, GameScore, PlantEvent, PlantStatus, ServerMsg } from '@desal/schema';
 import { commandKey } from '../commands';
 import type { ConnState } from '../net/socket';
+import { FIX } from '../expanded/labels';
+import { dueHints } from './hints';
+import { initialRadio, radioReducer, type RadioState } from './radio';
 import { pushFrame, type Trends } from './trends';
 
 /** 'resuming': a stored game is being resumed; it ends with the first status, a 'no game' error, or a timeout. */
@@ -27,6 +30,8 @@ export interface State {
   toast: Toast | null;
   score: GameScore | null;
   endReason: GameEndReason | null;
+  /** The mode the finished run was played in (from gameEnd), for the over screen. */
+  endMode: GameMode | null;
   conn: Conn;
   /** The socket has been open at least once, so a later 'connecting' is a reconnect. */
   everOpen: boolean;
@@ -37,6 +42,13 @@ export interface State {
   epoch: number;
   /** No status for a while although the socket is open (the watchdog in GameProvider). */
   telemetryLost: boolean;
+  radio: RadioState;
+  /** plantTime of the session's first status: radio ignores scenario events older than this (a resume's replay). */
+  sessionStartPlantTime: number | null;
+  /** Alarms the player has seen by opening their monitor (alarms/rules seenKey); a seen high alarm stops pulsing. */
+  seenAlarms: ReadonlySet<string>;
+  /** Keys (`shift:eventId:hint`) of the hints already put on the radio, so each shows once. */
+  hinted: ReadonlySet<string>;
 }
 
 export type Action =
@@ -49,6 +61,11 @@ export type Action =
   // Dispatch only when socket.send() returned true; a command that was never sent must not show as pending.
   | { type: 'sent'; command: Command; commandId?: string }
   | { type: 'dismissToast' }
+  | { type: 'radioExpire' }
+  // The player opened a monitor: its active alarms (seenKeys) count as seen.
+  | { type: 'alarmsSeen'; ids: readonly string[] }
+  // The alarms active now (seenKeys): seen ones that have cleared are forgotten, so a recurrence alerts again.
+  | { type: 'alarmsActive'; ids: readonly string[] }
   // No gameStart answer within the start timeout.
   | { type: 'startTimeout' }
   // No status within the watchdog window while connected.
@@ -67,8 +84,9 @@ const startFailed = (s: State): State => ({ ...s, session: 'start', toast: { kin
 export function initialState(resuming = false): State {
   return {
     session: resuming ? 'resuming' : 'start', gameId: null, status: null, readings: {}, trends: {}, events: [],
-    pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
-    epoch: 0, telemetryLost: false,
+    pending: new Map(), commandKeys: new Map(), toast: null, score: null, endReason: null, endMode: null, conn: resuming ? 'connecting' : 'idle', everOpen: false,
+    epoch: 0, telemetryLost: false, radio: initialRadio, sessionStartPlantTime: null, seenAlarms: new Set(),
+    hinted: new Set(),
   };
 }
 
@@ -120,8 +138,14 @@ function addEvent(s: State, e: PlantEvent): State {
   }
   let next: State = { ...s, epoch: e.host ? s.epoch : e.epoch, events: [...s.events, e].slice(-MAX_EVENTS) };
   switch (e.type) {
+    case 'scenario':
+      // Only events from this session's own plant time on: a resume must not replay old radio calls.
+      if (s.sessionStartPlantTime !== null && e.plantTime >= s.sessionStartPlantTime) {
+        next = { ...next, radio: radioReducer(s.radio, { type: 'push', eventId: e.eventId, shiftId: e.shiftId, kind: e.kind, text: e.radio, message: e.message }) };
+      }
+      break;
     case 'gameEnd':
-      next = { ...next, session: 'over', score: e.score, endReason: e.reason };
+      next = { ...next, session: 'over', score: e.score, endReason: e.reason, endMode: e.mode };
       break;
     case 'commandRejected':
       next = { ...next, ...withoutRejected(s, e.commandId), toast: { kind: 'rejected', message: e.reason } };
@@ -139,6 +163,24 @@ function addEvent(s: State, e: PlantEvent): State {
   return next;
 }
 
+/**
+ * Puts each hint now due (state/hints.ts) on the radio, on its event's monitor, and records it in
+ * `hinted`. An at-once hint for an event from before this session (a resume's replay) is recorded
+ * but not shown, like the event's own radio call.
+ */
+function withHints(s: State, st: PlantStatus): State {
+  const due = dueHints(s.events, st, s.hinted);
+  if (due.length === 0) return s;
+  let radio = s.radio;
+  for (const h of due) {
+    const e = s.events.find((x) => x.type === 'scenario' && x.shiftId === st.shiftId && x.eventId === h.eventId);
+    if (e?.type !== 'scenario') continue;
+    if (FIX[h.kind].hint === 'atOnce' && s.sessionStartPlantTime !== null && e.plantTime < s.sessionStartPlantTime) continue;
+    radio = radioReducer(radio, { type: 'push', key: h.key, eventId: h.eventId, shiftId: e.shiftId, kind: h.kind, text: h.text, message: e.message });
+  }
+  return { ...s, radio, hinted: new Set([...s.hinted, ...due.map((h) => h.key)]) };
+}
+
 function onServer(s: State, msg: ServerMsg): State {
   switch (msg.t) {
     case 'game':
@@ -153,7 +195,9 @@ function onServer(s: State, msg: ServerMsg): State {
       // Once over, only reset or startClicked leave it: a late status (of any phase) never revives the run.
       const session = s.session === 'over' ? 'over' : sessionFor(msg.status);
       const epoch = Math.max(s.epoch, msg.status.epoch);
-      return { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch, telemetryLost: false };
+      const next: State = { ...s, status: msg.status, gameId: msg.status.gameId, pending, commandKeys, session, epoch, telemetryLost: false,
+        sessionStartPlantTime: s.sessionStartPlantTime ?? msg.status.plantTime };
+      return withHints(next, msg.status);
     }
     case 'frame':
       return { ...s, readings: { ...s.readings, ...msg.readings }, trends: pushFrame(s.trends, msg.plantTime, msg.readings) };
@@ -209,6 +253,16 @@ export function reducer(s: State, a: Action): State {
       if (a.commandId) commandKeys.set(a.commandId, key);
       return { ...s, pending: new Map(s.pending).set(key, { command: a.command, age: 0 }), commandKeys };
     }
+    case 'alarmsSeen': {
+      if (a.ids.every((id) => s.seenAlarms.has(id))) return s;
+      return { ...s, seenAlarms: new Set([...s.seenAlarms, ...a.ids]) };
+    }
+    case 'alarmsActive': {
+      const active = new Set(a.ids);
+      if ([...s.seenAlarms].every((id) => active.has(id))) return s;
+      return { ...s, seenAlarms: new Set([...s.seenAlarms].filter((id) => active.has(id))) };
+    }
+    case 'radioExpire': return { ...s, radio: radioReducer(s.radio, { type: 'expire' }) };
     case 'dismissToast': return { ...s, toast: null };
     case 'startTimeout': return s.session === 'starting' ? startFailed(s) : s;
     case 'telemetryLost': return s.telemetryLost ? s : { ...s, telemetryLost: true };

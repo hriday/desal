@@ -131,10 +131,10 @@ describe('socket', () => {
   });
 
   it('sends hello() on every open instead of the default resume', () => {
-    const hellos: (ClientMsg | null)[] = [{ t: 'newGame' }, null];
+    const hellos: (ClientMsg | null)[] = [{ t: 'newGame', mode: 'normal' }, null];
     const { sock, ws } = make(() => hellos.shift() ?? null);
     ws().open();
-    expect(ws().sent).toEqual([JSON.stringify({ t: 'newGame' })]);
+    expect(ws().sent).toEqual([JSON.stringify({ t: 'newGame', mode: 'normal' })]);
     ws().drop();
     vi.advanceTimersByTime(1000);
     ws().open();

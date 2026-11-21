@@ -1,8 +1,6 @@
-import type { PumpId, ScenarioKind } from '@desal/schema';
-import { GAS_BASE_PRICE_USD_PER_GJ, GAS_CAP_MW, TICK_PLANT_S } from '../constants.js';
-import { nextRandom } from '../rng.js';
+import { GAS_BASE_PRICE_USD_PER_GJ, GAS_CAP_MW } from '../constants.js';
 import type { Loop, PlantState, SimEvent } from '../state.js';
-import { drawEvent } from './library.js';
+import { stepDirector } from './director.js';
 import type { Scenario } from './types.js';
 
 const clearFault = (l: Loop): Loop => ({ ...l, fault: null });
@@ -32,6 +30,7 @@ export function loadScenario(s: PlantState, scenario: Scenario): PlantState {
       recirc: clearFault(l.recirc),
       blowdown: clearFault(l.blowdown),
       vacuum: clearFault(l.vacuum),
+      makeup: clearFault(l.makeup),
       levels: l.levels.map(clearFault),
     },
     seawater: {
@@ -53,118 +52,14 @@ export function loadScenario(s: PlantState, scenario: Scenario): PlantState {
   };
 }
 
-function setLoopFault(s: PlantState, loopId: string, kind: string): PlantState {
-  const fault = { kind: kind as 'stuck' | 'drift' | 'oscillate', bias: 0 };
-  const level = /^level(\d+)$/.exec(loopId);
-  if (level) {
-    const i = Number(level[1]) - 1;
-    if (!s.loops.levels[i]) return s;
-    const levels = s.loops.levels.map((x, j): Loop => (j === i ? { ...x, fault } : x));
-    return { ...s, loops: { ...s.loops, levels } };
-  }
-  if (loopId === 'tbt' || loopId === 'intakeFlow' || loopId === 'recirc' || loopId === 'blowdown' || loopId === 'vacuum') {
-    return { ...s, loops: { ...s.loops, [loopId]: { ...s.loops[loopId], fault } } };
-  }
-  return s;
-}
-
-function applyEffect(s: PlantState, kind: ScenarioKind, p: Record<string, number | string>): PlantState {
-  if (!s.shift) return s;
-  switch (kind) {
-    case 'bloom': {
-      const peak = Number(p.peakUgL);
-      const ticks = Math.max(1, (Number(p.rampMinutes) * 60) / TICK_PLANT_S);
-      return {
-        ...s,
-        scenario: {
-          ...s.scenario,
-          effects: {
-            ...s.scenario.effects,
-            chlorophyllTarget: peak,
-            chlorophyllRampPerTick: (peak - s.seawater.chlorophyllUgL) / ticks,
-          },
-        },
-      };
-    }
-    case 'seawaterTemp':
-      return { ...s, seawater: { ...s.seawater, tempC: s.seawater.tempC + Number(p.deltaC) } };
-    case 'pumpBearing': {
-      const id = p.pumpId as PumpId;
-      const pump = s.intake.pumps[id];
-      if (!pump) return s;
-      return {
-        ...s,
-        intake: { ...s.intake, pumps: { ...s.intake.pumps, [id]: { ...pump, bearingWearMult: Number(p.mult) } } },
-      };
-    }
-    case 'gasCurtailNotice':
-      return {
-        ...s,
-        fuel: {
-          ...s.fuel,
-          gas: {
-            ...s.fuel.gas,
-            curtailmentNotice: {
-              atTick: s.shift.startTick + (Number(p.effectiveMinute) * 60) / TICK_PLANT_S,
-              capMW: Number(p.capMW),
-            },
-          },
-        },
-      };
-    case 'gasPriceSpike':
-      return {
-        ...s,
-        fuel: { ...s.fuel, gas: { ...s.fuel.gas, priceUsdPerGJ: s.fuel.gas.priceUsdPerGJ * Number(p.mult) } },
-      };
-    case 'offgradeOnly':
-      return { ...s, scenario: { ...s.scenario, effects: { ...s.scenario.effects, offgradeOnly: true } } };
-    case 'deliveryDelay':
-      return {
-        ...s,
-        scenario: { ...s.scenario, effects: { ...s.scenario.effects, deliveryDelayTicks: Number(p.ticks) } },
-      };
-    case 'demandChange':
-      return {
-        ...s,
-        shift: { ...s.shift, target: { ...s.shift.target, productM3: s.shift.target.productM3 + Number(p.deltaM3) } },
-      };
-    case 'controllerFault':
-      return setLoopFault(s, String(p.loop), String(p.kind));
-  }
-}
-
 /**
- * Fire due scheduled events (once each), roll random events, then move chlorophyll toward its target.
+ * Run the chaos director (which fires the shift's events), then move chlorophyll toward its target.
  * Does nothing outside a running shift that has a loaded scenario.
  */
 export function stepScenario(s: PlantState): { state: PlantState; events: SimEvent[] } {
-  const def = s.scenario.definition;
-  if (s.phase !== 'running' || !s.shift || !def) return { state: s, events: [] };
-  const base = { tick: s.tick, plantTime: s.plantTime, shiftId: s.shift.id };
-  const events: SimEvent[] = [];
-  const elapsedMin = ((s.tick - s.shift.startTick) * TICK_PLANT_S) / 60;
-  let state = s;
-
-  let idx = s.scenario.nextEventIndex;
-  for (let e = def.events[idx]; e && elapsedMin >= e.atMinute; e = def.events[idx]) {
-    state = applyEffect(state, e.kind, e.params);
-    events.push({ ...base, type: 'scenario', kind: e.kind, message: e.message });
-    idx++;
-  }
-  state = { ...state, scenario: { ...state.scenario, nextEventIndex: idx } };
-
-  let seed = state.seed;
-  for (const { kind, p } of def.randomPerHour) {
-    let v: number;
-    [v, seed] = nextRandom(seed);
-    if (v < (p * TICK_PLANT_S) / 3600) {
-      const [e, next] = drawEvent(kind, elapsedMin, seed, state.run.shiftNumber);
-      seed = next;
-      state = applyEffect(state, e.kind, e.params);
-      events.push({ ...base, type: 'scenario', kind: e.kind, message: e.message });
-    }
-  }
-  state = { ...state, seed };
+  if (s.phase !== 'running' || !s.shift || !s.scenario.definition) return { state: s, events: [] };
+  const director = stepDirector(s);
+  let state = director.state;
 
   const { chlorophyllTarget: target, chlorophyllRampPerTick: ramp } = state.scenario.effects;
   const chl = state.seawater.chlorophyllUgL;
@@ -172,5 +67,5 @@ export function stepScenario(s: PlantState): { state: PlantState; events: SimEve
   const next = chl + Math.sign(target - chl) * step;
   state = { ...state, seawater: { ...state.seawater, chlorophyllUgL: next } };
 
-  return { state, events };
+  return { state, events: director.events };
 }

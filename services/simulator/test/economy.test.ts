@@ -6,6 +6,7 @@ import {
   PUMP_OVERHAUL_COST_USD,
   PUMP_OVERHAUL_TICKS,
   SHIFT_TICKS,
+  STANDING_COST_USD_PER_HOUR,
   START_BALANCE_USD,
 } from '../src/constants.js';
 import { allocationUsd, backupOrderCostUsd } from '../src/economy.js';
@@ -17,6 +18,8 @@ import { env, GAME_ID } from './envelope.js';
 
 const T0 = Date.UTC(2026, 0, 1);
 const running = (): PlantState => startShift(createInitialState(1, T0, GAME_ID), 'auto').state;
+/** One running tick's share of the hourly standing cost (90 ticks per plant hour). */
+const STANDING_PER_TICK = STANDING_COST_USD_PER_HOUR / 90;
 const paused = (): PlantState => ({ ...running(), phase: 'paused' });
 const withBalance = (s: PlantState, balanceUsd: number): PlantState => ({ ...s, run: { ...s.run, balanceUsd } });
 const rejection = (events: PlantEvent[]) => events.find((e) => e.type === 'commandRejected');
@@ -27,25 +30,25 @@ const summaryOf = (events: PlantEvent[]) => {
 };
 
 describe('allocation', () => {
-  it('starts at $15,000 and shift 1 is allocated $10,000 at startShift', () => {
+  it('starts at $15,000 and shift 1 is allocated $11,000 at startShift', () => {
     expect(START_BALANCE_USD).toBe(15000);
-    expect(ALLOC_BASE_USD).toBe(10000);
+    expect(ALLOC_BASE_USD).toBe(11000);
     const r = startShift(createInitialState(1, T0, GAME_ID), 'auto');
-    expect(r.state.run.balanceUsd).toBe(25000);
+    expect(r.state.run.balanceUsd).toBe(26000);
     expect(r.events.find((e) => e.type === 'accountChange')).toMatchObject({
       cause: 'allocation',
-      deltaUsd: 10000,
-      balanceUsd: 25000,
+      deltaUsd: 11000,
+      balanceUsd: 26000,
       shiftId: 1,
     });
   });
 
-  it('allocationUsd = 10000 x (1 - 0.03(n-1)) x min(1, prev in-spec / prev target), floored at 0', () => {
-    expect(allocationUsd(1, null)).toBe(10000);
-    expect(allocationUsd(2, { productM3: 4000, targetM3: 4000 })).toBeCloseTo(9700, 9);
-    expect(allocationUsd(2, { productM3: 5000, targetM3: 4000 })).toBeCloseTo(9700, 9);
-    expect(allocationUsd(2, { productM3: 2000, targetM3: 4000 })).toBeCloseTo(4850, 9);
-    expect(allocationUsd(11, { productM3: 3000, targetM3: 4000 })).toBeCloseTo(10000 * 0.7 * 0.75, 9);
+  it('allocationUsd = 11000 x (1 - 0.03(n-1)) x min(1, prev in-spec / prev target), floored at 0', () => {
+    expect(allocationUsd(1, null)).toBe(11000);
+    expect(allocationUsd(2, { productM3: 4000, targetM3: 4000 })).toBeCloseTo(10670, 9);
+    expect(allocationUsd(2, { productM3: 5000, targetM3: 4000 })).toBeCloseTo(10670, 9);
+    expect(allocationUsd(2, { productM3: 2000, targetM3: 4000 })).toBeCloseTo(5335, 9);
+    expect(allocationUsd(11, { productM3: 3000, targetM3: 4000 })).toBeCloseTo(11000 * 0.7 * 0.75, 9);
     expect(allocationUsd(40, { productM3: 4000, targetM3: 4000 })).toBe(0);
     expect(allocationUsd(2, { productM3: -5, targetM3: 4000 })).toBe(0);
   });
@@ -58,7 +61,7 @@ describe('allocation', () => {
     };
     const end = endShift(half);
     const predicted = summaryOf(end.events.map((e) => ({ ...e, gameId: GAME_ID, seq: 0 }) as PlantEvent)).nextAllocationUsd;
-    expect(predicted).toBeCloseTo(10000 * 0.97 * 0.5, 9);
+    expect(predicted).toBeCloseTo(11000 * 0.97 * 0.5, 9);
     const next = startShift(end.state, 'auto');
     expect(next.state.run.balanceUsd).toBeCloseTo(end.state.run.balanceUsd + predicted, 9);
     expect(next.events.find((e) => e.type === 'accountChange')).toMatchObject({ cause: 'allocation' });
@@ -67,7 +70,8 @@ describe('allocation', () => {
 
 describe('water first: in-spec water is what counts', () => {
   it('an untouched shift 1 in Auto meets its target in spec with no surprise charges', () => {
-    let s = running();
+    // Seed 14's shift 1 draws no pump trip: untouched, Auto never starts the spare.
+    let s = startShift(createInitialState(14, T0, GAME_ID), 'auto').state;
     const startBalance = s.run.balanceUsd;
     const events: PlantEvent[] = [];
     for (let i = 0; i < SHIFT_TICKS; i++) {
@@ -83,11 +87,14 @@ describe('water first: in-spec water is what counts', () => {
     expect(startBalance).toBe(START_BALANCE_USD + ALLOC_BASE_USD);
     expect(sum.productM3).toBeGreaterThanOrEqual(sum.targetM3);
     expect(sum.offSpecM3).toBe(0);
-    expect(sum.spentUsd).toBeCloseTo(sum.fuelCostUsd, 9);
+    // Fuel plus 8 hours of standing cost; the only account reports are the hourly standing charges.
+    expect(sum.spentUsd).toBeCloseTo(sum.fuelCostUsd + 8 * STANDING_COST_USD_PER_HOUR, 6);
     expect(s.run.balanceUsd).toBeGreaterThanOrEqual(START_BALANCE_USD + ALLOC_BASE_USD - sum.spentUsd - 1e-6);
     expect(sum.balanceUsd).toBe(s.run.balanceUsd);
-    expect(sum.nextAllocationUsd).toBeCloseTo(10000 * 0.97, 9);
-    expect(events.some((e) => e.type === 'accountChange')).toBe(false);
+    expect(sum.nextAllocationUsd).toBeCloseTo(11000 * 0.97, 9);
+    const accounts = events.filter((e) => e.type === 'accountChange');
+    expect(accounts).toHaveLength(8);
+    expect(accounts.every((e) => e.type === 'accountChange' && e.cause === 'standing')).toBe(true);
   });
 
   it('off-spec water does not count toward progress and is tracked separately; it earns and costs nothing', () => {
@@ -99,7 +106,7 @@ describe('water first: in-spec water is what counts', () => {
     expect(acc.productM3).toBe(0);
     expect(acc.offSpecM3).toBeGreaterThan(0);
     expect(s1.run.balanceUsd).toBeCloseTo(s0.run.balanceUsd - acc.spentUsd, 9);
-    expect(acc.spentUsd).toBeCloseTo(acc.fuelCostUsd, 9);
+    expect(acc.spentUsd).toBeCloseTo(acc.fuelCostUsd + STANDING_PER_TICK, 9);
   });
 
   it('a shift ending 500 m3 short is not fined; only its next allocation shrinks', () => {
@@ -110,7 +117,7 @@ describe('water first: in-spec water is what counts', () => {
     expect(r.state.run.balanceUsd).toBe(s0.run.balanceUsd);
     expect(r.events.some((e) => e.type === 'accountChange')).toBe(false);
     const sum = summaryOf(r.events.map((e) => ({ ...e, gameId: GAME_ID, seq: 0 }) as PlantEvent));
-    expect(sum.nextAllocationUsd).toBeCloseTo(9700 * ((target - 500) / target), 9);
+    expect(sum.nextAllocationUsd).toBeCloseTo(10670 * ((target - 500) / target), 9);
     expect(r.state.run.totalProductM3).toBe(target - 500);
   });
 });
@@ -121,17 +128,18 @@ describe('spending', () => {
     const s1 = tick(s0, []).state;
     const acc = s1.shift!.acc;
     expect(acc.fuelCostUsd).toBeGreaterThan(0);
-    expect(acc.spentUsd).toBeCloseTo(acc.fuelCostUsd, 9);
-    expect(s1.run.balanceUsd).toBeCloseTo(s0.run.balanceUsd - acc.fuelCostUsd, 9);
+    expect(acc.spentUsd).toBeCloseTo(acc.fuelCostUsd + STANDING_PER_TICK, 9);
+    expect(s1.run.balanceUsd).toBeCloseTo(s0.run.balanceUsd - acc.fuelCostUsd - STANDING_PER_TICK, 9);
   });
 
-  it('burning backup fuel costs nothing per tick', () => {
+  it('burning backup fuel costs nothing per tick (only the standing cost is spent)', () => {
     const s0 = running();
     const backup: PlantState = { ...s0, fuel: { ...s0.fuel, active: 'backup' } };
     const s1 = tick(backup, []).state;
     expect(s1.fuel.backup.tonnes).toBeLessThan(200);
-    expect(s1.shift!.acc.spentUsd).toBe(0);
-    expect(s1.run.balanceUsd).toBe(s0.run.balanceUsd);
+    expect(s1.shift!.acc.fuelCostUsd).toBe(0);
+    expect(s1.shift!.acc.spentUsd).toBeCloseTo(STANDING_PER_TICK, 9);
+    expect(s1.run.balanceUsd).toBeCloseTo(s0.run.balanceUsd - STANDING_PER_TICK, 9);
   });
 
   it('ordering backup fuel costs tonnes x LHV(offered grade) x backup price, charged on order', () => {
@@ -241,5 +249,59 @@ describe('spending', () => {
     s = tick(s, []).state;
     expect(s.intake.pumps['P-102'].running).toBe(false);
     expect(s.intake.pumps['P-102'].overhaulRemainingTicks).toBeGreaterThan(0);
+  });
+});
+
+describe('standing cost', () => {
+  const calm = (s: PlantState): PlantState =>
+    s.chaos.active ? { ...s, chaos: { ...s.chaos, active: { ...s.chaos.active, plan: { ...s.chaos.active.plan, queue: [] } } } } : s;
+  const standingEvents = (events: PlantEvent[]) => events.filter((e) => e.type === 'accountChange' && e.cause === 'standing');
+
+  it('is at most 15 % of the shift-1 allocation per shift', () => {
+    expect(STANDING_COST_USD_PER_HOUR).toBeGreaterThan(0);
+    expect(STANDING_COST_USD_PER_HOUR * 8).toBeLessThanOrEqual(0.15 * allocationUsd(1, null));
+  });
+
+  it('a tripped plant held for a shift loses 8 hours of standing cost, reported once per plant hour', () => {
+    let s = calm(applyTrip(running(), 'manual').state);
+    const b0 = s.run.balanceUsd;
+    const events: PlantEvent[] = [];
+    for (let i = 0; i < SHIFT_TICKS; i++) {
+      const r = tick(s, []);
+      s = r.state;
+      events.push(...r.events);
+    }
+    expect(s.status).toBe('tripped');
+    const sum = summaryOf(events);
+    expect(sum.fuelCostUsd).toBe(0);
+    expect(sum.spentUsd).toBeCloseTo(STANDING_COST_USD_PER_HOUR * 8, 6);
+    expect(s.run.balanceUsd).toBeCloseTo(b0 - STANDING_COST_USD_PER_HOUR * 8, 6);
+    const hourly = standingEvents(events);
+    expect(hourly).toHaveLength(8);
+    for (const e of hourly) expect(e).toMatchObject({ deltaUsd: -STANDING_COST_USD_PER_HOUR, shiftId: 1 });
+    // The last hour's charge is reported before the shift ends.
+    expect(events.indexOf(hourly[7]!)).toBeLessThan(events.findIndex((e) => e.type === 'shiftEnd'));
+  });
+
+  it('is charged every running tick, whatever the plant status', () => {
+    for (const status of ['online', 'tripped', 'restarting', 'acidCleaning'] as const) {
+      const s1 = tick(calm({ ...running(), status }), []).state;
+      const standing = s1.shift!.acc.spentUsd - s1.shift!.acc.fuelCostUsd;
+      expect(standing, status).toBeCloseTo(STANDING_PER_TICK, 9);
+    }
+  });
+
+  it('nothing is charged while paused or in handover', () => {
+    for (const s0 of [paused(), createInitialState(1, T0, GAME_ID)]) {
+      let s = s0;
+      const events: PlantEvent[] = [];
+      for (let i = 0; i < 200; i++) {
+        const r = tick(s, []);
+        s = r.state;
+        events.push(...r.events);
+      }
+      expect(s.run.balanceUsd).toBe(s0.run.balanceUsd);
+      expect(standingEvents(events)).toEqual([]);
+    }
   });
 });

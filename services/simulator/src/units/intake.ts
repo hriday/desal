@@ -27,7 +27,7 @@ export function stepIntake(s: PlantState, dtS: number): PlantState {
   const bio = s.pretreat.biofouling;
   const biofouling = clamp01(bio + (BIO_GROWTH_PER_CHL * chlorophyllUgL - BIO_KILL_PER_CHLORINE * chlorineMgL * bio) * k);
   const screenFouling = clamp01(
-    s.intake.screenFouling + (biofouling - s.intake.screenFouling) * Math.min(1, SCREEN_LAG_PER_TICK * k),
+    s.intake.screenFouling + (clamp01(biofouling + s.faults.stormFouling) - s.intake.screenFouling) * Math.min(1, SCREEN_LAG_PER_TICK * k),
   );
 
   const speedPct = s.loops.intakeFlow.output;

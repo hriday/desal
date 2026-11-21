@@ -36,7 +36,10 @@ export function Toggle({ label, on, onText = 'On', offText = 'Off', pending, dis
   );
 }
 
-/** A loop's Auto/Manual toggle; the caller shows it in Auto plant mode only. */
+/**
+ * A loop's Auto/Manual toggle. The caller shows it in Auto plant mode only, except for the inventory
+ * loops (makeup), whose mode the plant accepts in both control modes.
+ */
 export function LoopModeToggle({ loop, name, ...ctl }: ControlCtx & { loop: LoopId; name: string }) {
   const mode = ctl.status?.loops?.[loop]?.mode;
   const manual = mode === 'manual' ? true : mode === 'auto' ? false : undefined;

@@ -94,3 +94,165 @@ use event-time watermarks on `plantTime`: plant time runs 40x faster than the wa
 paused or in handover, so a watermark on it would stall per game, and across games it means nothing. Within a game
 `tick` already gives a total order of steps (every record of one step shares its `tick` and `plantTime`). Where a job
 needs wall-clock windows, it uses the record timestamp, which is the broker's LogAppendTime.
+
+## Chaos events, shifts and money
+
+This is the contract for the events a shift produces, as Plan 5's Flink jobs will read them from `plant.events`. Field names and types are those of `packages/schema/src/events.ts`, `status.ts` and `commands.ts`; if this page and the schema disagree, the schema wins. Every event below also carries the base fields (`gameId`, `epoch`, `seq`, `tick`, `plantTime`, `shiftId`) and follows the `seq`/`epoch` rules above.
+
+### The shift and its events
+
+A shift is 720 ticks (480 plant minutes). The simulator draws each shift's plan from the game's seed when the previous shift ends (shift 1's when the game is created), so the handover orders can describe it; `startShift` activates the drawn plan, and its `shiftStart` carries those orders. A plan holds 1 or 2 events in a normal shift and 4 to 6 in a hell shift. A director fires them over the shift, so the same seed always gives the same plan. Plant minute 0 is the shift's first tick; nothing fires after minute 420.
+
+| Event | When it is emitted | Fields |
+| --- | --- | --- |
+| `shiftStart` | Once, when the player starts a shift. | `scenarioId` (string), `mode` (`auto` or `manual`), `target` (`productM3`, `maxSalinityPpm`, `fuelBudgetUsd`, all numbers), `hell` (boolean), `orders` |
+| `scenario` | When the director fires an event. | `eventId` (integer, 1 or more, unique within the shift), `kind`, `message` (string), `radio` (string, the line the player hears) |
+| `eventCleared` | When a fired event is dealt with. | `eventId`, `kind`, `how` |
+| `shiftEnd` | Once, when the shift's clock runs out. | `summary` |
+
+`orders` is `{ targetM3, maxSalinityPpm, budgetUsd, lines: string[], briefing: string[] }`. `budgetUsd` is the shift's fuel guidance (`target.fuelBudgetUsd`), not the allocation credited to the account. `briefing` has lines only on shift 1; `lines` is the foreman's note. On a hell shift, `target.productM3` is 85 % of the normal target (rounded). `hell` is true for the whole shift even when the orders did not warn of it.
+
+`kind` is one of: `bloom`, `seawaterTemp`, `pumpBearing`, `gasCurtailNotice`, `gasPriceSpike`, `offgradeOnly`, `deliveryDelay`, `demandChange`, `controllerFault`, and the six sharp kinds `pumpTrip`, `tubeLeak`, `vacuumLoss`, `powerDip`, `storm`, `sensorFailure`. No event says that a sensor failed: the `sensorFailure` scenario event is the only record of it, the player sees only the reading's behaviour.
+
+`eventId` joins a `scenario` to its `eventCleared` and to the `events` list of the `shiftEnd` summary. It restarts at 1 every shift, so key on (`shiftId`, `eventId`). `atMinute` in the summary is a plant minute and may be fractional. A fired event that is never cleared has no `eventCleared`; it shows in the summary with `cleared: false` and `how: null`.
+
+`how` in `eventCleared` is one of:
+
+- `player`: the player's own action fixed it (a pump restarted, a loop put in Manual, chlorine dosed up).
+- `crew`: a `dispatchCrew` job finished (tube leak, vacuum loss, sensor failure, storm screens).
+- `expired`: it ended by itself (a storm that passed).
+- `noted`: a kind that needs no response (`seawaterTemp`, `gasCurtailNotice`, `gasPriceSpike`, `offgradeOnly`, `deliveryDelay`, `demandChange`, `pumpBearing`). Its `eventCleared` follows its `scenario` at once, in the same tick.
+
+In hell shifts a fired event can queue another (cascades): a storm may bring a bloom, a power dip a sensor failure, a pump trip a bearing fault. The follow-up is a normal `scenario` with its own `eventId`; nothing in the events says it was a cascade. At most 7 events fire in one shift.
+
+The `shiftEnd` summary is:
+
+`productM3` (in-spec water only), `targetM3`, `offSpecMinutes`, `offSpecM3`, `fuelCostUsd`, `fuelBudgetUsd`, `trips`, `spentUsd`, `nextAllocationUsd`, `balanceUsd` (all numbers); `damage` (`maxHardScaleMm`, `pumpWear` as a record of pump id to number, `burnerCondition`); `hell` (boolean); `events`, a list of `{ eventId, kind, atMinute, cleared, how }` where `how` is the values above or null.
+
+The examples below are real output: shift 2 of a game on host seed 3, played by the engaged test bot (`services/simulator/test/bot.ts`), with long fractions rounded. The shift had a vacuum loss (eventId 1) and then a tube leak (eventId 2), both fixed by the crew. For the six sharp kinds, `message` is the radio line.
+
+Example `scenario`:
+
+```json
+{
+  "gameId": "8f14e45f-ceea-467a-9575-1f2b0c6e4a11",
+  "epoch": 0, "seq": 23, "tick": 1009, "plantTime": 40360000, "shiftId": 2,
+  "type": "scenario",
+  "eventId": 2,
+  "kind": "tubeLeak",
+  "message": "Control, salt's showing in the product — tube leak near stage 18, about +8.32 ppm!",
+  "radio": "Control, salt's showing in the product — tube leak near stage 18, about +8.32 ppm!"
+}
+```
+
+Example `eventCleared`:
+
+```json
+{
+  "gameId": "8f14e45f-ceea-467a-9575-1f2b0c6e4a11",
+  "epoch": 0, "seq": 26, "tick": 1100, "plantTime": 44000000, "shiftId": 2,
+  "type": "eventCleared",
+  "eventId": 2,
+  "kind": "tubeLeak",
+  "how": "crew"
+}
+```
+
+Example `shiftStart` (shift 2 has no briefing):
+
+```json
+{
+  "gameId": "8f14e45f-ceea-467a-9575-1f2b0c6e4a11",
+  "epoch": 0, "seq": 15, "tick": 721, "plantTime": 28840000, "shiftId": 2,
+  "type": "shiftStart",
+  "scenarioId": "shift-2",
+  "mode": "auto",
+  "target": { "productM3": 4056, "maxSalinityPpm": 25, "fuelBudgetUsd": 12480 },
+  "hell": false,
+  "orders": {
+    "targetM3": 4056, "maxSalinityPpm": 25, "budgetUsd": 12480,
+    "lines": ["Seawater is 29.5 °C with chlorophyll at 1.2 µg/L."],
+    "briefing": []
+  }
+}
+```
+
+Shift 1's `orders` carry the briefing:
+
+```json
+{
+  "targetM3": 3900, "maxSalinityPpm": 25, "budgetUsd": 12000,
+  "lines": ["Seawater is 30.0 °C with chlorophyll at 1.0 µg/L."],
+  "briefing": [
+    "Deliver 3,900 m³ of in-spec water this shift.",
+    "Keep product salt under 25 ppm — diverted or off-spec water doesn't count.",
+    "Click a monitor to act on it, and watch the fuel budget ($12,000)."
+  ]
+}
+```
+
+Example `shiftEnd`:
+
+```json
+{
+  "gameId": "8f14e45f-ceea-467a-9575-1f2b0c6e4a11",
+  "epoch": 0, "seq": 31, "tick": 1440, "plantTime": 57600000, "shiftId": 2,
+  "type": "shiftEnd",
+  "summary": {
+    "productM3": 4163.88, "targetM3": 4056, "offSpecMinutes": 0, "offSpecM3": 0,
+    "fuelCostUsd": 9829.24, "fuelBudgetUsd": 12480, "trips": 0,
+    "spentUsd": 12349.24, "nextAllocationUsd": 10340, "balanceUsd": 13373.09,
+    "damage": { "maxHardScaleMm": 0.0000931, "pumpWear": { "P-101": 0.003168, "P-102": 0.003168, "P-103": 0 }, "burnerCondition": 0.97984 },
+    "hell": false,
+    "events": [
+      { "eventId": 1, "kind": "vacuumLoss", "atMinute": 132, "cleared": true, "how": "crew" },
+      { "eventId": 2, "kind": "tubeLeak", "atMinute": 192, "cleared": true, "how": "crew" }
+    ]
+  }
+}
+```
+
+`spentUsd` counts fuel, deliveries, repairs, crew jobs and the standing cost (here $9,829 fuel + $1,800 crew + $720 standing).
+
+### Account events
+
+Every change to the balance is one `accountChange { deltaUsd, balanceUsd, cause }`. `cause` is one of:
+
+- `allocation`: the budget paid in at shift start.
+- `fuel`: part of the cause enum; gas burn is tracked in the shift summary, not as an `accountChange`.
+- `delivery`: a backup fuel order, charged when it is placed.
+- `acidClean`: the acid clean.
+- `overhaul`: a pump overhaul.
+- `crew`: a `dispatchCrew` job, charged when it is accepted (not when it finishes).
+- `standing`: staff and standby cost, $90 per plant hour. It is charged on every running tick, in any plant status (online, tripped, restarting), and reported as one `accountChange` with `deltaUsd: -90` per plant hour (90 ticks), not one per tick.
+
+### The `dispatchCrew` command
+
+`{ "type": "dispatchCrew", "job": "plugTubes" }`. There is one crew. A job is only accepted when its fault exists, and it is charged when accepted.
+
+| Job | Cost (USD) | Plant minutes | Needs |
+| --- | --- | --- | --- |
+| `plugTubes` | 800 | 60 | a tube leak |
+| `repairEjector` | 1000 | 45 | a failed ejector (vacuum loss) |
+| `replaceSensor` | 400 | 30 | a failed sensor |
+| `cleanScreens` | 300 | 30 | a storm's fouled screens |
+
+A rejected dispatch produces a `commandRejected` event with one of these `reason` values: `not running` (the shift is not running), `crew busy` (a job is already in progress), `nothing to repair` (its fault does not exist), `stale shift` (the envelope's `shiftId` is not the current shift). The crew and the shift's faults are cleared at the next shift start, so a job never carries over.
+
+### Status fields
+
+`plant.status` gained these fields (`status.ts`):
+
+- `shiftProductM3`, `shiftOffSpecM3`: in-spec and off-spec water made so far this shift (numbers).
+- `productFlowM3h`: current product flow (number).
+- `crew`: `{ job, remainingTicks }` while a job runs, else null.
+- `orders`: the pending orders in handover, the active ones while running, else null. Same shape as `shiftStart.orders`.
+- `hell`: the active shift's hell flag while the shift is running, and null in every other phase (handover, paused, over). It is null in handover on purpose, so an unwarned hell shift cannot be seen in advance.
+
+### Operating point
+
+Nominal TBT is 93.5 degC. The TBT setpoint range is 85 to 112 degC. The high-high trip (`tbtHighHigh`) is at 115 degC. Scale grows fast above 105 degC, and the hard scale starts there too.
+
+### Snapshots
+
+The snapshot version is 3. The pending and active plan, the director's position and the crew job are in it, so a restart in the middle of a shift replays the same events. Version 2 (and 1) saves are skipped with a log line, as v1 was; games in flight at the upgrade end.

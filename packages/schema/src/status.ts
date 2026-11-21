@@ -1,7 +1,17 @@
 import { z } from 'zod';
-import { FuelGradeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
+import { CrewJobSchema, FuelGradeSchema, GameModeSchema, FuelKindSchema, LoopIdSchema, LoopModeSchema, PumpIdSchema, RestartStepSchema } from './commands.js';
 
 const num = z.number().finite();
+
+// The shift's orders card: what the foreman asks for. briefing is non-empty only on shift 1.
+export const ShiftOrdersSchema = z.object({
+  targetM3: num,
+  maxSalinityPpm: num,
+  budgetUsd: num,
+  lines: z.array(z.string()),
+  briefing: z.array(z.string()),
+});
+export type ShiftOrders = z.infer<typeof ShiftOrdersSchema>;
 
 export const TripCauseSchema = z.enum([
   'tbtHighHigh',
@@ -23,6 +33,10 @@ export type LoopFaultKind = z.infer<typeof LoopFaultKindSchema>;
 
 export const PlantStatusKindSchema = z.enum(['online', 'tripped', 'restarting', 'acidCleaning']);
 export type PlantStatusKind = z.infer<typeof PlantStatusKindSchema>;
+
+/** How fast the game runs: calm is 3 ticks per real second, busy (an open event, a trip) 1. */
+export const PaceSchema = z.enum(['calm', 'busy']);
+export type Pace = z.infer<typeof PaceSchema>;
 
 export const PlantStatusSchema = z.object({
   gameId: z.uuid(),
@@ -66,5 +80,16 @@ export const PlantStatusSchema = z.object({
   acidCleanRemainingTicks: num,
   restartAuto: z.boolean().nullable(),
   offeredGrade: FuelGradeSchema,
+  shiftProductM3: num,
+  shiftOffSpecM3: num,
+  productFlowM3h: num,
+  crew: z.object({ job: CrewJobSchema, remainingTicks: num }).nullable(),
+  /** Pending orders during handover, the active ones while running, null otherwise. */
+  orders: ShiftOrdersSchema.nullable(),
+  /** The active shift's hell flag; null in handover so an unwarned hell can't be peeked at. */
+  hell: z.boolean().nullable(),
+  mode: GameModeSchema.default('normal'),
+  /** Optional on the wire: older simulators did not report it. */
+  pace: PaceSchema.default('calm'),
 });
 export type PlantStatus = z.infer<typeof PlantStatusSchema>;

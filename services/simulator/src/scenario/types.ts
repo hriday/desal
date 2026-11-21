@@ -3,7 +3,7 @@ import type { ScenarioKind } from '@desal/schema';
 export type { ScenarioKind };
 
 /**
- * A scheduled (or randomly drawn) scenario event. `atMinute` is plant minutes from the shift start.
+ * A scheduled scenario event. `atMinute` is plant minutes from the shift start.
  * Params by kind:
  *  - bloom: { peakUgL, rampMinutes }
  *  - seawaterTemp: { deltaC }
@@ -31,5 +31,4 @@ export interface Scenario {
    */
   initial: { seawaterTempC: number; chlorophyllUgL: number; gasCapMW?: number; gasPriceUsdPerGJ?: number };
   events: ScenarioEvent[];
-  randomPerHour: { kind: ScenarioKind; p: number }[];
 }

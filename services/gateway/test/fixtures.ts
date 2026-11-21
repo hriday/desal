@@ -10,6 +10,8 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
   return {
     gameId,
     epoch: 0,
+    mode: 'normal',
+    pace: 'calm',
     shiftNumber: 1,
     balanceUsd: 15000,
     tick,
@@ -20,7 +22,7 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
     controlMode: 'auto',
     tripCause: null,
     restartStep: null,
-    loops: { tbt: loop, intakeFlow: loop, recirc: loop, blowdown: loop, vacuum: loop },
+    loops: { tbt: loop, intakeFlow: loop, recirc: loop, blowdown: loop, vacuum: loop, makeup: loop },
     pumps: { 'P-101': pump, 'P-102': pump, 'P-103': { running: false, overhaulRemainingTicks: 0 } },
     fuel: {
       active: 'gas',
@@ -41,16 +43,23 @@ export function status(gameId: string, tick: number, shiftId: number | null = 1)
     acidCleanRemainingTicks: 0,
     restartAuto: null,
     offeredGrade: 'standard',
+    shiftProductM3: 0,
+    shiftOffSpecM3: 0,
+    productFlowM3h: 0,
+    crew: null,
+    orders: null,
+    hell: null,
   };
 }
 
 const base = (gameId: string, tick = 0) => ({ gameId, epoch: 0, seq: tick, tick, plantTime: tick * 40, shiftId: null });
 
-export const gameStart = (gameId: string): PlantEvent => ({ ...base(gameId), type: 'gameStart' });
+export const gameStart = (gameId: string): PlantEvent => ({ ...base(gameId), type: 'gameStart', mode: 'normal' });
 export const gameRejected = (gameId: string): PlantEvent => ({ ...base(gameId), type: 'gameRejected', reason: 'capacity' });
 export const gameEnd = (gameId: string, tick = 10): PlantEvent => ({
   ...base(gameId, tick),
   type: 'gameEnd',
+  mode: 'normal',
   reason: 'quit',
   score: { shiftsCompleted: 0, totalProductM3: 0, balanceUsd: 15000 },
 });
