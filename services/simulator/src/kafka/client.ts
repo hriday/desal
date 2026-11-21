@@ -43,8 +43,15 @@ interface TopicSpec {
 // (docs/streaming-notes.md, "What consumers may rely on").
 const LOG_APPEND_TIME = { name: 'message.timestamp.type', value: 'LogAppendTime' };
 
+/** Compaction with hourly segments and a 0.1 dirty ratio, so old values go within about an hour (see plant.state). */
+const COMPACTED = [
+  { name: 'cleanup.policy', value: 'compact' },
+  { name: 'segment.ms', value: '3600000' },
+  { name: 'min.cleanable.dirty.ratio', value: '0.1' },
+];
+
 const SPECS: TopicSpec[] = [
-  // Every topic is keyed by gameId. Kafka hashes the key to pick a partition, so all
+  // Every plant.* topic is keyed by gameId. Kafka hashes the key to pick a partition, so all
   // of one game's readings land in one partition, in order, while the 6 partitions
   // let Flink (keyBy(gameId)) process different games in parallel.
   // ~108 msgs/s per game is the bulk of all traffic, so on a shared server it gets
@@ -97,15 +104,27 @@ const SPECS: TopicSpec[] = [
   // (not yet compacted) share exceeds min.cleanable.dirty.ratio (default 0.5). Rolling
   // segments hourly with a 0.1 ratio gets old snapshots and tombstones compacted
   // within about an hour instead of piling up for days.
+  { base: TOPICS.state, numPartitions: 1, configEntries: COMPACTED },
+  // The Flink jobs' output topics. The simulator creates them (so they exist with the right shape
+  // before Flink starts); only Flink writes them.
+  //
+  // One report card per finished shift, read by the gateway for the handover screen: kept 7 days
+  // like plant.events, 1 partition, broker-stamped times.
   {
-    base: TOPICS.state,
+    base: TOPICS.shiftReports,
     numPartitions: 1,
-    configEntries: [
-      { name: 'cleanup.policy', value: 'compact' },
-      { name: 'segment.ms', value: '3600000' },
-      { name: 'min.cleanable.dirty.ratio', value: '0.1' },
-    ],
+    configEntries: [LOG_APPEND_TIME, { name: 'retention.ms', value: '604800000' }],
   },
+  // One final result per run, keyed by runId: compacted and never expired by age, so every run
+  // ever finished stays on file (the leaderboard can be rebuilt from it).
+  {
+    base: TOPICS.runResults,
+    numPartitions: 1,
+    configEntries: [...COMPACTED, { name: 'retention.ms', value: '-1' }],
+  },
+  // The current boards (one key) and each run's current rank (key runId): only the latest value matters.
+  { base: TOPICS.leaderboard, numPartitions: 1, configEntries: COMPACTED },
+  { base: TOPICS.runRanks, numPartitions: 1, configEntries: COMPACTED },
 ];
 
 /**

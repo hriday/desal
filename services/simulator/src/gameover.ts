@@ -49,7 +49,17 @@ export function endGame(s: PlantState, reason: GameEndReason): { state: PlantSta
   return {
     state,
     events: [
-      { type: 'gameEnd', tick: s.tick, plantTime: s.plantTime, shiftId: s.shift?.id ?? null, mode: s.run.mode, reason, score: scoreOf(state) },
+      {
+        type: 'gameEnd',
+        tick: s.tick,
+        plantTime: s.plantTime,
+        shiftId: s.shift?.id ?? null,
+        callSign: s.run.callSign,
+        runId: s.run.runId,
+        mode: s.run.mode,
+        reason,
+        score: scoreOf(state),
+      },
     ],
   };
 }

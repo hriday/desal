@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { CommandEnvelopeSchema, type PlantEvent, type PlantStatus, type TelemetryReading } from '@desal/schema';
 import { z } from 'zod';
 import { MAX_GAMES } from './constants.js';
@@ -53,6 +54,8 @@ export interface GameHostOptions {
    * False ticks every game on every step (tests that step many times at one nowMs).
    */
   paced?: boolean;
+  /** Mints each new game's runId (default crypto.randomUUID); tests inject a fixed sequence. */
+  newRunId?: () => string;
 }
 
 interface Entry {
@@ -86,6 +89,7 @@ export class GameHost {
   private readonly idleHandoverMs: number;
   private readonly idleRunningMs: number;
   private readonly paced: boolean;
+  private readonly newRunId: () => string;
   private rngSeed: number;
 
   constructor(opts: GameHostOptions = {}) {
@@ -94,6 +98,7 @@ export class GameHost {
     this.idleHandoverMs = opts.idleHandoverMs ?? DEFAULT_IDLE_HANDOVER_MS;
     this.idleRunningMs = opts.idleRunningMs ?? DEFAULT_IDLE_RUNNING_MS;
     this.paced = opts.paced ?? true;
+    this.newRunId = opts.newRunId ?? randomUUID;
     this.rngSeed = (opts.seed ?? DEFAULT_HOST_SEED) >>> 0;
   }
 
@@ -159,9 +164,13 @@ export class GameHost {
           hostEvent(gameId, { type: 'gameRejected', reason: 'capacity' });
         } else {
           // Shift 1's plan is drawn now, deterministically from the game seed, so the first handover has orders.
-          const initial = drawPendingPlan(createInitialState(this.newSeed(), nowMs, gameId, command.mode));
+          // The call sign comes from the seed too; the runId is minted here, once per run.
+          const initial = drawPendingPlan(createInitialState(this.newSeed(), nowMs, gameId, command.mode, this.newRunId()));
           // gameStart is seq 0 of the new game, stamped from its own state.
-          const start = stamped([{ type: 'gameStart', mode: initial.run.mode, tick: 0, plantTime: nowMs, shiftId: null }], initial);
+          const start = stamped(
+            [{ type: 'gameStart', callSign: initial.run.callSign, mode: initial.run.mode, tick: 0, plantTime: nowMs, shiftId: null }],
+            initial,
+          );
           // Due at once, so its gameStart and first save come out on this step.
           this.entries.set(gameId, { state: start.state, lastSeenMs: nowMs, lastPlayerActionMs: nowMs, dueMs: nowMs, queued: [] });
           lead.set(gameId, start.events);

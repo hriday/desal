@@ -1,9 +1,10 @@
 import { PlantEventSchema, PlantStatusSchema, TelemetryReadingSchema, type PlantEvent } from '@desal/schema';
 import { describe, expect, it } from 'vitest';
+import { callSignFor } from '../src/callsign.js';
 import { applyCommand } from '../src/commands.js';
 import { START_BALANCE_USD, SHIFT_TICKS } from '../src/constants.js';
 import { restore, serialize } from '../src/snapshot.js';
-import { createInitialState, type PlantState } from '../src/state.js';
+import { createInitialState, NIL_RUN_ID, type PlantState } from '../src/state.js';
 import { tick } from '../src/tick.js';
 import { env, GAME_ID } from './envelope.js';
 
@@ -14,6 +15,8 @@ describe('run state', () => {
   it('starts with the operating account and zeroed counters', () => {
     expect(fresh().run).toEqual({
       gameId: GAME_ID,
+      callSign: callSignFor(1),
+      runId: NIL_RUN_ID,
       mode: 'normal',
       balanceUsd: START_BALANCE_USD,
       shiftNumber: 0,

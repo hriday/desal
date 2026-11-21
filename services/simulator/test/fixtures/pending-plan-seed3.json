@@ -1,0 +1,49 @@
+{
+  "seed": 567894476,
+  "pending": {
+    "shiftNumber": 1,
+    "hell": false,
+    "warned": false,
+    "targetM3": 3900,
+    "initial": {
+      "seawaterTempC": 30,
+      "chlorophyllUgL": 1
+    },
+    "queue": [
+      {
+        "eventId": 1,
+        "kind": "pumpTrip",
+        "params": {
+          "pumpId": "P-101"
+        },
+        "earliestMinute": 0,
+        "cascade": false,
+        "disaster": false
+      },
+      {
+        "eventId": 2,
+        "kind": "sensorFailure",
+        "params": {
+          "loop": "recirc",
+          "mode": "freeze"
+        },
+        "earliestMinute": 90,
+        "cascade": false,
+        "disaster": false
+      }
+    ],
+    "orders": {
+      "targetM3": 3900,
+      "maxSalinityPpm": 25,
+      "budgetUsd": 12000,
+      "lines": [
+        "Seawater is 30.0 °C with chlorophyll at 1.0 µg/L."
+      ],
+      "briefing": [
+        "Deliver 3,900 m³ of in-spec water this shift.",
+        "Keep product salt under 25 ppm — diverted or off-spec water doesn't count.",
+        "Click a monitor to act on it, and watch the fuel budget ($12,000)."
+      ]
+    }
+  }
+}

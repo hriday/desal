@@ -109,6 +109,7 @@ export function toStatus(s: PlantState): PlantStatus {
   return {
     gameId: s.run.gameId,
     epoch: s.run.epoch,
+    callSign: s.run.callSign,
     shiftNumber: s.run.shiftNumber,
     balanceUsd: s.run.balanceUsd,
     tick: s.tick,

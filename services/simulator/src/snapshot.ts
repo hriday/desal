@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   CrewJobSchema,
   FuelGradeSchema,
@@ -13,6 +14,7 @@ import {
   TripCauseSchema,
 } from '@desal/schema';
 import { z } from 'zod';
+import { callSignFor } from './callsign.js';
 import { LEVEL_LOOP_COUNT, LOOP_GAINS, RECOVERY_STAGES, STAGE_COUNT } from './constants.js';
 import { BALANCE, NOMINAL, type PlantState } from './state.js';
 
@@ -171,6 +173,8 @@ export const PlantStateSchema = z.object({
   }),
   run: z.object({
     gameId: z.uuid(),
+    callSign: z.string(),
+    runId: z.uuid(),
     mode: GameModeSchema,
     balanceUsd: num,
     shiftNumber: num,
@@ -310,6 +314,18 @@ function migrateV4(state: unknown): unknown {
   return { ...s, stages: twenty(s.stages) ? resample(s.stages) : s.stages, loops, faults, brine };
 }
 
+/**
+ * Bring a version 5 state to version 6: the call sign is derived from the save's seed (the seed at
+ * the save, not the game's first, so it is a new name for an old game) and the run gets a fresh
+ * runId. Anything malformed is left for the schema to reject.
+ */
+function migrateV5(state: unknown, newRunId: () => string): unknown {
+  if (state === null || typeof state !== 'object') return state;
+  const s = state as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (s.run === null || typeof s.run !== 'object' || typeof s.seed !== 'number') return s;
+  return { ...s, run: { ...s.run, callSign: callSignFor(s.seed), runId: newRunId() } };
+}
+
 const FORMAT = 'desal-snapshot';
 /**
  * 2 = the multi-game era (economy and game-over state, one save per gameId). Version 1 saves are
@@ -319,8 +335,9 @@ const FORMAT = 'desal-snapshot';
  * (in-progress games on a live server) are migrated to Normal with the new fields defaulted.
  * 5 = the 24-stage layout (Plan 7): 24 stages, 23 level loops, the makeup loop and the brine pool's
  * flows. Version 3 and 4 saves are migrated (v3 -> v4 -> v5).
+ * 6 = callSign and runId on the run. Version 3, 4 and 5 saves are migrated (v3 -> v4 -> v5 -> v6).
  */
-const VERSION = 5;
+const VERSION = 6;
 
 export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });
@@ -340,8 +357,11 @@ export function snapshotIssue(s: PlantState): string | null {
 
 export type RestoreResult = { ok: true; state: PlantState } | { ok: false; reason: string };
 
-/** Decode and validate a snapshot. Never throws; anything suspect is reported, never loaded. */
-export function restore(json: string): RestoreResult {
+/**
+ * Decode and validate a snapshot. Never throws; anything suspect is reported, never loaded.
+ * `newRunId` mints the runId of a save from before runIds (version 5 or older).
+ */
+export function restore(json: string, newRunId: () => string = randomUUID): RestoreResult {
   let doc: unknown;
   try {
     doc = JSON.parse(json);
@@ -353,11 +373,14 @@ export function restore(json: string): RestoreResult {
   }
   const d = doc as Record<string, unknown>;
   if (d.format !== FORMAT) return { ok: false, reason: `wrong format: ${JSON.stringify(d.format)}` };
-  if (d.version !== VERSION && d.version !== 4 && d.version !== 3) {
+  if (d.version !== VERSION && d.version !== 5 && d.version !== 4 && d.version !== 3) {
     return { ok: false, reason: `unknown version: ${JSON.stringify(d.version)}` };
   }
+  // Each step brings the state up one version: v3 -> v4 -> v5 -> v6.
   const v4 = d.version === 3 ? migrateV3(d.state) : d.state;
-  const parsed = PlantStateSchema.safeParse(d.version === VERSION ? d.state : migrateV4(v4));
+  const v5 = d.version === 3 || d.version === 4 ? migrateV4(v4) : v4;
+  const v6 = d.version === VERSION ? v5 : migrateV5(v5, newRunId);
+  const parsed = PlantStateSchema.safeParse(v6);
   if (!parsed.success) return { ok: false, reason: issueText(parsed.error) };
   return { ok: true, state: parsed.data };
 }
