@@ -60,6 +60,82 @@ services:
       # Uses the DOCKER listener, not localhost (which would be the UI container).
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
+  # Flink session cluster, as in production (deploy/compose.yml), built from this checkout.
+  # Submit the jobs with:
+  #   docker exec -u flink desal-flink-jobmanager flink-jobs.sh submit-all /flink-data/savepoints/last.txt
+  # Web UI and REST API: http://localhost:8082
+  flink-jobmanager:
+    build:
+      context: ..
+      dockerfile: services/flink/Dockerfile
+    image: desal-flink:local
+    container_name: desal-flink-jobmanager
+    command: jobmanager
+    mem_limit: 700m
+    ports:
+      - "127.0.0.1:8082:8081"
+    environment:
+      # Flink reads these into conf/config.yaml at startup. Memory: the process sizes are what the
+      # JVM may use in total (heap, metaspace, network buffers, overhead), kept under mem_limit.
+      # State is a few KB per game, so it lives on the JVM heap (hashmap backend). Managed memory
+      # (off-heap; RocksDB would use it, here only the leaderboard's SQL window buffers do) would
+      # take 40% of the taskmanager by default and leave its task heap at 26 MB, so it is fixed
+      # at 64 MB; and the jobmanager's JVM overhead reserve is cut from its 192 MB minimum to
+      # 128 MB so its heap gets the recommended 128 MB.
+      # Checkpoints (periodic, automatic) and savepoints (taken by deploys) go to the shared volume.
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 640m
+        jobmanager.memory.jvm-overhead.min: 128m
+        taskmanager.memory.process.size: 1024m
+        taskmanager.memory.managed.size: 64m
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 1
+        state.backend.type: hashmap
+        execution.checkpointing.dir: file:///flink-data/checkpoints
+        execution.checkpointing.savepoint-dir: file:///flink-data/savepoints
+        web.submit.enable: false
+        rest.bind-address: 0.0.0.0
+    volumes:
+      - desal-flink-checkpoints:/flink-data
+
+  flink-taskmanager:
+    build:
+      context: ..
+      dockerfile: services/flink/Dockerfile
+    image: desal-flink:local
+    container_name: desal-flink-taskmanager
+    command: taskmanager
+    mem_limit: 1100m
+    depends_on:
+      - flink-jobmanager
+    environment:
+      # Flink reads these into conf/config.yaml at startup. Memory: the process sizes are what the
+      # JVM may use in total (heap, metaspace, network buffers, overhead), kept under mem_limit.
+      # State is a few KB per game, so it lives on the JVM heap (hashmap backend). Managed memory
+      # (off-heap; RocksDB would use it, here only the leaderboard's SQL window buffers do) would
+      # take 40% of the taskmanager by default and leave its task heap at 26 MB, so it is fixed
+      # at 64 MB; and the jobmanager's JVM overhead reserve is cut from its 192 MB minimum to
+      # 128 MB so its heap gets the recommended 128 MB.
+      # Checkpoints (periodic, automatic) and savepoints (taken by deploys) go to the shared volume.
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.memory.process.size: 640m
+        jobmanager.memory.jvm-overhead.min: 128m
+        taskmanager.memory.process.size: 1024m
+        taskmanager.memory.managed.size: 64m
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 1
+        state.backend.type: hashmap
+        execution.checkpointing.dir: file:///flink-data/checkpoints
+        execution.checkpointing.savepoint-dir: file:///flink-data/savepoints
+        web.submit.enable: false
+        rest.bind-address: 0.0.0.0
+    volumes:
+      - desal-flink-checkpoints:/flink-data
+
 volumes:
   desal-kafka-data:
     name: desal-kafka-data
+  desal-flink-checkpoints:
+    name: desal-flink-checkpoints

@@ -4,8 +4,11 @@
 #   DESAL_SERVER=root@1.2.3.4 DESAL_HOST=example.org scripts/deploy/deploy.sh
 # It refuses to run on a dirty tree, then ships the committed tree (git archive
 # of HEAD), builds the web app locally and ships it to /opt/desal/web-<commit>,
-# builds the simulator and gateway images on the server, installs the Caddy site,
-# and runs `docker compose up -d` in /opt/desal. Safe to re-run.
+# builds the simulator, gateway and Flink images on the server, installs the Caddy site,
+# stops the Flink jobs with savepoints, runs `docker compose up -d` in /opt/desal, and
+# resubmits the Flink jobs from those savepoints. Safe to re-run. A Flink failure is
+# printed loudly (lines starting "!!!") but does not fail the deploy: the game never
+# needs Flink.
 # Needs pnpm and installed dependencies (pnpm install) on this machine.
 set -euo pipefail
 
@@ -15,6 +18,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
 SIMULATOR_IMAGE="desal-simulator:$COMMIT"
 GATEWAY_IMAGE="desal-gateway:$COMMIT"
+FLINK_IMAGE="desal-flink:$COMMIT"
 
 # A dirty tree would deploy something nobody committed: the web app is built from the working
 # tree while the images come from HEAD. Refuse, untracked files included.
@@ -39,14 +43,33 @@ git -C "$REPO_ROOT" archive --format=tar HEAD \
 echo "==> building $SIMULATOR_IMAGE and $GATEWAY_IMAGE on the server"
 ssh "$SERVER" "docker build -q -f /opt/desal/src-$COMMIT/services/simulator/Dockerfile -t $SIMULATOR_IMAGE /opt/desal/src-$COMMIT"
 ssh "$SERVER" "docker build -q -f /opt/desal/src-$COMMIT/services/gateway/Dockerfile -t $GATEWAY_IMAGE /opt/desal/src-$COMMIT"
+echo "==> building $FLINK_IMAGE on the server (Maven builds the jobs' jar inside the build)"
+FLINK_BUILT=""
+if ssh "$SERVER" "docker build -q -f /opt/desal/src-$COMMIT/services/flink/Dockerfile -t $FLINK_IMAGE /opt/desal/src-$COMMIT"; then
+  FLINK_BUILT=1
+else
+  echo "!!! Flink: building $FLINK_IMAGE failed; the game deploys anyway (the previous Flink image is kept if there is one)" >&2
+fi
 
 echo "==> installing compose project and Caddy site"
-ssh "$SERVER" HOST="$HOST" SIMULATOR_IMAGE="$SIMULATOR_IMAGE" GATEWAY_IMAGE="$GATEWAY_IMAGE" COMMIT="$COMMIT" bash -s <<'REMOTE'
+ssh "$SERVER" HOST="$HOST" SIMULATOR_IMAGE="$SIMULATOR_IMAGE" GATEWAY_IMAGE="$GATEWAY_IMAGE" \
+  FLINK_IMAGE="$FLINK_IMAGE" FLINK_BUILT="$FLINK_BUILT" COMMIT="$COMMIT" bash -s <<'REMOTE'
 set -euo pipefail
 cd /opt/desal
 cp "src-$COMMIT/deploy/compose.yml" compose.yml
-printf 'SIMULATOR_IMAGE=%s\nGATEWAY_IMAGE=%s\n' "$SIMULATOR_IMAGE" "$GATEWAY_IMAGE" > .env
+# If this commit's Flink image did not build, keep running the previous one.
+if [ -z "$FLINK_BUILT" ]; then
+  previous="$(sed -n 's/^FLINK_IMAGE=//p' .env 2>/dev/null || true)"
+  if [ -n "$previous" ]; then FLINK_IMAGE="$previous"; fi
+fi
+printf 'SIMULATOR_IMAGE=%s\nGATEWAY_IMAGE=%s\nFLINK_IMAGE=%s\n' "$SIMULATOR_IMAGE" "$GATEWAY_IMAGE" "$FLINK_IMAGE" > .env
 chmod 600 .env
+# Without any Flink image (its first build failed) compose starts every service but Flink's.
+services=()
+if ! docker image inspect "$FLINK_IMAGE" >/dev/null 2>&1; then
+  echo "!!! Flink: no image $FLINK_IMAGE; starting the stack without Flink" >&2
+  services=(kafka simulator gateway kafka-ui)
+fi
 
 # Web build: point /opt/desal/web at it atomically (rename over the symlink), so
 # Caddy never sees a missing directory. Caddy (user caddy) must be able to read it.
@@ -78,10 +101,36 @@ grep -q '^import /etc/caddy/sites/\*.caddy' /etc/caddy/Caddyfile \
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 systemctl reload caddy
 
-docker compose up -d --remove-orphans
+# Flink: stop both jobs with savepoints before compose (possibly) replaces the jobmanager; a
+# session cluster forgets its jobs when it restarts. flink-jobs.sh writes the savepoint paths
+# to last.txt in the volume, and submit-all below resumes each job from its own.
+if [ "$(docker inspect -f '{{.State.Running}}' desal-flink-jobmanager 2>/dev/null || true)" = "true" ]; then
+  echo "==> Flink: stopping the jobs with savepoints"
+  docker exec desal-flink-jobmanager flink-jobs.sh stop-all /flink-data/savepoints/last.txt \
+    || echo "!!! Flink: stop-all failed; a job not stopped with a savepoint starts fresh or keeps running" >&2
+fi
+
+docker compose up -d --remove-orphans ${services[@]+"${services[@]}"}
+
+# Flink: once the jobmanager answers and a taskmanager has registered (120 s at most), resubmit
+# the jobs from their savepoints.
+if [ ${#services[@]} -eq 0 ]; then
+  flink_ready=""
+  for _ in $(seq 1 60); do
+    if curl -s 127.0.0.1:8082/overview | grep -q '"taskmanagers":[1-9]'; then flink_ready=1; break; fi
+    sleep 2
+  done
+  if [ -z "$flink_ready" ]; then
+    echo "!!! Flink: the jobmanager (127.0.0.1:8082/overview) had no taskmanager after 120 s; jobs not submitted" >&2
+  else
+    echo "==> Flink: submitting the jobs"
+    docker exec desal-flink-jobmanager flink-jobs.sh submit-all /flink-data/savepoints/last.txt \
+      || echo "!!! Flink: submit-all failed; see above. Retry: docker exec desal-flink-jobmanager flink-jobs.sh submit-all /flink-data/savepoints/last.txt" >&2
+  fi
+fi
 
 # Keep the two newest images of each service, and the two newest source trees.
-for repo in desal-simulator desal-gateway; do
+for repo in desal-simulator desal-gateway desal-flink; do
   docker images --format '{{.Repository}}:{{.Tag}} {{.CreatedAt}}' \
     | awk -v r="^$repo:" '$1 ~ r' | sort -k2 -r | awk 'NR>2 {print $1}' \
     | xargs -r docker rmi >/dev/null 2>&1 || true
@@ -101,4 +150,4 @@ for _ in $(seq 1 40); do
 done
 [ -n "$healthy" ] || { echo "gateway /healthz did not return ok" >&2; ssh "$SERVER" "docker logs --tail 20 desal-gateway 2>&1" >&2 || true; exit 1; }
 ssh "$SERVER" "docker compose -f /opt/desal/compose.yml ps --format 'table {{.Name}}\t{{.Status}}'; docker logs --tail 5 desal-simulator 2>&1; docker logs --tail 5 desal-gateway 2>&1"
-echo "==> done: https://$HOST (game); https://$HOST/kafka (Kafka UI, credentials: ssh $SERVER cat /opt/desal/basic-auth.txt)"
+echo "==> done: https://$HOST (game); https://$HOST/kafka (Kafka UI) and https://$HOST/flink (Flink UI), credentials: ssh $SERVER cat /opt/desal/basic-auth.txt"
