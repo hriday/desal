@@ -53,13 +53,14 @@ describe('Plan 8 determinism: lowSteam rides its own substream', () => {
       }
       total[r.mode] += ls.length;
     }
-    console.log(`lowSteam planned in the fixture matrix: normal ${total.normal}, hard ${total.hard}`);
     expect(total.normal).toBeGreaterThanOrEqual(1);
     expect(total.hard).toBeGreaterThanOrEqual(1);
     expect(total.hard).toBeGreaterThan(total.normal);
   });
 
-  it("leaves the other events' fire timing and the game seed untouched (standby on from shift start)", () => {
+  // Only when the player answers it: an uncleared lowSteam holds Normal events back through isSettled,
+  // as an open disaster does (see director.ts), so an ignored fault can move later events.
+  it("leaves the other events' fire timing and the game seed untouched when the fault is answered (standby on from shift start)", () => {
     for (const mode of ['normal', 'hard'] as const) {
       const hit = drawn.find(({ r, s }) => r.mode === mode && lowSteams(s.chaos.pending!).length === 1 && s.chaos.pending!.queue.length > 1)!;
       expect(hit, mode).toBeDefined();

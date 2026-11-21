@@ -138,7 +138,7 @@ export const PlantStateSchema = z.object({
     cfTargetHeld: num,
   }),
   vacuum: z.object({ quality: num }),
-  steam: z.object({ motiveBar: num, standby: z.boolean() }),
+  steam: z.object({ motiveBar: num, standby: z.boolean(), unbilledTicks: z.number().int().min(0).default(0) }),
   product: z.object({ flowM3h: num, salinityPpm: num, divertToDrain: z.boolean(), divertMode: DivertModeSchema }),
   fuel: z.object({
     active: FuelKindSchema,
@@ -341,7 +341,7 @@ function migrateV6(state: unknown): unknown {
   return {
     ...s,
     product: obj(s.product) ? { ...s.product, divertMode: 'manual' } : s.product,
-    steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false },
+    steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false, unbilledTicks: 0 },
     faults: obj(s.faults) ? { ...s.faults, lowSteam: null } : s.faults,
   };
 }

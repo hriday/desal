@@ -199,7 +199,7 @@ describe('applyCommand', () => {
 
   it('a new game diverts in Auto', () => {
     expect(createInitialState(1, 0, GAME_ID).product.divertMode).toBe('auto');
-    expect(createInitialState(1, 0, GAME_ID).steam).toEqual({ motiveBar: 14.5, standby: false });
+    expect(createInitialState(1, 0, GAME_ID).steam).toEqual({ motiveBar: 14.5, standby: false, unbilledTicks: 0 });
   });
 
   it('setDivertMode sets the mode and leaves the valve where it was', () => {

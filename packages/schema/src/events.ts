@@ -38,7 +38,7 @@ export const EventClearHowSchema = z.enum(['player', 'crew', 'expired', 'noted']
 export type EventClearHow = z.infer<typeof EventClearHowSchema>;
 
 // Water first: productM3 is in-spec water only (off-spec is offSpecM3 and counts for nothing).
-// spentUsd = gas burned + backup ordered + repairs + crew jobs + standing cost this shift;
+// spentUsd = gas burned + backup ordered + repairs + crew jobs + standing cost + standby steam line this shift;
 // nextAllocationUsd is what the next shift will be allocated given this shift's in-spec water
 // against its target.
 export const ShiftSummarySchema = z.object({
@@ -71,7 +71,7 @@ export type GameEndReason = z.infer<typeof GameEndReasonSchema>;
 export const GameScoreSchema = z.object({ shiftsCompleted: num, totalProductM3: num, balanceUsd: num });
 export type GameScore = z.infer<typeof GameScoreSchema>;
 
-export const AccountCauseSchema = z.enum(['allocation', 'fuel', 'delivery', 'acidClean', 'overhaul', 'crew', 'standing']);
+export const AccountCauseSchema = z.enum(['allocation', 'fuel', 'delivery', 'acidClean', 'overhaul', 'crew', 'standing', 'standbySteam']);
 export type AccountCause = z.infer<typeof AccountCauseSchema>;
 
 

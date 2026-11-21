@@ -9,7 +9,7 @@ import {
 } from './constants.js';
 import { autoOutputRange } from './control/loops.js';
 import { pidStep } from './control/pid.js';
-import { chargeStanding, spendPerTick } from './economy.js';
+import { chargeStandbySteam, chargeStanding, spendPerTick } from './economy.js';
 import { toStatus, toTelemetry } from './emit.js';
 import { nextRandom } from './rng.js';
 import { checkGameOver, endGame } from './gameover.js';
@@ -221,6 +221,10 @@ export function tick(s0: PlantState, commands: unknown[]): TickResult {
   const standing = chargeStanding(s);
   s = standing.state;
   events.push(...standing.events);
+  // So does the standby steam line, while it is on (also reported hourly).
+  const standby = chargeStandbySteam(s);
+  s = standby.state;
+  events.push(...standby.events);
   const telemetry = toTelemetry(s);
 
   let ended = false;

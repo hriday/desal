@@ -6,6 +6,7 @@ import {
   PUMP_OVERHAUL_COST_USD,
   PUMP_OVERHAUL_TICKS,
   SHIFT_TICKS,
+  STANDBY_STEAM_COST_USD_PER_H,
   STANDING_COST_USD_PER_HOUR,
   START_BALANCE_USD,
 } from '../src/constants.js';
@@ -308,5 +309,80 @@ describe('standing cost', () => {
       expect(s.run.balanceUsd).toBe(s0.run.balanceUsd);
       expect(standingEvents(events)).toEqual([]);
     }
+  });
+});
+
+describe('standby steam line cost', () => {
+  const calm = (s: PlantState): PlantState =>
+    s.chaos.active ? { ...s, chaos: { ...s.chaos, active: { ...s.chaos.active, plan: { ...s.chaos.active.plan, queue: [] } } } } : s;
+  const standbyEvents = (events: PlantEvent[]) => events.filter((e) => e.type === 'accountChange' && e.cause === 'standbySteam');
+  const nonFuelSpend = (s: PlantState) => s.shift!.acc.spentUsd - s.shift!.acc.fuelCostUsd;
+  const on = (s: PlantState) => env(s, { type: 'standbySteam', on: true });
+  const off = (s: PlantState) => env(s, { type: 'standbySteam', on: false });
+
+  it('is $150 per plant hour', () => {
+    expect(STANDBY_STEAM_COST_USD_PER_H).toBe(150);
+  });
+
+  it('costs one tick\'s share on each running tick the line is on, and nothing while it is off', () => {
+    const s0 = calm(running());
+    const offTick = tick(s0, []).state;
+    expect(nonFuelSpend(offTick)).toBeCloseTo(STANDING_PER_TICK, 9);
+    const onTick = tick(s0, [on(s0)]).state;
+    expect(nonFuelSpend(onTick)).toBeCloseTo(STANDING_PER_TICK + STANDBY_STEAM_COST_USD_PER_H / 90, 9);
+    const onTwo = tick(onTick, []).state;
+    expect(nonFuelSpend(onTwo)).toBeCloseTo(2 * (STANDING_PER_TICK + STANDBY_STEAM_COST_USD_PER_H / 90), 9);
+  });
+
+  it('is reported once per plant hour with that hour\'s total, and counts toward the shift spend', () => {
+    let s = calm(running());
+    const events: PlantEvent[] = [];
+    // On for the first 45 ticks (half an hour), then off for the rest of the shift.
+    for (let i = 0; i < SHIFT_TICKS; i++) {
+      const cmds = i === 0 ? [on(s)] : i === 45 ? [off(s)] : [];
+      const r = tick(s, cmds);
+      s = r.state;
+      events.push(...r.events);
+    }
+    const billed = standbyEvents(events);
+    expect(billed).toHaveLength(1);
+    expect(billed[0]).toMatchObject({ shiftId: 1 });
+    expect((billed[0] as { deltaUsd: number }).deltaUsd).toBeCloseTo(-STANDBY_STEAM_COST_USD_PER_H / 2, 9);
+    const sum = summaryOf(events);
+    expect(sum.spentUsd - sum.fuelCostUsd).toBeCloseTo(STANDING_COST_USD_PER_HOUR * 8 + STANDBY_STEAM_COST_USD_PER_H / 2, 6);
+  });
+
+  it('a whole shift with the line on costs 8 hours, reported hourly before the shift ends', () => {
+    let s = calm(running());
+    const events: PlantEvent[] = [];
+    for (let i = 0; i < SHIFT_TICKS; i++) {
+      const r = tick(s, i === 0 ? [on(s)] : []);
+      s = r.state;
+      events.push(...r.events);
+    }
+    const billed = standbyEvents(events);
+    expect(billed).toHaveLength(8);
+    for (const e of billed) expect((e as { deltaUsd: number }).deltaUsd).toBeCloseTo(-STANDBY_STEAM_COST_USD_PER_H, 9);
+    expect(events.indexOf(billed[7]!)).toBeLessThan(events.findIndex((e) => e.type === 'shiftEnd'));
+  });
+
+  it('with the line off all shift there is no charge and no report', () => {
+    let s = calm(running());
+    const events: PlantEvent[] = [];
+    for (let i = 0; i < SHIFT_TICKS; i++) {
+      const r = tick(s, []);
+      s = r.state;
+      events.push(...r.events);
+    }
+    expect(standbyEvents(events)).toEqual([]);
+    const sum = summaryOf(events);
+    expect(sum.spentUsd - sum.fuelCostUsd).toBeCloseTo(STANDING_COST_USD_PER_HOUR * 8, 6);
+  });
+
+  it('nothing is charged while paused, even with the line on', () => {
+    const s0 = { ...paused(), steam: { ...paused().steam, standby: true } };
+    let s = s0;
+    for (let i = 0; i < 200; i++) s = tick(s, []).state;
+    expect(s.run.balanceUsd).toBe(s0.run.balanceUsd);
   });
 });

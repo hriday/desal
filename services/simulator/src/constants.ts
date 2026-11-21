@@ -348,6 +348,11 @@ export const ALLOC_DECAY_PER_SHIFT = 0.03;
  * within 40 shifts (R14/R15). $720 a shift, 6.5 % of shift 1's allocation.
  */
 export const STANDING_COST_USD_PER_HOUR = 90;
+/**
+ * Running cost of the standby steam line per plant hour while it is on (user decision 2026-11-21):
+ * $1,200 for a whole shift, about one ejector repair, so leaving it on all shift is a choice.
+ */
+export const STANDBY_STEAM_COST_USD_PER_H = 150;
 /** Cost of an acid clean, charged when it starts (USD). */
 export const ACID_CLEAN_COST_USD = 6000;
 /** Cost of a pump overhaul, charged when it starts (USD). */

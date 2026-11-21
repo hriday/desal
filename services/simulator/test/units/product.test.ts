@@ -41,7 +41,7 @@ describe('stepProduct', () => {
 
   it('diverts to drain: nothing delivered, never off-spec', () => {
     const s = base();
-    const r = stepProduct({ ...s, product: { ...s.product, divertToDrain: true } }, 500, 0.1, DT);
+    const r = stepProduct({ ...s, product: { ...s.product, divertMode: 'manual', divertToDrain: true } }, 500, 0.1, DT);
     expect(r.deliveredM3).toBe(0);
     expect(r.offSpec).toBe(false);
   });

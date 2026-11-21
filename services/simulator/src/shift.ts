@@ -100,7 +100,8 @@ function lineUpPumps(intake: PlantState['intake']): PlantState['intake'] {
 /**
  * Begin a shift: activate the pending plan (drawing one now if the state has none, e.g. a bare
  * test state), apply its scenario's starting conditions, reset shift accumulators, clear the crew and
- * every per-shift fault, put the standby steam line back on standby (motive steam nominal), abandon
+ * every per-shift fault, put the standby steam line back on standby (motive steam nominal) and Divert
+ * back on Auto, abandon
  * any restart left in progress, set the loop modes for the chosen control mode, and credit the
  * shift's allocation (scaled by how much in-spec water the previous shift delivered against its
  * target).
@@ -129,8 +130,10 @@ export function startShift(s: PlantState, mode: 'auto' | 'manual'): { state: Pla
     intake: lineUpPumps(loaded.intake),
     crew: null,
     faults: noFaults(),
-    // The oncoming crew puts the standby steam line back on standby.
-    steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false },
+    // The oncoming crew puts the standby steam line back on standby, and Divert back on Auto (the
+    // valve stays where it is until Auto's next decision).
+    steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false, unbilledTicks: 0 },
+    product: { ...loaded.product, divertMode: 'auto' },
     controlMode: mode,
     phase: 'running',
     loops: withModes(loaded.loops, mode),

@@ -116,7 +116,10 @@ export function isCleared(s: PlantState, e: FiredEvent): ClearHow | null {
 
 /**
  * The plant is settled: every fired event is cleared, no trip is in progress (status online), and
- * product salinity is in spec.
+ * product salinity is in spec. An uncleared lowSteam counts like any other open event (as an open
+ * disaster does): on Normal it holds the next ordinary event back until NORMAL_OVERRIDE_MIN. So
+ * lowSteam leaves the other events' timing unchanged only when the player answers it (standby on);
+ * an ignored fault can delay them, as an ignored disaster does.
  */
 export function isSettled(s: PlantState): boolean {
   const fired = s.chaos.active?.fired ?? [];

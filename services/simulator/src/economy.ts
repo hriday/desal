@@ -4,6 +4,7 @@ import {
   ALLOC_DECAY_PER_SHIFT,
   LHV_OFFGRADE_MJkg,
   LHV_STANDARD_MJkg,
+  STANDBY_STEAM_COST_USD_PER_H,
   STANDING_COST_USD_PER_HOUR,
   TICK_PLANT_S,
 } from './constants.js';
@@ -68,6 +69,25 @@ export function chargeStanding(s: PlantState): { state: PlantState; events: SimE
   const state = spend(s, STANDING_COST_USD_PER_HOUR / TICKS_PER_HOUR);
   const hourDone = s.shift !== null && (s.tick - s.shift.startTick) % TICKS_PER_HOUR === 0;
   return { state, events: hourDone ? [accountChange(state, -STANDING_COST_USD_PER_HOUR, 'standing')] : [] };
+}
+
+/**
+ * Charge one running tick's share of the standby steam line's running cost while the line is on (call
+ * after chargeStanding). Like the standing cost it is spent every tick and reported on the same plant
+ * hour boundaries, as one accountChange carrying the hour's on-time total (none for an hour it was off).
+ */
+export function chargeStandbySteam(s: PlantState): { state: PlantState; events: SimEvent[] } {
+  if (!s.steam.standby && s.steam.unbilledTicks === 0) return { state: s, events: [] };
+  let state = s;
+  let unbilledTicks = s.steam.unbilledTicks;
+  if (s.steam.standby) {
+    state = spend(state, STANDBY_STEAM_COST_USD_PER_H / TICKS_PER_HOUR);
+    unbilledTicks += 1;
+  }
+  const hourDone = s.shift !== null && (s.tick - s.shift.startTick) % TICKS_PER_HOUR === 0;
+  if (!hourDone || unbilledTicks === 0) return { state: { ...state, steam: { ...state.steam, unbilledTicks } }, events: [] };
+  state = { ...state, steam: { ...state.steam, unbilledTicks: 0 } };
+  return { state, events: [accountChange(state, -(unbilledTicks * STANDBY_STEAM_COST_USD_PER_H) / TICKS_PER_HOUR, 'standbySteam')] };
 }
 
 /** Credit an allocation and report it. */

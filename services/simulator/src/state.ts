@@ -183,8 +183,11 @@ export interface PlantState {
     cfTargetHeld: number;
   };
   vacuum: { quality: number };
-  /** Motive steam to the ejectors (bar), and the standby steam line that restores it. */
-  steam: { motiveBar: number; standby: boolean };
+  /**
+   * Motive steam to the ejectors (bar), and the standby steam line that restores it. unbilledTicks
+   * counts the running ticks the line has been on since its cost was last reported (hourly).
+   */
+  steam: { motiveBar: number; standby: boolean; unbilledTicks: number };
   /** divertToDrain is the valve's position; divertMode says who moves it (Auto: the plant, Manual: the operator). */
   product: { flowM3h: number; salinityPpm: number; divertToDrain: boolean; divertMode: DivertMode };
   fuel: {
@@ -358,7 +361,7 @@ export function createInitialState(
       cfTargetHeld: NOMINAL.concentrationFactor,
     },
     vacuum: { quality: NOMINAL.vacuumQuality },
-    steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false },
+    steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false, unbilledTicks: 0 },
     product: { flowM3h: NOMINAL.productM3h, salinityPpm: BASE_SALINITY_PPM, divertToDrain: false, divertMode: 'auto' },
     fuel: {
       active: 'gas',

@@ -37,9 +37,16 @@ const at = (s: PlantState, ppm: number) => {
   return stepProduct(forced, 500, (ppm - BASE_SALINITY_PPM) / CARRYOVER_SALINITY_PPM, DT);
 };
 
+/** `s` on a running shift whose target limit is exactly LIMIT, so the band does not rest on a default. */
+const limitedTo = (s: PlantState, maxSalinityPpm: number): PlantState => {
+  const shift = quiet().shift!;
+  return { ...s, shift: { ...shift, target: { ...shift.target, maxSalinityPpm } } };
+};
+
 describe('auto divert band (limit 25)', () => {
   it('diverts above the limit, holds in the band, returns below 0.9 x limit, then stays', () => {
-    let r = at(product(8, 'auto', false), 25.1);
+    let r = at(limitedTo(product(8, 'auto', false), LIMIT), 25.1);
+    expect(r.state.shift!.target.maxSalinityPpm).toBe(LIMIT);
     expect(r.state.product.divertToDrain).toBe(true);
     expect(r.deliveredM3).toBe(0);
     expect(r.offSpec).toBe(false);

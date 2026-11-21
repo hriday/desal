@@ -44,8 +44,8 @@ describe('ejectorReach', () => {
 describe('stepSteam', () => {
   it('holds nominal with no fault, and with the standby line on', () => {
     const s = quiet();
-    expect(stepSteam({ ...s, steam: { motiveBar: 12, standby: false } }, TICK_PLANT_S).steam.motiveBar).toBe(MOTIVE_STEAM_NOMINAL_BAR);
-    const faulted = withLowSteam({ ...s, steam: { motiveBar: 12, standby: true } }, 10);
+    expect(stepSteam({ ...s, steam: { motiveBar: 12, standby: false, unbilledTicks: 0 } }, TICK_PLANT_S).steam.motiveBar).toBe(MOTIVE_STEAM_NOMINAL_BAR);
+    const faulted = withLowSteam({ ...s, steam: { motiveBar: 12, standby: true, unbilledTicks: 0 } }, 10);
     expect(stepSteam(faulted, TICK_PLANT_S).steam.motiveBar).toBe(MOTIVE_STEAM_NOMINAL_BAR);
   });
 });
@@ -80,7 +80,6 @@ describe('motive steam on the plant', () => {
 
   it('ignored at a 10.0 bar floor, the vacuum trips the plant 15-30 plant minutes in', () => {
     const r = untilTrip(withLowSteam(quiet(), 10), 200);
-    console.log(`lowSteam floor 10.0: lossOfVacuum after ${minutes(r.ticks).toFixed(1)} plant min`);
     expect(r.cause).toBe('lossOfVacuum');
     expect(minutes(r.ticks)).toBeGreaterThanOrEqual(15);
     expect(minutes(r.ticks)).toBeLessThanOrEqual(30);
@@ -88,7 +87,6 @@ describe('motive steam on the plant', () => {
 
   it('ignored at a 11.0 bar floor, the vacuum trips the plant 22-38 plant minutes in', () => {
     const r = untilTrip(withLowSteam(quiet(), 11), 200);
-    console.log(`lowSteam floor 11.0: lossOfVacuum after ${minutes(r.ticks).toFixed(1)} plant min`);
     expect(r.cause).toBe('lossOfVacuum');
     expect(minutes(r.ticks)).toBeGreaterThanOrEqual(22);
     expect(minutes(r.ticks)).toBeLessThanOrEqual(38);
@@ -181,9 +179,16 @@ describe('a trip during lowSteam', () => {
 describe('shift start', () => {
   it('resets the motive steam and the standby line, and clears the lowSteam fault', () => {
     const s0 = createInitialState(1, 0, GAME_ID);
-    const s = withLowSteam({ ...s0, steam: { motiveBar: 11.2, standby: true } }, 10.4);
+    const s = withLowSteam({ ...s0, steam: { motiveBar: 11.2, standby: true, unbilledTicks: 30 } }, 10.4);
     const started = startShift(s, 'auto').state;
-    expect(started.steam).toEqual({ motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false });
+    expect(started.steam).toEqual({ motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false, unbilledTicks: 0 });
     expect(started.faults.lowSteam).toBeNull();
+  });
+  it('puts Divert back on Auto, leaving the valve where it was until Auto decides', () => {
+    const s0 = createInitialState(1, 0, GAME_ID);
+    const s = { ...s0, product: { ...s0.product, divertMode: 'manual' as const, divertToDrain: true } };
+    const started = startShift(s, 'auto').state;
+    expect(started.product.divertMode).toBe('auto');
+    expect(started.product.divertToDrain).toBe(true);
   });
 });

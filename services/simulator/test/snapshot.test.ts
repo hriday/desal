@@ -96,7 +96,7 @@ describe('snapshots', () => {
       expect(r.ok).toBe(true);
       expect(s.product.divertMode).toBe('manual');
       expect(s.product.divertToDrain).toBe(true);
-      expect(s.steam).toEqual({ motiveBar: 14.5, standby: false });
+      expect(s.steam).toEqual({ motiveBar: 14.5, standby: false, unbilledTicks: 0 });
       expect(s.faults.lowSteam).toBeNull();
     });
 
@@ -175,7 +175,7 @@ describe('snapshots', () => {
     it('restores, with the v7 defaults', () => {
       expect(r.ok).toBe(true);
       expect(s.product.divertMode).toBe('manual');
-      expect(s.steam).toEqual({ motiveBar: 14.5, standby: false });
+      expect(s.steam).toEqual({ motiveBar: 14.5, standby: false, unbilledTicks: 0 });
       expect(s.faults.lowSteam).toBeNull();
       expect(old.stages).toHaveLength(20);
       expect(s.stages).toHaveLength(STAGE_COUNT);
@@ -250,7 +250,7 @@ describe('snapshots', () => {
     expect(r.state.loops.makeup.mode).toBe('auto');
     expect(r.state.run.mode).toBe('normal');
     expect(r.state.product.divertMode).toBe('manual');
-    expect(r.state.steam).toEqual({ motiveBar: 14.5, standby: false });
+    expect(r.state.steam).toEqual({ motiveBar: 14.5, standby: false, unbilledTicks: 0 });
     expect(r.state.faults.lowSteam).toBeNull();
     expect(r.state.chaos.lastHadDisaster).toBe(false);
     expect(r.state.faults.fuelContamination).toBeNull();
