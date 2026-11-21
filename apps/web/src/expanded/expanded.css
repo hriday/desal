@@ -78,7 +78,8 @@
 .xv-stage__scale { color: var(--muted); }
 
 .trend { margin: 0; min-width: 0; }
-.trend__head { display: flex; justify-content: space-between; color: var(--muted); }
+/* Wraps the value under the label when a trend column is too narrow for both (three trends at phone width). */
+.trend__head { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 6px; color: var(--muted); }
 .trend__now { color: var(--text); }
 .trend svg { display: block; width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 3px; }
 .trend__range { color: var(--muted); font-size: 11px; }
