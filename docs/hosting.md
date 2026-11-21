@@ -136,8 +136,8 @@ A redeploy that changes the snapshot version (it is 7 since Plan 8's divert mode
 
 **Plan 8 (plant realism) deploy notes.**
 
-- Browser tabs left open across this deploy need a reload: their bundled schema has a strict `ScenarioKindSchema` that
-  rejects the new `lowSteam` kind (and the new `standbySteam` account cause), so an old tab drops those messages.
+- Browser tabs left open across this deploy need a reload: their bundled schemas are strict: `ScenarioKindSchema`
+  rejects the new `lowSteam` kind and `AccountCauseSchema` the new `standbySteam` account cause, so an old tab drops those messages.
 - Rolling the simulator back past this version (snapshot v7) rejects every version-7 save, so every live game ends
   on the rollback. Roll back only if that is acceptable.
 

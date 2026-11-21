@@ -344,7 +344,7 @@
 - [ ] **Step 1: Write failing tests**
   - `expanded.test.tsx`, ProductView:
     - the Routing row reads `Auto — to tank`, `Auto — diverting`, `Manual — to tank` or `Manual — diverting` for the four status combinations;
-    - a "Divert mode" toggle (on = Auto) sends `setDivertMode`;
+    - a "Divert mode" toggle (on = Manual, matching LoopModeToggle; final-review ruling) sends `setDivertMode`;
     - the "Divert to drain" toggle sends `divertToDrain`.
   - `expanded.test.tsx`, StagesView:
     - a "Motive steam" row shows `14.5 bar`, `warn` at 12.9 and `bad` at 10.9;
