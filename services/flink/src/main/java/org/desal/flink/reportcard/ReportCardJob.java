@@ -1,20 +1,14 @@
 package org.desal.flink.reportcard;
 
-import java.nio.charset.StandardCharsets;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
-import org.apache.flink.connector.base.DeliveryGuarantee;
-import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
-import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.util.function.SerializableFunction;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.desal.flink.common.Args;
-import org.desal.flink.common.Json;
+import org.desal.flink.common.JsonSink;
 import org.desal.flink.common.Topics;
 import org.desal.flink.model.RunResult;
 import org.desal.flink.reportcard.ReportCardFunction.ShiftReportOut;
@@ -67,10 +61,10 @@ public final class ReportCardJob {
         .uid("report-card").name("report card");
 
     reports
-        .sinkTo(sink(args, new JsonRecord<>(args.topic(Topics.SHIFT_REPORTS), r -> r.gameId, r -> r.report)))
+        .sinkTo(JsonSink.<ShiftReportOut>of(args.brokers, args.topic(Topics.SHIFT_REPORTS), r -> r.gameId, r -> r.report))
         .uid("shift-reports-sink").name("shift.reports");
     reports.getSideOutput(ReportCardFunction.RUN_RESULTS)
-        .sinkTo(sink(args, new JsonRecord<RunResult>(args.topic(Topics.RUN_RESULTS), r -> r.runId, r -> r)))
+        .sinkTo(JsonSink.<RunResult>of(args.brokers, args.topic(Topics.RUN_RESULTS), r -> r.runId, r -> r))
         .uid("run-results-sink").name("run.results");
   }
 
@@ -87,37 +81,5 @@ public final class ReportCardJob {
         .setStartingOffsets(OffsetsInitializer.committedOffsets(OffsetResetStrategy.LATEST))
         .setDeserializer(new Input.Deserializer())
         .build();
-  }
-
-  /** At-least-once: a record may be written twice after a failure; consumers keep the latest. */
-  private static <T> KafkaSink<T> sink(Args args, KafkaRecordSerializationSchema<T> serializer) {
-    return KafkaSink.<T>builder()
-        .setBootstrapServers(args.brokers)
-        .setRecordSerializer(serializer)
-        .setDeliveryGuarantee(DeliveryGuarantee.AT_LEAST_ONCE)
-        .build();
-  }
-
-  /** Writes {@code value(x)} as JSON to {@code topic} under the key {@code key(x)}. */
-  static final class JsonRecord<T> implements KafkaRecordSerializationSchema<T> {
-    private final String topic;
-    private final SerializableFunction<T, String> key;
-    private final SerializableFunction<T, Object> value;
-
-    JsonRecord(String topic, SerializableFunction<T, String> key, SerializableFunction<T, Object> value) {
-      this.topic = topic;
-      this.key = key;
-      this.value = value;
-    }
-
-    @Override
-    public ProducerRecord<byte[], byte[]> serialize(T element, KafkaSinkContext context, Long timestamp) {
-      try {
-        return new ProducerRecord<>(topic, key.apply(element).getBytes(StandardCharsets.UTF_8),
-            Json.MAPPER.writeValueAsBytes(value.apply(element)));
-      } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-        throw new IllegalStateException("cannot write " + element, e);
-      }
-    }
   }
 }

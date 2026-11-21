@@ -66,6 +66,13 @@
       <version>${flink.version}</version>
       <scope>provided</scope>
     </dependency>
+    <!-- The SQL runtime operators (and the jsonpath the planner links against); in the image's lib/. -->
+    <dependency>
+      <groupId>org.apache.flink</groupId>
+      <artifactId>flink-table-runtime</artifactId>
+      <version>${flink.version}</version>
+      <scope>provided</scope>
+    </dependency>
     <!-- DeliveryGuarantee and the sink base classes KafkaSink builds on; flink-connector-kafka
          declares it provided because flink-dist bundles it. -->
     <dependency>
