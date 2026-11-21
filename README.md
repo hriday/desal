@@ -59,6 +59,14 @@ pnpm --filter @desal/web e2e              # browser tests (Playwright); needs th
 
 Integration tests set `DESAL_TOPIC_SUFFIX` to a unique value, so they create throwaway topics (and consumer groups such as `desal-sim<suffix>`) and never touch your real games.
 
+End to end through Flink (simulator -> Kafka -> both Flink jobs -> gateway -> a test client; checks a real report card, rank and per-mode leaderboard arrive and that no runId or other game's gameId reaches the client):
+
+```sh
+scripts/e2e-flink.sh    # needs Docker, pnpm and jq; about a minute once the stack is up
+```
+
+It brings up Kafka and Flink, creates topics with a fresh `.e2e-<time>` suffix, submits a second copy of both jobs on them and runs `services/gateway/test/flink.int.test.ts` (which `test:int` skips unless `DESAL_E2E_FLINK=1`). The cluster has two task slots, one per job, so if jobs are running it first stops them with savepoints (`flink-jobs.sh stop-all`) and resubmits them from those on exit; it also cancels its own jobs and deletes its topics on exit. It does not rebuild the Flink image (a rebuild recreates the containers, which drops running jobs): after changing the jobs, run `up -d --build` and resubmit first.
+
 The Flink jobs (`services/flink`, Java 17 + Maven) need only Docker: `services/flink/mvn.sh` runs Maven in the `maven:3.9.11-eclipse-temurin-17` image with the repo mounted and dependencies cached in the `desal-m2` volume, so no JDK or Maven is installed on the host. `services/flink/mvn.sh test` runs the Java tests, which also rewrite the contract fixtures in `packages/schema/test/fixtures/flink/` that `pnpm --filter @desal/schema test` then validates with the zod schemas. `services/flink/mvn.sh package` builds `services/flink/target/desal-flink.jar`.
 
 ## Running it locally
