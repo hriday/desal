@@ -8,6 +8,7 @@ import { GameOver, REASON_TEXT } from '../src/screens/GameOver';
 import { Handover } from '../src/screens/Handover';
 import { Start } from '../src/screens/Start';
 import { TopBar } from '../src/screens/TopBar';
+import { FIX } from '../src/expanded/labels';
 import { GameProvider } from '../src/state/GameProvider';
 
 afterEach(cleanup);
@@ -108,6 +109,28 @@ describe('Handover', () => {
     expect(t).not.toContain('00:10 Gas price spike');
     expect(t).toContain('06:40 Vacuum loss — not cleared');
     expect(t).toContain('01:00 Storm — passed');
+  });
+  describe('what to do', () => {
+    const withEvents = (events: object[]) => {
+      const s = (shiftEnd as unknown as { summary: object }).summary;
+      return { ...shiftEnd, summary: { ...s, events } } as unknown as PlantEvent;
+    };
+    const evs = [
+      { eventId: 1, kind: 'tubeLeak', atMinute: 340, cleared: false, how: null },
+      { eventId: 2, kind: 'pumpTrip', atMinute: 130, cleared: true, how: 'player' },
+      { eventId: 3, kind: 'earthquake', atMinute: 20, cleared: true, how: 'noted' },
+      { eventId: 4, kind: 'martianInvasion', atMinute: 30, cleared: false, how: null },
+    ];
+    for (const mode of ['normal', 'hard'] as const) {
+      it(`shows the fix under the uncleared event only (${mode})`, () => {
+        const status = demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null, mode });
+        const { container } = render(<Handover {...base} status={status} events={[withEvents(evs)]} />);
+        const lis = container.querySelectorAll('[aria-label="Shift events"] li');
+        expect(lis).toHaveLength(4);
+        expect(lis[0]!.textContent).toContain(`What to do: ${FIX.tubeLeak.text}`);
+        expect(container.textContent!.match(/What to do:/g)).toHaveLength(1);
+      });
+    }
   });
   it('shows no HELL SHIFT tag on a normal shift', () => {
     const { container } = render(<Handover {...base} status={demoStatus({ phase: 'handover', shiftNumber: 1, shiftTarget: null })} events={[shiftEnd]} />);

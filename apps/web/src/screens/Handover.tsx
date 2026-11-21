@@ -1,7 +1,7 @@
 import type { LoopMode, PlantEvent, PlantStatus, ShiftSummary } from '@desal/schema';
 import { useId, useState } from 'react';
 import { fmt, get, label, num, stageKey, usd } from '../equipment/format';
-import { HOW_TEXT, KIND_TEXT } from '../expanded/labels';
+import { FIX, HOW_TEXT, KIND_TEXT } from '../expanded/labels';
 import { nextTargetEstimateM3 } from '../limits';
 import { STAGE_COUNT } from '../plantConstants';
 import { SheetHead } from './Sheet';
@@ -37,6 +37,12 @@ export function debriefLine(e: ShiftSummary['events'][number]): string {
   return `${at} ${kind} — ${(e.how && label(HOW_TEXT, e.how)) || 'not cleared'}`;
 }
 
+/** "What to do: ..." for an event the player left uncleared; null when it was cleared or this client has no fix for its kind. */
+export function whatToDo(e: ShiftSummary['events'][number]): string | null {
+  if (e.cleared || !Object.hasOwn(FIX, e.kind)) return null;
+  return `What to do: ${FIX[e.kind].text}`;
+}
+
 function Summary({ s }: { s: ShiftSummary }) {
   return (
     <section aria-label="Last shift">
@@ -51,7 +57,15 @@ function Summary({ s }: { s: ShiftSummary }) {
       </dl>
       {s.events.length > 0 && (
         <ul aria-label="Shift events">
-          {s.events.map((e) => <li key={e.eventId}>{debriefLine(e)}</li>)}
+          {s.events.map((e) => {
+            const todo = whatToDo(e);
+            return (
+              <li key={e.eventId}>
+                {debriefLine(e)}
+                {todo && <div className="debrief__todo">{todo}</div>}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
