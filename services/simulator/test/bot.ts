@@ -17,6 +17,9 @@ const RESTART_RETRY_TICKS = 10;
 function crewJobFor(s: PlantState): CrewJob | null {
   const f = s.faults;
   if (f.ejectorFailed) return 'repairEjector';
+  // The ejector-train faults trip the plant on vacuum within 15-36 minutes if left.
+  if (f.airLeak) return 'sealLeak';
+  if (f.coolingLoss) return 'cleanStrainer';
   if (f.tubeLeak) return 'plugTubes';
   if (f.fuelContamination && !contaminationActive(s)) return 'flushFuel';
   if (Object.keys(f.sensors).length > 0) return 'replaceSensor';
@@ -45,8 +48,10 @@ export interface BotOptions {
  * - a failed ejector: cut the TBT setpoint to slow the vacuum loss until the crew has repaired it;
  * - a controller fault: put that loop in Manual;
  * - low motive steam: switch on the standby steam line;
+ * - an air leak: switch on the standby ejectors (off again once it is sealed);
  * - a bloom: raise the chlorine dose (back to normal at the next shift);
- * - a tube leak, failed ejector, failed sensor or storm: dispatch the matching crew job;
+ * - a tube leak, failed ejector, failed sensor, storm, condenser cooling loss or air leak: dispatch
+ *   the matching crew job;
  * - contaminated fuel: switch to the other fuel, have the crew flush the contaminated one, then
  *   switch back;
  * - a tsunami warning: stop pumps until one runs, and keep it at one through the surge; after the
@@ -96,10 +101,14 @@ export function engagedCommands(s: PlantState, ticks: number, opts: BotOptions =
     if (e.cleared) continue;
     if (e.kind === 'controllerFault') cmd({ type: 'setLoopMode', loop: String(e.params.loop), mode: 'manual' });
     if (e.kind === 'lowSteam' && !s.steam.standby) cmd({ type: 'standbySteam', on: true });
+    if (e.kind === 'airLeak' && !s.ejectors.standby) cmd({ type: 'standbyEjectors', on: true });
     if (e.kind === 'bloom' && s.pretreat.chlorineMgL < BLOOM_CHLORINE_MGL) {
       cmd({ type: 'setDose', chemical: 'chlorine', mgL: BLOOM_CHLORINE_MGL });
     }
   }
+
+  // The standby ejectors go back to standby once no airLeak is open (they cost money to run).
+  if (s.ejectors.standby && !fired.some((e) => e.kind === 'airLeak' && !e.cleared)) cmd({ type: 'standbyEjectors', on: false });
 
   if (opts.crew !== false && !s.crew) {
     const job = crewJobFor(s);

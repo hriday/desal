@@ -227,12 +227,21 @@ describe('applyCommand', () => {
     expect(applyCommand(on, env({ type: 'standbySteam', on: false })).state.steam.standby).toBe(false);
   });
 
+  it('standbyEjectors sets the standby ejector train', () => {
+    const s = running();
+    expect(s.ejectors.standby).toBe(false);
+    const on = applyCommand(s, env({ type: 'standbyEjectors', on: true })).state;
+    expect(on.ejectors.standby).toBe(true);
+    expect(applyCommand(on, env({ type: 'standbyEjectors', on: false })).state.ejectors.standby).toBe(false);
+  });
+
   it('the divert and standby commands are refused in handover', () => {
     const h = { ...running(), phase: 'handover' as const };
     for (const command of [
       { type: 'setDivertMode', mode: 'auto' },
       { type: 'divertToDrain', on: true },
       { type: 'standbySteam', on: true },
+      { type: 'standbyEjectors', on: true },
     ]) {
       expect(rejection(applyCommand(h, env(command, h.shift?.id ?? null)).events)).toBe('not allowed during handover');
     }

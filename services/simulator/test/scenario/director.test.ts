@@ -515,3 +515,62 @@ describe('director: lowSteam runs on its own clock', () => {
     expect(cascades('demandChange')).toBe(0);
   });
 });
+
+describe('director: coolingLoss and airLeak run on their own clock', () => {
+  const faultOf = (s: PlantState, kind: 'coolingLoss' | 'airLeak') => (kind === 'coolingLoss' ? s.faults.coolingLoss : s.faults.airLeak);
+  for (const kind of ['coolingLoss', 'airLeak'] as const) {
+    it(`${kind}: fires at its minute, inside the gap and with the plant unsettled, without moving lastFiredMinute`, () => {
+      const plan: Q[] = [{ kind: 'tubeLeak', params: LEAK, earliestMinute: 40 }, { kind, earliestMinute: 60 }];
+      const s = until(running(plan, false), (x) => fired(x).length > 1, holdLeak);
+      const [leak, mine] = fired(s);
+      expect(leak).toMatchObject({ kind: 'tubeLeak', cleared: false });
+      expect(mine!.kind).toBe(kind);
+      expect(mine!.atMinute).toBeGreaterThanOrEqual(60);
+      expect(mine!.atMinute).toBeLessThan(61);
+      expect(mine!.atMinute - leak!.atMinute).toBeLessThan(60); // inside NORMAL_GAP_MIN
+      expect(s.chaos.active!.lastFiredMinute).toBe(leak!.atMinute);
+      expect(faultOf(s, kind)).toEqual(mine!.params);
+      expect(isCleared(s, mine!)).toBeNull();
+      const fixed = { ...s, faults: { ...s.faults, [kind]: null } };
+      expect(isCleared(fixed, mine!)).toBe('crew');
+    });
+
+    it(`${kind}: firing it leaves the game seed alone`, () => {
+      let a = running([{ kind, earliestMinute: 5 }], false);
+      let b = running([], false);
+      for (let i = 0; i < 30; i++) {
+        a = tick(a, []).state;
+        b = tick(b, []).state;
+        expect(a.seed).toBe(b.seed);
+      }
+      expect(fired(a)).toHaveLength(1);
+    });
+
+    it(`${kind}: a normal event due on the same tick still fires on that tick`, () => {
+      const plan: Q[] = [{ kind: 'tubeLeak', params: LEAK, earliestMinute: 40 }, { kind, earliestMinute: 40 }];
+      const others = plan.filter((q) => q.kind !== kind);
+      const timing = (s: PlantState) => fired(s).filter((e) => e.kind !== kind).map((e) => [e.eventId, e.kind, e.atMinute]);
+      const a = until(running(plan, false), (x) => fired(x).length === plan.length, holdLeak);
+      const b = until(running(others, false), (x) => fired(x).length === others.length, holdLeak);
+      expect(timing(a)).toEqual(timing(b));
+      expect(a.seed).toBe(b.seed);
+    });
+
+    it(`${kind}: does not count toward the event cap`, () => {
+      const done = (k: ScenarioKind, eventId: number): FiredEvent => ({
+        eventId, kind: k, params: {}, atMinute: 1, cleared: true, how: 'crew', disaster: false,
+      });
+      let n = 0;
+      for (let seed = 1; seed <= 20; seed++) {
+        const s0 = running([{ kind: 'pumpTrip', params: { pumpId: 'P-101' }, earliestMinute: 1 }], true, seed);
+        const a = s0.chaos.active!;
+        const prior = [1, 2, 3, 4, 5].map((i) => done('demandChange', i)).concat(done(kind, 6));
+        const queue = a.plan.queue.map((e) => ({ ...e, eventId: 7 }));
+        const active = { ...a, plan: { ...a.plan, queue }, fired: prior, lastFiredMinute: 0, nextEventId: 8 };
+        const s = until({ ...s0, chaos: { ...s0.chaos, active } }, (x) => fired(x).length > 6);
+        if (s.chaos.active!.plan.queue.some((e) => e.cascade)) n++;
+      }
+      expect(n).toBeGreaterThan(0);
+    });
+  }
+});

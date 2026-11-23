@@ -27,6 +27,8 @@ export const ScenarioKindSchema = z.enum([
   'earthquake',
   'tsunami',
   'lowSteam',
+  'coolingLoss',
+  'airLeak',
 ]);
 export type ScenarioKind = z.infer<typeof ScenarioKindSchema>;
 
@@ -71,7 +73,7 @@ export type GameEndReason = z.infer<typeof GameEndReasonSchema>;
 export const GameScoreSchema = z.object({ shiftsCompleted: num, totalProductM3: num, balanceUsd: num });
 export type GameScore = z.infer<typeof GameScoreSchema>;
 
-export const AccountCauseSchema = z.enum(['allocation', 'fuel', 'delivery', 'acidClean', 'overhaul', 'crew', 'standing', 'standbySteam']);
+export const AccountCauseSchema = z.enum(['allocation', 'fuel', 'delivery', 'acidClean', 'overhaul', 'crew', 'standing', 'standbySteam', 'standbyEjectors']);
 export type AccountCause = z.infer<typeof AccountCauseSchema>;
 
 

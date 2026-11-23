@@ -125,6 +125,7 @@ function confirmed(cmd: Command, st: PlantStatus): boolean {
     case 'ballCleaning': return st.ballCleaning === cmd.on;
     case 'setDivertMode': return st.divertMode === cmd.mode;
     case 'standbySteam': return st.standbySteam === cmd.on;
+    case 'standbyEjectors': return st.standbyEjectors === cmd.on;
     // Manual too: the plant answers a press by leaving Auto, so a status still on Auto has not taken it.
     case 'divertToDrain': return st.divertMode === 'manual' && st.divertToDrain === cmd.on;
     case 'selectFuel': return st.fuel.active === cmd.fuel || st.fuel.changeoverTo === cmd.fuel;

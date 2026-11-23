@@ -41,6 +41,7 @@ import {
 } from '../constants.js';
 import { NOMINAL, type PlantState, type Stage } from '../state.js';
 import { lag } from './lag.js';
+import { ejectorCapacity } from './ejectors.js';
 import { ejectorReach } from './steam.js';
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
@@ -145,15 +146,17 @@ export function stepStages(
   const prevRecirc = s.brine.recircM3h;
   const recircM3h = lag(prevRecirc, Math.min(RECIRC_PUMP_MAX_M3H * pct(s.loops.recirc.output), recircCapM3h(s)), dtS, RECIRC_TAU_S);
   // A failed ejector gives no steam to pull vacuum, so the vacuum loop cannot recover it: it only falls, more slowly at low load.
-  // A working one reaches only as far as its motive steam lets it (full reach at nominal pressure).
-  const quality = s.faults.ejectorFailed
+  // With the standby ejectors on, train B takes over and the vacuum heads for its target again.
+  // A working train reaches only as far as its motive steam lets it (full reach at nominal pressure),
+  // and holds only what its capacity allows (trains, condenser cooling, air load; exactly 1 at nominal).
+  const quality = s.faults.ejectorFailed && !s.ejectors.standby
     ? Math.max(
         0,
         s.vacuum.quality - (s.faults.ejectorRatePerMin * ejectorLoadFactor(s.heater.tbtC, s.heater.firingPct) * dtS) / 60,
       )
     : lag(
         s.vacuum.quality,
-        VACUUM_QUALITY_MIN + (1 - VACUUM_QUALITY_MIN) * pct(s.loops.vacuum.output) * ejectorReach(s.steam.motiveBar),
+        VACUUM_QUALITY_MIN + (1 - VACUUM_QUALITY_MIN) * pct(s.loops.vacuum.output) * ejectorReach(s.steam.motiveBar) * ejectorCapacity(s),
         dtS,
         VACUUM_TAU_S,
       );

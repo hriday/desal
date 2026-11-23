@@ -42,6 +42,7 @@ export const status: PlantStatus = {
   divertToDrain: false,
   divertMode: 'auto',
   standbySteam: false,
+  standbyEjectors: false,
   shiftTicksRemaining: 100,
   deliveries: [{ arrivesInTicks: 30, tonnes: 50, grade: 'standard' }],
   acidCleanRemainingTicks: 0,

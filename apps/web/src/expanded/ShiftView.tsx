@@ -135,9 +135,9 @@ function ShiftControls(ctl: ControlCtx) {
 }
 
 /**
- * This shift's allocation, repair charges, crew charges, standing cost and standby steam line cost, from its
- * accountChange events. The standing and standby steam costs are reported once per plant hour, so they lag by up
- * to an hour.
+ * This shift's allocation, repair charges, crew charges, standing cost, standby steam line cost and standby
+ * ejectors cost, from its accountChange events. The standing, standby steam and standby ejectors costs are
+ * reported once per plant hour, so they lag by up to an hour.
  */
 export function shiftAccount(events: readonly PlantEvent[], shiftId: number | null | undefined) {
   let allocationUsd: number | undefined;
@@ -145,7 +145,8 @@ export function shiftAccount(events: readonly PlantEvent[], shiftId: number | nu
   let crewUsd = 0;
   let standingUsd = 0;
   let standbySteamUsd = 0;
-  if (!num(shiftId)) return { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd };
+  let standbyEjectorsUsd = 0;
+  if (!num(shiftId)) return { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd, standbyEjectorsUsd };
   for (const e of events) {
     if (e?.type !== 'accountChange' || e.shiftId !== shiftId || !num(e.deltaUsd)) continue;
     if (e.cause === 'allocation') allocationUsd = (allocationUsd ?? 0) + e.deltaUsd;
@@ -153,8 +154,9 @@ export function shiftAccount(events: readonly PlantEvent[], shiftId: number | nu
     else if (e.cause === 'crew') crewUsd -= e.deltaUsd;
     else if (e.cause === 'standing') standingUsd -= e.deltaUsd;
     else if (e.cause === 'standbySteam') standbySteamUsd -= e.deltaUsd;
+    else if (e.cause === 'standbyEjectors') standbyEjectorsUsd -= e.deltaUsd;
   }
-  return { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd };
+  return { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd, standbyEjectorsUsd };
 }
 
 /** The last EVENT_LOG_SIZE known events, newest first, as plain sentences. */
@@ -184,8 +186,8 @@ export function ShiftView(props: ExpandedProps) {
   const goal = num(target?.productM3) ? target.productM3 : undefined;
   const frac = made !== undefined && goal !== undefined && goal > 0 ? clamp01(made / goal) : undefined;
   const fuelUsd = get(readings, 'fuel.shiftCostUsd');
-  const { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd } = shiftAccount(events, status?.shiftId);
-  const spent = fuelUsd === undefined ? undefined : fuelUsd + repairsUsd + crewUsd + standingUsd + standbySteamUsd;
+  const { allocationUsd, repairsUsd, crewUsd, standingUsd, standbySteamUsd, standbyEjectorsUsd } = shiftAccount(events, status?.shiftId);
+  const spent = fuelUsd === undefined ? undefined : fuelUsd + repairsUsd + crewUsd + standingUsd + standbySteamUsd + standbyEjectorsUsd;
   const bal = num(status?.balanceUsd) ? status.balanceUsd : undefined;
   const plant = label(PLANT_TEXT, status?.status);
   const trip = label(TRIP_TEXT, status?.tripCause);
@@ -206,6 +208,7 @@ export function ShiftView(props: ExpandedProps) {
           <Row k="of which crew" v={usd(crewUsd)} />
           <Row k="of which staff and standby" v={usd(standingUsd)} />
           <Row k="of which standby steam" v={usd(standbySteamUsd)} />
+          <Row k="of which standby ejectors" v={usd(standbyEjectorsUsd)} />
           <Row k="Mode" v={label(MODE_TEXT, status?.controlMode) ?? DASH} />
           <Row k="Plant" v={plant ?? DASH} tone={status?.status === 'tripped' ? 'bad' : plant && status?.status !== 'online' ? 'warn' : undefined} />
           <Row k="Restart step" v={step ?? (status?.status === 'restarting' ? DASH : 'None')} />

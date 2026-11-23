@@ -203,6 +203,14 @@ export const RECIRC_TAU_S = 60;
 export const VACUUM_QUALITY_MIN = 0.3;
 /** Nominal vacuum quality. */
 export const VACUUM_QUALITY_NOMINAL = 0.95;
+/** Nominal condenser cooling capacity of the ejector train: two trains' worth. */
+export const COOL_CAP_NOMINAL = 2;
+/** How fast the condenser cooling capacity falls under coolingLoss, toward the fault's floor (trains per plant minute). */
+export const COOLING_LOSS_FALL_PER_MIN = 0.2;
+/** The coolingLoss floor is drawn from this range (trains' worth of cooling), on a 0.01 grid. */
+export const COOLING_LOSS_FLOOR = [0.25, 0.4] as const;
+/** The airLeak air load is drawn from this range (multiples of the normal air), on a 0.1 grid. */
+export const AIR_LEAK_LOAD = [2.5, 3.5] as const;
 /** Nominal ejector motive steam pressure (bar). */
 export const MOTIVE_STEAM_NOMINAL_BAR = 14.5;
 /** Motive steam at and above which the ejectors reach full vacuum (bar). */
@@ -353,6 +361,8 @@ export const STANDING_COST_USD_PER_HOUR = 90;
  * $1,200 for a whole shift, about one ejector repair, so leaving it on all shift is a choice.
  */
 export const STANDBY_STEAM_COST_USD_PER_H = 150;
+/** Running cost of the standby ejector train (train B) per plant hour while it is on (USD). */
+export const STANDBY_EJECTORS_COST_USD_PER_H = 100;
 /** Cost of an acid clean, charged when it starts (USD). */
 export const ACID_CLEAN_COST_USD = 6000;
 /** Cost of a pump overhaul, charged when it starts (USD). */
@@ -400,6 +410,8 @@ export const CREW_JOBS = {
   replaceSensor: { costUsd: 400, minutes: 30 },
   cleanScreens: { costUsd: 300, minutes: 30 },
   flushFuel: { costUsd: 1500, minutes: 60 },
+  cleanStrainer: { costUsd: 400, minutes: 30 },
+  sealLeak: { costUsd: 600, minutes: 60 },
 } as const;
 /**
  * Capacity multiplier of a stage whose tubes the crew has plugged. Plan 7: 0.6 -> 0.52, so one

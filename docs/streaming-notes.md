@@ -120,18 +120,18 @@ A shift is 720 ticks (480 plant minutes). The simulator draws each shift's plan 
 
 `orders` is `{ targetM3, maxSalinityPpm, budgetUsd, lines: string[], briefing: string[] }`. `budgetUsd` is the shift's fuel guidance (`target.fuelBudgetUsd`), not the allocation credited to the account. `briefing` has lines only on shift 1; `lines` is the foreman's note. On a hell shift, `target.productM3` is 85 % of the normal target (rounded). `hell` is true for the whole shift even when the orders did not warn of it.
 
-`kind` is one of: `bloom`, `seawaterTemp`, `pumpBearing`, `gasCurtailNotice`, `gasPriceSpike`, `offgradeOnly`, `deliveryDelay`, `demandChange`, `controllerFault`, and the six sharp kinds `pumpTrip`, `tubeLeak`, `vacuumLoss`, `powerDip`, `storm`, `sensorFailure`, plus `lowSteam` (low motive steam to the ejectors: player-fixed, not sharp, and planned on its own salted substream from shift 2, at most one per shift, so every other event keeps its draw). No event says that a sensor failed: the `sensorFailure` scenario event is the only record of it, the player sees only the reading's behaviour.
+`kind` is one of: `bloom`, `seawaterTemp`, `pumpBearing`, `gasCurtailNotice`, `gasPriceSpike`, `offgradeOnly`, `deliveryDelay`, `demandChange`, `controllerFault`, and the six sharp kinds `pumpTrip`, `tubeLeak`, `vacuumLoss`, `powerDip`, `storm`, `sensorFailure`, plus `lowSteam` (low motive steam to the ejectors: player-fixed, not sharp, and planned on its own salted substream from shift 2, at most one per shift, so every other event keeps its draw), and `coolingLoss` (the ejector condenser's cooling water strainer fouling) and `airLeak` (air getting into stage 24). The last two are crew-fixed, share one salted substream from shift 2 (at most one of them per shift, Normal 0.2 and Hard 0.4 chance, half each kind) and fire outside the event cap on their own clock. `vacuumLoss` now means the first-stage ejector of train A failed; the standby ejectors bypass it, though only the crew repair clears it. No event says that a sensor failed: the `sensorFailure` scenario event is the only record of it, the player sees only the reading's behaviour.
 
 `eventId` joins a `scenario` to its `eventCleared` and to the `events` list of the `shiftEnd` summary. It restarts at 1 every shift, so key on (`shiftId`, `eventId`). `atMinute` in the summary is a plant minute and may be fractional. A fired event that is never cleared has no `eventCleared`; it shows in the summary with `cleared: false` and `how: null`.
 
 `how` in `eventCleared` is one of:
 
 - `player`: the player's own action fixed it (a pump restarted, a loop put in Manual, chlorine dosed up, the standby steam line switched on).
-- `crew`: a `dispatchCrew` job finished (tube leak, vacuum loss, sensor failure, storm screens).
+- `crew`: a `dispatchCrew` job finished (tube leak, vacuum loss, sensor failure, storm screens, condenser cooling loss, air leak).
 - `expired`: it ended by itself (a storm that passed).
 - `noted`: a kind that needs no response (`seawaterTemp`, `gasCurtailNotice`, `gasPriceSpike`, `offgradeOnly`, `deliveryDelay`, `demandChange`, `pumpBearing`). Its `eventCleared` follows its `scenario` at once, in the same tick.
 
-In hell shifts a fired event can queue another (cascades): a storm may bring a bloom, a power dip a sensor failure, a pump trip a bearing fault. The follow-up is a normal `scenario` with its own `eventId`; nothing in the events says it was a cascade. At most 7 ordinary events fire in one shift (cascades included). Disasters, their follow-ups and `lowSteam` fire on their own clock, outside that cap.
+In hell shifts a fired event can queue another (cascades): a storm may bring a bloom, a power dip a sensor failure, a pump trip a bearing fault. The follow-up is a normal `scenario` with its own `eventId`; nothing in the events says it was a cascade. At most 7 ordinary events fire in one shift (cascades included). Disasters, their follow-ups, `lowSteam`, `coolingLoss` and `airLeak` fire on their own clock, outside that cap.
 
 The `shiftEnd` summary is:
 
@@ -251,6 +251,7 @@ Every change to the balance is one `accountChange { deltaUsd, balanceUsd, cause 
 - `crew`: a `dispatchCrew` job, charged when it is accepted (not when it finishes).
 - `standing`: staff and standby cost, $90 per plant hour. It is charged on every running tick, in any plant status (online, tripped, restarting), and reported as one `accountChange` with `deltaUsd: -90` per plant hour (90 ticks), not one per tick.
 - `standbySteam`: the standby steam line's running cost, $150 per plant hour while the line is on (nothing while it is off). It is charged on each running tick the line is on and reported on the same plant hour boundaries as `standing`, as one `accountChange` carrying that hour's on-time total (`deltaUsd: -150` for a whole hour on, less for part of one; no event for an hour it was off).
+- `standbyEjectors`: the standby ejector train's running cost, $100 per plant hour while it is on, charged per running tick and reported hourly in the same way as `standbySteam`.
 
 ### The `dispatchCrew` command
 
@@ -262,6 +263,8 @@ Every change to the balance is one `accountChange { deltaUsd, balanceUsd, cause 
 | `repairEjector` | 1000 | 45 | a failed ejector (vacuum loss) |
 | `replaceSensor` | 400 | 30 | a failed sensor |
 | `cleanScreens` | 300 | 30 | a storm's fouled screens |
+| `cleanStrainer` | 400 | 30 | a condenser cooling loss |
+| `sealLeak` | 600 | 60 | an air leak |
 
 A rejected dispatch produces a `commandRejected` event with one of these `reason` values: `not running` (the shift is not running), `crew busy` (a job is already in progress), `nothing to repair` (its fault does not exist), `stale shift` (the envelope's `shiftId` is not the current shift). The crew and the shift's faults are cleared at the next shift start, so a job never carries over.
 
@@ -276,6 +279,7 @@ A rejected dispatch produces a `commandRejected` event with one of these `reason
 - `orders`: the pending orders in handover, the active ones while running, else null. Same shape as `shiftStart.orders`.
 - `divertMode`: `auto` or `manual`. `divertToDrain` stays, and is now the valve's direction (set by the player in Manual, by the plant in Auto). Older records without it read as `manual`.
 - `standbySteam`: whether the standby steam line is on (boolean, default false); it holds the motive steam at 14.5 bar, and costs $150 per plant hour while on (see Account events).
+- `standbyEjectors`: whether the standby ejector train is on (boolean, default false); it costs $100 per plant hour while on (see Account events).
 - `hell`: the active shift's hell flag while the shift is running, and null in every other phase (handover, paused, over). It is null in handover on purpose, so an unwarned hell shift cannot be seen in advance.
 
 ### Plant-realism commands and telemetry
@@ -283,7 +287,13 @@ A rejected dispatch produces a `commandRejected` event with one of these `reason
 - `setDivertMode { mode }` (`auto` or `manual`) changes only the mode; the valve keeps its position until Auto's next decision. `divertToDrain { on }` sets Manual and the valve. Every shift starts with Divert back on Auto (the valve stays where it was until Auto's next decision), and the standby steam line off.
 - `standbySteam { on }` switches the standby steam line. It clears an active `lowSteam` with `how: 'player'`.
 - Neither command has refusals of its own; the usual envelope refusals (invalid, game over, handover, stale shift) apply.
-- Telemetry gains `vacuum.motiveSteamBar` (unit `vacuum`, no loop), emitted right after `vacuum.quality`: 128 readings per tick.
+- Telemetry gains `vacuum.motiveSteamBar` (unit `vacuum`, no loop), emitted right after `vacuum.quality`: 128 readings per tick (132 since Plan 9).
+
+### Ejector train commands and telemetry (Plan 9)
+
+- `standbyEjectors { on }` switches the standby ejector train. It has no refusals of its own beyond the usual envelope ones. The train is off at every shift start. It holds the vacuum through a failed ejector (`vacuumLoss`) and an air leak, but not through a cooling loss, because the cooling header is sized for both trains. It does not clear any event; `vacuumLoss`, `coolingLoss` and `airLeak` are cleared by the crew (`repairEjector`, `cleanStrainer`, `sealLeak`).
+- Telemetry gains four readings, unit `vacuum`, no loop, emitted right after `vacuum.motiveSteamBar` in this order: `vacuum.lastStageMbar`, `vacuum.intercondenserMbar`, `vacuum.coolingOutC`, `vacuum.ventAirKgH`. That is 132 readings per tick.
+- The report card grades `coolingLoss` and `airLeak` by the crew dispatch, and `vacuumLoss` by the first of the standby ejectors being on or the crew repair dispatch.
 
 ### Operating point
 
@@ -291,12 +301,13 @@ Nominal TBT is 93.5 degC. The TBT setpoint range is 85 to 112 degC. The high-hig
 
 ### Snapshots
 
-The snapshot version is 7. The pending and active plan, the director's position and the crew job are in it, so a restart in the middle of a shift replays the same events. Older saves are migrated one version at a time (`restore` in `services/simulator/src/snapshot.ts`):
+The snapshot version is 8. The pending and active plan, the director's position and the crew job are in it, so a restart in the middle of a shift replays the same events. Older saves are migrated one version at a time (`restore` in `services/simulator/src/snapshot.ts`):
 
 - v3 -> v4: game mode `normal`, disaster flags and the fuel contamination and tsunami faults defaulted.
 - v4 -> v5: the 20-stage plant resampled to the 24-stage layout, with a balanced makeup loop.
 - v5 -> v6: `callSign` derived from the save's seed and a fresh `runId`, so a run that was in flight at the upgrade
   reports its result under a new runId.
 - v6 -> v7: divert mode `manual` (restored games keep the latch for the shift in progress; the next shift starts on Auto), motive steam 14.5 bar, standby line off, no lowSteam fault.
+- v7 -> v8: ejectors `{ coolCap: 2, standby: off }` and no coolingLoss or airLeak fault.
 
 Version 2 (and 1) saves are skipped with a log line, as v1 was; games in flight at the upgrade end.

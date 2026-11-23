@@ -41,3 +41,8 @@ test('a status without divertMode and standbySteam (an older simulator) parses t
   expect(parsed.divertMode).toBe('manual');
   expect(parsed.standbySteam).toBe(false);
 });
+
+test('a status without standbyEjectors (an older simulator) parses to off', () => {
+  const { standbyEjectors: _e, ...old } = status;
+  expect(PlantStatusSchema.parse(old).standbyEjectors).toBe(false);
+});

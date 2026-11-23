@@ -16,7 +16,7 @@ import {
 } from '@desal/schema';
 import { z } from 'zod';
 import { callSignFor } from './callsign.js';
-import { LEVEL_LOOP_COUNT, LOOP_GAINS, MOTIVE_STEAM_NOMINAL_BAR, RECOVERY_STAGES, STAGE_COUNT } from './constants.js';
+import { COOL_CAP_NOMINAL, LEVEL_LOOP_COUNT, LOOP_GAINS, MOTIVE_STEAM_NOMINAL_BAR, RECOVERY_STAGES, STAGE_COUNT } from './constants.js';
 import { BALANCE, NOMINAL, type PlantState } from './state.js';
 
 const num = z.number().finite();
@@ -139,6 +139,7 @@ export const PlantStateSchema = z.object({
   }),
   vacuum: z.object({ quality: num }),
   steam: z.object({ motiveBar: num, standby: z.boolean(), unbilledTicks: z.number().int().min(0).default(0) }),
+  ejectors: z.object({ coolCap: num, standby: z.boolean(), unbilledTicks: z.number().int().min(0) }),
   product: z.object({ flowM3h: num, salinityPpm: num, divertToDrain: z.boolean(), divertMode: DivertModeSchema }),
   fuel: z.object({
     active: FuelKindSchema,
@@ -210,6 +211,8 @@ export const PlantStateSchema = z.object({
       .object({ warnRemainingTicks: num, surgeRemainingTicks: num, surgeDone: z.boolean(), cleanedAfterSurge: z.boolean(), coolC: num })
       .nullable(),
     lowSteam: z.object({ floorBar: num }).nullable(),
+    coolingLoss: z.object({ floor: num }).nullable(),
+    airLeak: z.object({ load: num }).nullable(),
     sensors: z.object({
       tbt: SensorFaultSchema.optional(),
       intakeFlow: SensorFaultSchema.optional(),
@@ -346,6 +349,21 @@ function migrateV6(state: unknown): unknown {
   };
 }
 
+/**
+ * Bring a version 7 state to version 8: the ejector train is nominal (full cooling, standby off) and
+ * there is no cooling-loss or air-leak fault. Anything malformed is left for the schema to reject.
+ */
+function migrateV7(state: unknown): unknown {
+  if (state === null || typeof state !== 'object') return state;
+  const s = state as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const obj = (v: unknown): v is Record<string, any> => v !== null && typeof v === 'object' && !Array.isArray(v); // eslint-disable-line @typescript-eslint/no-explicit-any
+  return {
+    ...s,
+    ejectors: { coolCap: COOL_CAP_NOMINAL, standby: false, unbilledTicks: 0 },
+    faults: obj(s.faults) ? { ...s.faults, coolingLoss: null, airLeak: null } : s.faults,
+  };
+}
+
 const FORMAT = 'desal-snapshot';
 /**
  * 2 = the multi-game era (economy and game-over state, one save per gameId). Version 1 saves are
@@ -358,8 +376,10 @@ const FORMAT = 'desal-snapshot';
  * 6 = callSign and runId on the run. Version 3, 4 and 5 saves are migrated (v3 -> v4 -> v5 -> v6).
  * 7 = divert mode, motive steam, standby line, lowSteam fault. Version 3 to 6 saves are migrated
  * (v3 -> v4 -> v5 -> v6 -> v7).
+ * 8 = ejector train: standby ejectors, condenser cooling, coolingLoss and airLeak faults. Version 3 to 7
+ * saves are migrated (v3 -> v4 -> v5 -> v6 -> v7 -> v8).
  */
-const VERSION = 7;
+const VERSION = 8;
 
 export function serialize(s: PlantState): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, savedAt: Date.now(), state: s });
@@ -395,15 +415,16 @@ export function restore(json: string, newRunId: () => string = randomUUID): Rest
   }
   const d = doc as Record<string, unknown>;
   if (d.format !== FORMAT) return { ok: false, reason: `wrong format: ${JSON.stringify(d.format)}` };
-  if (d.version !== VERSION && d.version !== 6 && d.version !== 5 && d.version !== 4 && d.version !== 3) {
+  if (d.version !== VERSION && d.version !== 7 && d.version !== 6 && d.version !== 5 && d.version !== 4 && d.version !== 3) {
     return { ok: false, reason: `unknown version: ${JSON.stringify(d.version)}` };
   }
-  // Each step brings the state up one version: v3 -> v4 -> v5 -> v6 -> v7.
+  // Each step brings the state up one version: v3 -> v4 -> v5 -> v6 -> v7 -> v8.
   const v4 = d.version === 3 ? migrateV3(d.state) : d.state;
   const v5 = d.version === 3 || d.version === 4 ? migrateV4(v4) : v4;
-  const v6 = d.version === VERSION || d.version === 6 ? v5 : migrateV5(v5, newRunId);
-  const v7 = d.version === VERSION ? v6 : migrateV6(v6);
-  const parsed = PlantStateSchema.safeParse(v7);
+  const v6 = d.version === VERSION || d.version === 7 || d.version === 6 ? v5 : migrateV5(v5, newRunId);
+  const v7 = d.version === VERSION || d.version === 7 ? v6 : migrateV6(v6);
+  const v8 = d.version === VERSION ? v7 : migrateV7(v7);
+  const parsed = PlantStateSchema.safeParse(v8);
   if (!parsed.success) return { ok: false, reason: issueText(parsed.error) };
   return { ok: true, state: parsed.data };
 }

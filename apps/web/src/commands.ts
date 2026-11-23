@@ -11,6 +11,7 @@ export const ballCleaning = (on: boolean): Command => ({ type: 'ballCleaning', o
 export const divert = (on: boolean): Command => ({ type: 'divertToDrain', on });
 export const divertMode = (mode: DivertMode): Command => ({ type: 'setDivertMode', mode });
 export const standbySteam = (on: boolean): Command => ({ type: 'standbySteam', on });
+export const standbyEjectors = (on: boolean): Command => ({ type: 'standbyEjectors', on });
 export const selectFuel = (fuel: FuelKind): Command => ({ type: 'selectFuel', fuel });
 export const orderFuel = (tonnes: number): Command => ({ type: 'orderFuel', tonnes });
 export const restart = (): Command => ({ type: 'restart' });

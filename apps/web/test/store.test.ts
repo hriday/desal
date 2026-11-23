@@ -18,7 +18,7 @@ function status(over: Partial<PlantStatus> = {}): PlantStatus {
       gasPriceUsdPerGJ: 8, gasCapMW: 60, backupPriceUsdPerGJ: 14,
     },
     doses: { chlorineMgL: 1, antiscalantMgL: 2 }, shiftTarget: null,
-    ballCleaning: false, divertToDrain: false, divertMode: 'auto', standbySteam: false, shiftTicksRemaining: 100, deliveries: [],
+    ballCleaning: false, divertToDrain: false, divertMode: 'auto', standbySteam: false, standbyEjectors: false, shiftTicksRemaining: 100, deliveries: [],
     acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard', shiftProductM3: 0, shiftOffSpecM3: 0, productFlowM3h: 0, crew: null, orders: null, hell: null, ...over,
   };
 }
@@ -400,6 +400,14 @@ describe('report cards and rank', () => {
     s = server(s, statusMsg({ divertMode: 'manual', standbySteam: false }));
     expect([...s.pending.keys()]).toEqual(['standbySteam']);
     s = server(s, statusMsg({ divertMode: 'manual', standbySteam: true }));
+    expect(s.pending.size).toBe(0);
+  });
+
+  it('standbyEjectors is confirmed by its status field', () => {
+    let s = reducer(server(initialState(), statusMsg()), { type: 'sent', command: { type: 'standbyEjectors', on: true } });
+    s = server(s, statusMsg({ standbyEjectors: false }));
+    expect([...s.pending.keys()]).toEqual(['standbyEjectors']);
+    s = server(s, statusMsg({ standbyEjectors: true }));
     expect(s.pending.size).toBe(0);
   });
 

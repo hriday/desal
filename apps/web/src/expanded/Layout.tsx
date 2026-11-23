@@ -18,11 +18,12 @@ export function ViewLayout({ drawing, detail, trends, controls, children }: {
 }
 
 /** A labelled list of readouts. */
-export function Detail({ title, children }: { title?: string; children: ReactNode }) {
+export function Detail({ title, note, children }: { title?: string; note?: ReactNode; children: ReactNode }) {
   return (
     <section className="detail">
       {title && <h3 className="detail__title">{title}</h3>}
       <dl className="detail__list">{children}</dl>
+      {note && <p className="ctl__meta">{note}</p>}
     </section>
   );
 }

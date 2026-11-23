@@ -25,7 +25,16 @@ function before(r: PlanRecord): PlantState {
   return { ...s, run: { ...s.run, mode: r.mode, shiftNumber: r.n - 1 }, chaos: { ...s.chaos, lastHadDisaster: false } };
 }
 const lowSteams = (p: ChaosPlan) => p.queue.filter((e) => e.kind === 'lowSteam');
-const drawn = RECORDS.map((r) => ({ r, s: drawPendingPlan(before(r)) }));
+/**
+ * Plan 9's ejector-train faults left out of the drawn plan, as lowSteam is left out against the
+ * pre-Plan-8 plans: they ride their own substream, with the last eventId (plan9determinism.test.ts).
+ */
+function withoutPlan9(s: PlantState): PlantState {
+  const p = s.chaos.pending!;
+  const queue = p.queue.filter((e) => e.kind !== 'coolingLoss' && e.kind !== 'airLeak');
+  return { ...s, chaos: { ...s.chaos, pending: { ...p, queue } } };
+}
+const drawn = RECORDS.map((r) => ({ r, s: withoutPlan9(drawPendingPlan(before(r))) }));
 
 describe('Plan 8 determinism: lowSteam rides its own substream', () => {
   it('keeps the game seed sequence and every other queued event', () => {

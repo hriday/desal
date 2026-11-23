@@ -220,6 +220,7 @@ describe('chaos plan lifecycle', () => {
     const dirty: PlantState = {
       ...s0,
       crew: { job: 'plugTubes', remainingTicks: 30 },
+      ejectors: { coolCap: 0.4, standby: true, unbilledTicks: 7 },
       faults: {
         tubeLeak: { stage: 2, ppm: 10 },
         ejectorFailed: true,
@@ -232,6 +233,8 @@ describe('chaos plan lifecycle', () => {
         fuelContamination: null,
         tsunami: null,
         lowSteam: { floorBar: 10.5 },
+        coolingLoss: { floor: 0.3 },
+        airLeak: { load: 3 },
         sensors: { tbt: { kind: 'freeze', value: 100 } },
         stageDerate: s0.faults.stageDerate.map(() => 0.5),
       },
@@ -239,6 +242,7 @@ describe('chaos plan lifecycle', () => {
     const next = startShift(dirty, 'auto').state;
     expect(next.crew).toBeNull();
     expect(next.faults).toEqual(createInitialState(1, T0, GAME_ID).faults);
+    expect(next.ejectors).toEqual({ coolCap: 2, standby: false, unbilledTicks: 0 });
   });
 
   it('records lastWasHell from the activated plan', () => {

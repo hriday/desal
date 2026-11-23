@@ -29,7 +29,7 @@ export function demoStatus(over: Partial<PlantStatus> = {}): PlantStatus {
     },
     doses: { chlorineMgL: 1.5, antiscalantMgL: 3 },
     shiftTarget: demoTarget,
-    ballCleaning: false, divertToDrain: false, divertMode: 'auto', standbySteam: false, shiftTicksRemaining: 330, deliveries: [],
+    ballCleaning: false, divertToDrain: false, divertMode: 'auto', standbySteam: false, standbyEjectors: false, shiftTicksRemaining: 330, deliveries: [],
     acidCleanRemainingTicks: 0, restartAuto: null, offeredGrade: 'standard',
     shiftProductM3: 0, shiftOffSpecM3: 0, productFlowM3h: 0, crew: null, orders: null, hell: null, // Plan 4 Task 11 replaces
     ...over,
@@ -51,6 +51,7 @@ export function demoReadings(over: Record<string, number> = {}): Record<string, 
     'brine.makeupM3h': 1714, 'brine.coolingRejectM3h': 4086,
     'vacuum.quality': 0.94,
     'vacuum.motiveSteamBar': 14.5,
+    'vacuum.lastStageMbar': 56, 'vacuum.intercondenserMbar': 250, 'vacuum.coolingOutC': 34, 'vacuum.ventAirKgH': 10,
     'product.flowM3h': 512, 'product.salinityPpm': 18, 'product.shiftProductM3': 2380,
     'fuel.gasCapMW': 60, 'fuel.gasPriceUsdPerGJ': 8, 'fuel.backupTonnes': 128, 'fuel.burnMW': 43.2, 'fuel.shiftCostUsd': 5120,
   };

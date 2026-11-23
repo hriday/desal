@@ -20,8 +20,8 @@ import org.desal.flink.model.ShiftReport;
  * clear can be read before the statuses leading up to it: a response status earlier than the
  * credited tick (and before the clear) replaces it, so the earliest response always wins.
  *
- * <p>Crew kinds (tubeLeak, vacuumLoss, storm, sensorFailure) are credited by a crew dispatch, not
- * by every status showing the job. A plugTubes, repairEjector or cleanScreens job fixes one fault,
+ * <p>Crew kinds (tubeLeak, vacuumLoss, storm, sensorFailure, coolingLoss, airLeak) are credited by a crew dispatch, not
+ * by every status showing the job. A plugTubes, repairEjector, cleanScreens, cleanStrainer or sealLeak job fixes one fault,
  * so it credits only the oldest open, not yet credited event of its kind. A replaceSensor job
  * repairs every failed sensor at once (the simulator then clears each sensorFailure), so it credits
  * every open sensorFailure fired before it, e.g. the two an earthquake fires together. A dispatch
@@ -91,11 +91,13 @@ public class ShiftTracker {
     }
     events.add(e);
     String job = Rules.crewJobFor(kind);
-    if (job == null) {
+    if (creditedByStatus(kind)) {
       if (latest != null) {
-        credit(e, latest);
+        creditFromStatus(e, latest);
       }
-      return;
+      if (job == null) {
+        return;
+      }
     }
     if (latest != null && latest.tick > lastStatusTick && latest.tick >= startTick && "running".equals(latest.phase)) {
       detectDispatch(latest); // a status the tracker has not seen yet; it may credit e itself
@@ -132,8 +134,8 @@ public class ShiftTracker {
       if (e.baselineChlorine == null && s.tick <= e.fireTick) {
         e.baselineChlorine = s.chlorineMgL;
       }
-      if ((e.clearTick == null || s.tick < e.clearTick) && Rules.crewJobFor(e.kind) == null) {
-        credit(e, s);
+      if ((e.clearTick == null || s.tick < e.clearTick) && creditedByStatus(e.kind)) {
+        creditFromStatus(e, s);
       }
     }
     detectDispatch(s);
@@ -242,6 +244,25 @@ public class ShiftTracker {
       out.add(line(e));
     }
     return out;
+  }
+
+  /**
+   * Whether a status can credit this kind: every non-crew kind, and vacuumLoss, which the standby
+   * ejectors answer without the crew (its crew repair is still credited per dispatch).
+   */
+  private static boolean creditedByStatus(String kind) {
+    return Rules.crewJobFor(kind) == null || "vacuumLoss".equals(kind);
+  }
+
+  /**
+   * Credits {@code e} from a status. For vacuumLoss only the standby ejectors count here: the
+   * crew repair is credited per dispatch, never by every status that shows the job.
+   */
+  private void creditFromStatus(OpenEvent e, StatusView s) {
+    if (Rules.crewJobFor(e.kind) != null && !s.standbyEjectors) {
+      return;
+    }
+    credit(e, s);
   }
 
   /** replaceSensor repairs every failed sensor; the other jobs fix one fault each. */

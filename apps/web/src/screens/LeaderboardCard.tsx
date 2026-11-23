@@ -16,6 +16,7 @@ const MAX_STATS = 3;
 const KIND_NOUN: Partial<Record<ScenarioKind, string>> = {
   pumpTrip: 'pump trip', tubeLeak: 'tube leak', vacuumLoss: 'vacuum loss', powerDip: 'power dip', storm: 'storm',
   sensorFailure: 'sensor failure', fuelContamination: 'fuel contamination', tsunami: 'tsunami', lowSteam: 'low-steam fault',
+  coolingLoss: 'condenser cooling loss', airLeak: 'air leak',
 };
 
 export const statLine = (s: KindBoardStat): string =>

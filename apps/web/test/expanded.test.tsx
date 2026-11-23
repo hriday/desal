@@ -242,6 +242,78 @@ describe('divert and steam controls', () => {
     expect(rowValue(container, 'Ejector steam valve')!.textContent).toBe(`${Math.round(sample().status!.loops.vacuum!.output)} %`);
   });
 
+  it('StagesView shows the Ejector train rows with their tones, none at nominal', () => {
+    const { container: nom } = render(<StagesView {...sample()} />);
+    expect(rowValue(nom, 'Stage 24 pressure')!.textContent).toBe('56 mbar');
+    expect(rowValue(nom, 'Intercondenser')!.textContent).toBe('250 mbar');
+    expect(rowValue(nom, 'Condenser cooling out')!.textContent).toBe('34.0 °C');
+    expect(rowValue(nom, 'Vent air')!.textContent).toBe('10 kg/h');
+    for (const k of ['Stage 24 pressure', 'Intercondenser', 'Condenser cooling out', 'Vent air']) expect(rowValue(nom, k)!.className).toBe('');
+    expect(nom.textContent).toContain('Hot cooling water → strainer. High vent air → air leak. Low intercondenser → failed ejector. Low motive steam → standby steam line.');
+    const cls = (key: string, row: string, v: number) => {
+      const { container } = render(<StagesView {...sample()} readings={demoReadings({ [key]: v })} />);
+      const c = rowValue(container, row)!.className;
+      cleanup();
+      return c;
+    };
+    expect(cls('vacuum.intercondenserMbar', 'Intercondenser', 349)).toBe('');
+    expect(cls('vacuum.intercondenserMbar', 'Intercondenser', 350)).toBe('tone--warn');
+    expect(cls('vacuum.intercondenserMbar', 'Intercondenser', 177)).toBe('');
+    expect(cls('vacuum.intercondenserMbar', 'Intercondenser', 160)).toBe('tone--warn');
+    expect(cls('vacuum.intercondenserMbar', 'Intercondenser', 150)).toBe('tone--warn');
+    expect(cls('vacuum.coolingOutC', 'Condenser cooling out', 37.9)).toBe('');
+    expect(cls('vacuum.coolingOutC', 'Condenser cooling out', 38)).toBe('tone--warn');
+    expect(cls('vacuum.ventAirKgH', 'Vent air', 17.9)).toBe('');
+    expect(cls('vacuum.ventAirKgH', 'Vent air', 18)).toBe('tone--warn');
+    expect(cls('vacuum.ventAirKgH', 'Vent air', 6)).toBe('tone--warn');
+    expect(cls('vacuum.ventAirKgH', 'Vent air', 7)).toBe('');
+  });
+
+  it('StagesView stage 24 pressure warns relative to the nominal at the seawater temperature', () => {
+    // Intake held at the 30 degC requirement, so a hot-seawater event leaves it short (as in the plant).
+    const at = (seaT: number | undefined, p: number) => {
+      const r = demoReadings({ 'vacuum.lastStageMbar': p, 'intake.seawaterTempC': seaT as number, 'intake.flowM3h': 5500 });
+      if (seaT === undefined) delete (r as Record<string, unknown>)['intake.seawaterTempC'];
+      const { container } = render(<StagesView {...sample()} readings={r} />);
+      const c = rowValue(container, 'Stage 24 pressure')!.className;
+      cleanup();
+      return c;
+    };
+    const magnus = (t: number) => 6.112 * Math.exp((17.62 * t) / (243.12 + t));
+    const nom = (seaT: number) => magnus(seaT + 7 + 15 * Math.max(0, 1 - 5500 / (5500 * (1 + 0.03 * Math.max(0, seaT - 30)))));
+    expect(at(30, 63)).toBe('');
+    expect(at(30, 82)).toBe('tone--warn');
+    expect(at(38, 110)).toBe('');
+    expect(at(30, nom(30) + 9.9)).toBe('');
+    expect(at(30, nom(30) + 10)).toBe('tone--warn');
+    expect(at(38, nom(38) + 9.9)).toBe('');
+    expect(at(38, nom(38) + 10)).toBe('tone--warn');
+    expect(at(undefined, 500)).toBe('');
+  });
+
+  it('StagesView puts the ejector legend inside the Ejector train section', () => {
+    const { container } = render(<StagesView {...sample()} />);
+    const sec = [...container.querySelectorAll('section.detail')].find((x) => x.querySelector('.detail__title')?.textContent === 'Ejector train')!;
+    expect(sec.textContent).toContain('Hot cooling water → strainer.');
+  });
+
+  it('StagesView groups the four ejector rows under an "Ejector train" heading', () => {
+    const { container } = render(<StagesView {...sample()} />);
+    const sec = [...container.querySelectorAll('section.detail')].find((x) => x.querySelector('.detail__title')?.textContent === 'Ejector train')!;
+    expect(sec).toBeTruthy();
+    const keys = [...sec.querySelectorAll('dt')].map((d) => d.textContent);
+    expect(keys).toEqual(['Stage 24 pressure', 'Intercondenser', 'Condenser cooling out', 'Vent air']);
+  });
+
+  it('StagesView: the Standby ejectors toggle sends standbyEjectors, and the strainer and leak crew buttons are there', () => {
+    const { container, sent } = withSend(StagesView, sample());
+    fireEvent.click(within(container).getByRole('button', { name: 'Standby ejectors' }));
+    expect(sent).toEqual([{ type: 'standbyEjectors', on: true }]);
+    expect(container.querySelector('[data-control="Standby ejectors"]')!.textContent).toContain('$100/h while on');
+    expect(container.textContent).toContain('clean the condenser strainer');
+    expect(container.textContent).toContain('seal the air leak');
+  });
+
   it('StagesView draws a Motive steam trend', () => {
     const { container } = render(<StagesView {...sample()} />);
     expect(container.querySelector('[data-trend="Motive steam"]')).not.toBeNull();
@@ -311,6 +383,16 @@ describe('eventText', () => {
     expect(PlantEventSchema.parse(standing)).toEqual(standing);
     const shiftId = standing.shiftId!;
     expect(shiftAccount([standing, standing, SAMPLES.accountChange], shiftId)).toMatchObject({ standingUsd: 180, repairsUsd: 8000 });
+  });
+  it('the standby ejectors cost counts toward the shift spend, on its own line', () => {
+    const ej = { ...SAMPLES.accountChange, deltaUsd: -100, cause: 'standbyEjectors' as const };
+    expect(eventText(ej)).toBe('Paid $100 for the standby ejectors; balance $4,450');
+    const shiftId = ej.shiftId!;
+    expect(shiftAccount([ej, ej], shiftId)).toMatchObject({ standbyEjectorsUsd: 200, standbySteamUsd: 0 });
+    const status = { ...demoStatus(), shiftId } as PlantStatus;
+    const { getByText } = render(<ShiftView {...empty} status={status} readings={{ 'fuel.shiftCostUsd': 1000 }} events={[ej]} />);
+    expect(getByText('of which standby ejectors').nextSibling?.textContent).toBe('$100');
+    expect(getByText('Spent this shift').nextSibling?.textContent).toBe('$1,100');
   });
   it('the standby steam line cost reads as such and counts toward the shift spend, on its own line', () => {
     const steam = { ...SAMPLES.accountChange, deltaUsd: -150, cause: 'standbySteam' as const };

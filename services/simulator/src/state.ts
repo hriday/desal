@@ -36,6 +36,7 @@ import {
   LEVEL_LOOP_COUNT,
   LOOP_GAINS,
   MAKEUP_MAX_M3H,
+  COOL_CAP_NOMINAL,
   MOTIVE_STEAM_NOMINAL_BAR,
   PUMP_RATED_M3H,
   RECIRC_NOMINAL_M3H,
@@ -188,6 +189,11 @@ export interface PlantState {
    * counts the running ticks the line has been on since its cost was last reported (hourly).
    */
   steam: { motiveBar: number; standby: boolean; unbilledTicks: number };
+  /**
+   * The ejector train: the condenser cooling capacity (in trains; falls under coolingLoss), the standby
+   * train, and the running ticks it has been on since its cost was last reported (hourly).
+   */
+  ejectors: { coolCap: number; standby: boolean; unbilledTicks: number };
   /** divertToDrain is the valve's position; divertMode says who moves it (Auto: the plant, Manual: the operator). */
   product: { flowM3h: number; salinityPpm: number; divertToDrain: boolean; divertMode: DivertMode };
   fuel: {
@@ -221,6 +227,10 @@ export interface PlantState {
     tsunami: TsunamiFault | null;
     /** The motive steam supply is sagging toward `floorBar`; the standby steam line clears it. */
     lowSteam: { floorBar: number } | null;
+    /** The ejector condenser's cooling is falling toward `floor` trains' worth; the crew cleans the strainer. */
+    coolingLoss: { floor: number } | null;
+    /** Air is leaking into the vacuum system: the ejectors carry `load` times the air; the crew seals it. */
+    airLeak: { load: number } | null;
     sensors: Partial<Record<LoopSensorId, SensorFault>>;
     /** Per-stage capacity multiplier, 1 = healthy. */
     stageDerate: number[];
@@ -301,6 +311,8 @@ export function noFaults(): PlantState['faults'] {
     fuelContamination: null,
     tsunami: null,
     lowSteam: null,
+    coolingLoss: null,
+    airLeak: null,
     sensors: {},
     stageDerate: Array.from({ length: STAGE_COUNT }, () => 1),
   };
@@ -362,6 +374,7 @@ export function createInitialState(
     },
     vacuum: { quality: NOMINAL.vacuumQuality },
     steam: { motiveBar: MOTIVE_STEAM_NOMINAL_BAR, standby: false, unbilledTicks: 0 },
+    ejectors: { coolCap: COOL_CAP_NOMINAL, standby: false, unbilledTicks: 0 },
     product: { flowM3h: NOMINAL.productM3h, salinityPpm: BASE_SALINITY_PPM, divertToDrain: false, divertMode: 'auto' },
     fuel: {
       active: 'gas',
